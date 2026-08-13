@@ -1,10 +1,14 @@
 extends Node2D
 
 # ─────────────────────────────────────────────────────────
-# Milestone 3b：碰撞判定 + 扣生命 + 死亡重生
+# Milestone 3c：三隻暗影猫，各自不同的追擊個性
 #
 # 狀態機：READY（開場停頓）→ PLAYING（計時中）→ DYING（被抓到）→ RESULT（結算）
 # 被抓到時分數與剩餘時間都保留，只是位置重置；三條命用完才結束。
+#
+# 三隻貓的個性寫在 cat.gd，這裡只負責生出來、擺位置、每幀餵目標。
+# 出生格排在迷宮中央同一條走道上，登場時間錯開 0 / 2.5 / 5 秒，
+# 不然三隻會同時撲過來，開場就沒得玩。
 # ─────────────────────────────────────────────────────────
 
 enum State { READY, PLAYING, DYING, RESULT }
@@ -14,7 +18,6 @@ const READY_TIME := 1.5       # 開場停頓秒數
 const DYING_TIME := 1.2       # 被抓到後的停頓秒數
 const CATCH_DIST := 9.0       # 碰撞判定距離（px），約半格多一點
 const START_LIVES := 3
-const CAT_START := Vector2i(13, 6)    # 暗影猫的出生格（迷宮中央附近）
 
 const SCORE_BEAN := 10
 const SCORE_MOON := 30
@@ -56,13 +59,18 @@ func _ready() -> void:
 	add_child(player)
 	player.ate.connect(_on_player_ate)
 
-	_spawn_cat()
+	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來
+	_spawn_cat(Cat.Kind.CHASER, Vector2i(13, 6), 0.0)
+	_spawn_cat(Cat.Kind.AMBUSHER, Vector2i(12, 6), 2.5)
+	_spawn_cat(Cat.Kind.WANDERER, Vector2i(14, 6), 5.0)
 
 	_start_round()
 
 
-func _spawn_cat() -> Cat:
+## M5 之後會在遊戲中途再呼叫這個加貓，所以生成邏輯集中在這裡
+func _spawn_cat(kind: Cat.Kind, home: Vector2i, delay: float) -> Cat:
 	var cat := Cat.new()
+	cat.configure(kind, home, delay)
 	add_child(cat)
 	cats.append(cat)
 	return cat
@@ -89,7 +97,7 @@ func _enter_ready() -> void:
 	player.set_process(false)      # 開場停頓期間不能動
 	player.visible = true
 	for cat in cats:
-		cat.setup(maze, CAT_START)
+		cat.setup(maze, cat.home_cell)
 		cat.set_process(false)
 
 
@@ -124,9 +132,9 @@ func _process(delta: float) -> void:
 			if state_timer <= 0.0:
 				_enter_playing()
 		State.PLAYING:
-			# 每幀把露娜的位置告訴每一隻貓
+			# 每幀把露娜的位置與朝向交給每一隻貓，各自算自己的目標格
 			for cat in cats:
-				cat.target_cell = player.cell
+				cat.update_target(player.cell, player.dir, delta)
 			time_left -= delta
 			if time_left <= 0.0:
 				time_left = 0.0
@@ -236,7 +244,7 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(0, 20), "SCORE %06d" % score,
 		HORIZONTAL_ALIGNMENT_CENTER, 480, 12, COL_TEXT)
 
-	# 右：生命（三顆圓點，M4 接上暗影猫後才會真的減少）
+	# 右：生命（三顆圓點）
 	for i in lives:
 		draw_circle(Vector2(400 + i * 12, 16), 3.5, COL_LIFE)
 
