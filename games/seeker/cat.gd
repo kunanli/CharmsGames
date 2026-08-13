@@ -24,6 +24,13 @@ extends Node2D
 
 enum Kind { CHASER, AMBUSHER, WANDERER }
 
+## ACTIVE 會追人並且碰到扣命；PETRIFIED 站著不動、碰到會被擊碎；
+## BROKEN 是碎掉了，5 秒後在中央重生，這段期間不畫也不判定。
+enum Status { ACTIVE, PETRIFIED, BROKEN }
+
+const REVIVE_TIME := 5.0        # 被擊碎後幾秒於中央重生（GDD）
+const REVIVE_GRACE := 1.0       # 重生後半透明待命幾秒，給玩家反應時間
+
 const AMBUSH_LEAD := 4          # 預判貓瞄準露娜前方幾格
 const WANDER_RETARGET := 2.5    # 遊蕩貓多久重抽一次目標（秒）
 const WANDER_POUNCE := 6        # 遊蕩貓在幾格內會改成直追
@@ -41,6 +48,10 @@ var release_delay := 0.0            # 出生後等幾秒才動，用來錯開三
 var cell := Vector2i.ZERO
 var dir := Vector2i.ZERO
 var target_cell := Vector2i.ZERO    # 由 update_target() 每幀算出來
+
+var status: Status = Status.ACTIVE
+var revive_left := 0.0              # BROKEN 狀態還要等幾秒才重生
+var petrify_ending := false         # 石化剩 2 秒，畫成閃白版本
 
 var _hold := 0.0                    # 還要等幾秒才登場
 var _wander_cell := Vector2i.ZERO   # 遊蕩貓目前晃去哪
@@ -80,8 +91,68 @@ func setup(m: Maze, start_cell: Vector2i) -> void:
 	_hold = release_delay
 	_wander_cell = start_cell
 	_wander_timer = 0.0
+	status = Status.ACTIVE
+	revive_left = 0.0
+	petrify_ending = false
+	visible = true
 	_rng.randomize()
 	modulate.a = HOLD_ALPHA if _hold > 0.0 else 1.0
+
+
+# ── 石化與擊碎（M4）──────────────────────────────────────
+
+## 月光能量啟動：站著不動，等著被撞碎
+func petrify() -> void:
+	if status == Status.BROKEN:
+		return
+	status = Status.PETRIFIED
+	petrify_ending = false
+	dir = Vector2i.ZERO       # 石化就是變成石頭，停在原地
+
+
+## 石化時間到，還活著的貓恢復追擊
+func unpetrify() -> void:
+	petrify_ending = false
+	if status == Status.PETRIFIED:
+		status = Status.ACTIVE
+
+
+## 被露娜撞碎：消失 5 秒後於出生格（中央）重生
+func shatter() -> void:
+	status = Status.BROKEN
+	revive_left = REVIVE_TIME
+	petrify_ending = false
+	visible = false
+	dir = Vector2i.ZERO
+
+
+## 重生：一律回到 ACTIVE，就算石化還沒結束也一樣。
+##
+## 為什麼不讓牠以石化狀態回來 —— 三隻的出生格在中央緊鄰，
+## 石化重生會變成「站在中央等 5 秒，三隻一起彈回來再撞一輪」，
+## 一次石化就能刷到 1550 分（比銅寶箱門檻還多）。回到 ACTIVE 就沒有這個問題，
+## 而且紫色跟石化的藍白一眼就分得出來，玩家不會誤判。
+##
+## 重生後給 1 秒的半透明待命（沿用登場延遲那套），
+## 免得正在中央連撞的玩家被無預警冒出來的貓秒扣一條命。
+func _revive() -> void:
+	cell = home_cell
+	position = maze.cell_center(cell)
+	dir = Vector2i.ZERO
+	visible = true
+	status = Status.ACTIVE
+	_hold = REVIVE_GRACE
+	modulate.a = HOLD_ALPHA
+
+
+## 會不會扣露娜一條命
+func is_dangerous() -> bool:
+	return status == Status.ACTIVE and _hold <= 0.0
+
+
+## 撞上去會不會碎
+func is_breakable() -> bool:
+	return status == Status.PETRIFIED
 
 
 ## 由 main.gd 每幀呼叫（只在 PLAYING 狀態）。三種個性各自算自己的目標格。
@@ -106,6 +177,17 @@ func update_target(player_cell: Vector2i, player_dir: Vector2i, delta: float) ->
 
 func _process(delta: float) -> void:
 	if maze == null:
+		return
+
+	# 碎掉了：倒數重生（重生規則見 _revive）
+	if status == Status.BROKEN:
+		revive_left -= delta
+		if revive_left <= 0.0:
+			_revive()
+		return
+
+	# 石化：站著不動當靶子
+	if status == Status.PETRIFIED:
 		return
 
 	# 登場前在出生格待命，畫面上以半透明表示還沒啟動
@@ -171,17 +253,46 @@ func _cell_dist(a: Vector2i, b: Vector2i) -> int:
 
 
 func _draw() -> void:
+	if status == Status.BROKEN:
+		return
+
 	# Placeholder：三個個性用不同亮度與剪影，之後換成 Sprite2D + 像素素材
+	if status == Status.PETRIFIED:
+		_draw_petrified()
+		return
+
 	if fill_col.a > 0.0:
 		draw_rect(Rect2(-7, -7, 14, 14), fill_col)
 	draw_rect(Rect2(-7, -7, 14, 14), body_col, false, 1.0)
 	draw_circle(Vector2(-3, -2), 1.5, Palette.CAT_EYE)
 	draw_circle(Vector2(3, -2), 1.5, Palette.CAT_EYE)
+	_draw_accent(body_col)
+
+
+## 石化：半透明藍白緩慢閃爍（美術規格書 3.2）。
+## 剩 2 秒改成閃白版本，讓玩家知道時間快到了。
+func _draw_petrified() -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	var body := Palette.MOON
+	var alpha := 0.55 + sin(t * 4.0) * 0.15          # 緩慢呼吸
+	if petrify_ending:
+		body = Palette.TEXT                           # 閃白
+		alpha = 1.0 if fmod(t, 0.24) < 0.12 else 0.35
+	draw_rect(Rect2(-7, -7, 14, 14), Color(body, alpha * 0.5))
+	draw_rect(Rect2(-7, -7, 14, 14), Color(body, alpha), false, 1.0)
+	# 眼睛也一起石化，暖色暫時消失 —— 這一瞬間場上沒有威脅
+	draw_circle(Vector2(-3, -2), 1.5, Color(body, alpha))
+	draw_circle(Vector2(3, -2), 1.5, Color(body, alpha))
+	_draw_accent(Color(body, alpha))
+
+
+## 個性的剪影特徵。石化時要跟著換成石化色，不然會露出原本的紫色。
+func _draw_accent(col: Color) -> void:
 	match kind:
 		Kind.AMBUSHER:
 			# 額前一對尖角，暗示牠會抄你前面
-			draw_line(Vector2(-6, -7), Vector2(-4, -10), body_col, 1.0)
-			draw_line(Vector2(6, -7), Vector2(4, -10), body_col, 1.0)
+			draw_line(Vector2(-6, -7), Vector2(-4, -10), col, 1.0)
+			draw_line(Vector2(6, -7), Vector2(4, -10), col, 1.0)
 		Kind.WANDERER:
 			# 身後拖一條尾巴，看起來就是在閒晃
-			draw_line(Vector2(7, 3), Vector2(11, 0), body_col, 1.0)
+			draw_line(Vector2(7, 3), Vector2(11, 0), col, 1.0)

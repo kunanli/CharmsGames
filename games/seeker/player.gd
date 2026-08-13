@@ -14,6 +14,12 @@ var dir := Vector2i.ZERO          # 正在移動的方向
 var want := Vector2i.ZERO         # 玩家想要的方向（到路口才會生效）
 
 signal ate(cell: Vector2i, kind: int)
+## 用 72 px/s 撞上牆的那一瞬間。只在「移動中被擋下」時觸發一次。
+signal bumped(dir: Vector2i)
+
+## 停著、而且想去的方向是牆。按著方向鍵頂牆時會一直是 true。
+## 這個**不發 signal** —— 它每幀都成立，發 signal 會變成每秒 60 次的閃頻。
+var blocked := false
 
 
 func setup(m: Maze, start_cell: Vector2i) -> void:
@@ -26,6 +32,7 @@ func setup(m: Maze, start_cell: Vector2i) -> void:
 func reset_direction() -> void:
 	dir = Vector2i.ZERO
 	want = Vector2i.ZERO
+	blocked = false
 
 
 func _process(delta: float) -> void:
@@ -37,14 +44,15 @@ func _process(delta: float) -> void:
 
 func _read_input() -> void:
 	var new_want := want
-	# 同時支援方向鍵與 WASD
-	if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
+	# 只吃方向鍵。M4 之後 A 鍵是「啟動石化」的主動技能（GDD 的 Xbox 協議），
+	# 原本的 WASD 會跟它打架，而 GDD 本來就只指定方向鍵與左搖桿。
+	if Input.is_action_pressed("ui_left"):
 		new_want = Vector2i.LEFT
-	elif Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
+	elif Input.is_action_pressed("ui_right"):
 		new_want = Vector2i.RIGHT
-	elif Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
+	elif Input.is_action_pressed("ui_up"):
 		new_want = Vector2i.UP
-	elif Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
+	elif Input.is_action_pressed("ui_down"):
 		new_want = Vector2i.DOWN
 	want = new_want
 
@@ -59,8 +67,11 @@ func _move(delta: float) -> void:
 	if dir == Vector2i.ZERO:
 		if want != Vector2i.ZERO and maze.is_open(cell + want):
 			dir = want
+			blocked = false
 		else:
+			blocked = want != Vector2i.ZERO
 			return
+	blocked = false
 
 	var target := maze.cell_center(cell + dir)
 	var to_target := target - position
@@ -83,6 +94,7 @@ func _arrive_at_cell() -> void:
 	if want != Vector2i.ZERO and maze.is_open(cell + want):
 		dir = want
 	if not maze.is_open(cell + dir):
+		bumped.emit(dir)      # 撞上去了，給一記震動
 		dir = Vector2i.ZERO   # 前面是牆，停下來
 
 
