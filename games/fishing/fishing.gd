@@ -1,0 +1,581 @@
+extends Node2D
+
+# ─────────────────────────────────────────────────────────
+# Charm Fishing —— 黃金礦工式夜釣（依 Guides/CharmsFishing.docx 實作）
+#
+# 玩家只做一個決定：什麼時候放線。鉤子自己擺，放出去就不能取消，
+# 收線速度由勾到的東西決定 —— 所有的取捨都壓在「時間」這一個資源上。
+# 沒有生命值，犯錯只會浪費秒數，這是刻意跟 Seeker 的三條命互補。
+#
+# 畫面分層（GDD）：天空 96px／水下 174px，水面線在 y=96。
+# 鉤子支點固定在船底 (240, 96)，±75° 擺動，單趟週期 2.4 秒，
+# 最後 15 秒擺速 +15% 製造收尾壓力。
+#
+# 座標一律用 Vector2（像素）—— 這款沒有格子，不會有 Vector2i 混用問題。
+# ─────────────────────────────────────────────────────────
+
+enum State { READY, PLAYING, RESULT }
+enum Hook { SWING, EXTEND, RETRACT }
+enum Kind { JUNK_FISH, SMALL_PEARL, BIG_FISH, STARDUST, CHARM, ROCK, SHADOW_FISH }
+
+const ROUND_TIME := 60.0
+const READY_TIME := 1.5
+
+# ── 畫面配置 ────────────────────────────────────────────
+const SCREEN := Vector2(480, 270)
+const SURFACE_Y := 96.0                    # 水面線：天空 96 / 水下 174
+const PIVOT := Vector2(240.0, 96.0)        # 鉤子支點（船底）
+const WATER_L := 6.0
+const WATER_R := 474.0
+const WATER_B := 266.0
+
+# ── 鉤子 ────────────────────────────────────────────────
+const MAX_ANGLE_DEG := 75.0
+const SWING_PERIOD := 2.4                  # 一趟來回的秒數
+const RUSH_TIME := 15.0                    # 剩幾秒開始加速
+const RUSH_SWING := 1.15                   # 擺速 ×1.15
+const LINE_MIN := 12.0                     # 待機時的線長
+const LINE_MAX := 205.0
+const EXTEND_SPEED := 150.0
+const RETRACT_EMPTY := 210.0               # 空鉤回收速度
+
+# ── 月光能量 ────────────────────────────────────────────
+const MOON_USES := 3
+const MOON_BOOST := 3.0                    # 勾到寶物時收線 ×3
+
+# ── 寶箱門檻（GDD：1000 / 2000 / 3500）──────────────────
+const CHEST_BRONZE := 1000
+const CHEST_SILVER := 2000
+const CHEST_GOLD := 3500
+
+# ── 水層（y 範圍）───────────────────────────────────────
+# 注意水層不是等面積的：鉤子從 (240,96) 以 ±75° 掃，可及範圍是一個倒三角形，
+# 越淺越窄。淺層實際只有約 10000px²（放得下約 13 個），中層與深層各有其兩倍。
+# 淺層的物件數要照這個來配，不然會有一堆生不出來。
+const SHALLOW := Vector2(112, 158)
+const MID := Vector2(162, 208)
+const DEEP := Vector2(212, 258)
+
+# ── 族群補充 ────────────────────────────────────────────
+# 這些種類撈走後會有新的游進來，回到同一個水層。
+#
+# 為什麼要有這個：GDD 把星塵珍珠固定 4~5 顆、Charm 固定 2~3 顆，
+# 盤面總值上限因此只有約 3070 分，但金寶箱門檻是 3500 —— 不補充的話
+# 金寶箱在數學上就拿不到（模擬過：抓走盤面 91% 的機器人也只有 2800）。
+# 有限的寶物（星塵珍珠／Charm）維持 GDD 的固定顆數不動，只讓魚群回補，
+# 這樣 60 秒的上限就取決於玩家手速而不是盤面大小，也符合「湖裡的魚會游進來」。
+const RESPAWN_DELAY := 2.2
+const RESPAWN_KINDS := {
+	Kind.JUNK_FISH: SHALLOW,
+	Kind.SMALL_PEARL: SHALLOW,
+	Kind.BIG_FISH: Vector2(162, 258),
+	Kind.ROCK: Vector2(162, 258),
+	Kind.SHADOW_FISH: MID,
+}
+
+
+## 水下的一個物件。大魚與暗影猫魚會橫向游動，其餘固定不動。
+class Item:
+	var kind: int
+	var pos := Vector2.ZERO
+	var size := Vector2(16, 16)
+	var vx := 0.0
+	var phase := 0.0        # 呼吸光暈 / 游動擺尾的相位
+
+	func rect() -> Rect2:
+		return Rect2(pos - size * 0.5, size)
+
+
+var state: State = State.READY
+var state_timer := READY_TIME
+var time_left := ROUND_TIME
+var score := 0
+
+var hook_state: Hook = Hook.SWING
+var swing_t := 0.0
+var angle := 0.0                 # 0 = 正下方，正值往右
+var line_len := LINE_MIN
+var carried: Item = null         # 正在收線的獵物，空鉤為 null
+var moon_left := MOON_USES
+var moon_active := false         # 這一趟收線有沒有吃到月光加速
+
+var items: Array[Item] = []
+var _respawns: Array = []        # 排隊等著游進來的族群物件
+var _defs := {}                  # Kind -> 分數 / 收線速度 / 尺寸 / 顏色
+var _rng := RandomNumberGenerator.new()
+
+# 分數飄字
+var _pop_text := ""
+var _pop_col := Color.WHITE
+var _pop_timer := 0.0
+
+# 輸入邊緣偵測（沿用專案慣例：輪詢 Input，不用 _input 事件）
+var _prev_cast := false
+var _prev_moon := false
+
+
+func _ready() -> void:
+	_rng.randomize()
+	_build_defs()
+	_start_round()
+
+
+## 物件資料表（GDD 的「水下物件表」）
+## 收線速度就是 GDD 的「重量」欄位：輕→快、中→普通、重→慢、極重→極慢。
+func _build_defs() -> void:
+	_defs = {
+		Kind.JUNK_FISH:   {"score": 10,  "pull": 165.0, "size": Vector2(16, 16), "col": Palette.WALL,       "label": "FISH"},
+		Kind.SMALL_PEARL: {"score": 50,  "pull": 165.0, "size": Vector2(16, 16), "col": Palette.PEARL,      "label": "PEARL"},
+		# GDD 寫「大魚 16×32」，但橫向游動的魚應該是寬大於高，
+		# 這裡採 32×16。若美術真的要交 16 寬 32 高的直立魚，改這一行即可。
+		Kind.BIG_FISH:    {"score": 100, "pull": 58.0,  "size": Vector2(32, 16), "col": Palette.WALL_DARK,  "label": "BIG FISH"},
+		Kind.STARDUST:    {"score": 200, "pull": 105.0, "size": Vector2(16, 16), "col": Palette.PEARL,      "label": "STARDUST"},
+		Kind.CHARM:       {"score": 500, "pull": 105.0, "size": Vector2(16, 16), "col": Palette.GOLD,       "label": "CHARM"},
+		Kind.ROCK:        {"score": 0,   "pull": 34.0,  "size": Vector2(16, 16), "col": Palette.FAR,        "label": "ROCK"},
+		Kind.SHADOW_FISH: {"score": 0,   "pull": 105.0, "size": Vector2(16, 16), "col": Palette.CAT,        "label": "-3 SEC"},
+	}
+
+
+func _score_of(k: int) -> int:
+	return int(_defs[k]["score"])
+
+
+func _is_treasure(k: int) -> bool:
+	# 月光能量要判斷「寶物還是廢物」：有分數的是寶物，石頭與暗影猫魚是廢物
+	return _score_of(k) > 0
+
+
+# ── 局面控制 ────────────────────────────────────────────
+
+func _start_round() -> void:
+	score = 0
+	time_left = ROUND_TIME
+	moon_left = MOON_USES
+	swing_t = 0.0
+	_pop_timer = 0.0
+	_reset_hook()
+	_populate()
+	state = State.READY
+	state_timer = READY_TIME
+
+
+func _reset_hook() -> void:
+	hook_state = Hook.SWING
+	line_len = LINE_MIN
+	carried = null
+	moon_active = false
+
+
+## 依 GDD 的「配置」欄鋪放水下物件。
+##
+## 星塵珍珠與 Charm 是 GDD 明寫「每局固定 N 顆」的有限寶物，撈完就沒了；
+## 雜魚／小珍珠／大魚／石頭／暗影猫魚屬於「族群」，撈走後會有新的游進來
+## （見 _schedule_respawn）。這是為了讓 60 秒的計分上限取決於玩家手速，
+## 而不是取決於盤面總值 —— 詳見下方 RESPAWN_KINDS 的註解。
+func _populate() -> void:
+	items.clear()
+	_respawns.clear()
+	_spawn_many(Kind.JUNK_FISH, 8, SHALLOW)                      # 淺層，數量最多
+	_spawn_many(Kind.SMALL_PEARL, 5, SHALLOW)                    # 淺層
+	_spawn_many(Kind.BIG_FISH, 4, Vector2(MID.x, DEEP.y))        # 中／深層，會游動
+	_spawn_many(Kind.STARDUST, _rng.randi_range(4, 5), MID)      # 中層，固定 4~5 顆
+	_spawn_many(Kind.CHARM, _rng.randi_range(2, 3), DEEP)        # 深層，固定 2~3 顆
+	_spawn_many(Kind.ROCK, 6, Vector2(MID.x, DEEP.y))            # 中／深層干擾物
+	_spawn_many(Kind.SHADOW_FISH, 2, MID)                        # 中層，會主動靠近鉤子
+
+
+func _spawn_many(kind: int, count: int, band: Vector2) -> void:
+	for i in count:
+		_spawn_one(kind, band)
+
+
+## 放一隻到 band 這個水層裡。找不到合法位置就放棄，寧可少一隻也不要疊在一起
+## 或是生出一隻永遠撈不到的。
+func _spawn_one(kind: int, band: Vector2) -> void:
+	var size: Vector2 = _defs[kind]["size"]
+	var it := Item.new()
+	it.kind = kind
+	it.size = size
+	it.phase = _rng.randf() * TAU
+	if kind == Kind.BIG_FISH:
+		it.vx = 20.0 * (1.0 if _rng.randf() < 0.5 else -1.0)
+	elif kind == Kind.SHADOW_FISH:
+		it.vx = 12.0 * (1.0 if _rng.randf() < 0.5 else -1.0)
+
+	# 兩段式：先要求物件之間留 4px 空隙，真的擠不下就退讓成「不重疊即可」。
+	# 不這樣做的話，族群補充在滿場時會靜靜地失敗，魚群會隨著時間越來越稀。
+	for margin in [4.0, 0.0]:
+		for _try in 40:
+			it.pos = Vector2(
+				_rng.randf_range(WATER_L + size.x, WATER_R - size.x),
+				_rng.randf_range(band.x, band.y))
+			if _reachable(it) and not _overlaps(it, margin):
+				items.append(it)
+				return
+
+
+## 這個位置鉤得到嗎？
+## 兩件事會讓物件變成永遠撈不到的死內容：
+##   1. 超出 ±75° 的擺動範圍 —— 淺層最外側的兩端就在錐形外面
+##   2. 直線距離超過最大線長 —— 深層最外側會超過 205px
+## 兩者都留一點餘裕，免得卡在剛好邊緣。
+func _reachable(it: Item) -> bool:
+	var d := it.pos - PIVOT
+	if d.y <= 0.0:
+		return false
+	if absf(atan2(d.x, d.y)) > deg_to_rad(MAX_ANGLE_DEG - 4.0):
+		return false
+	return d.length() <= LINE_MAX - 10.0
+
+
+func _overlaps(candidate: Item, margin: float) -> bool:
+	var r := candidate.rect().grow(margin)
+	for other in items:
+		if r.intersects(other.rect()):
+			return true
+	return false
+
+
+## 族群類的物件被撈走後，隔一段時間會有新的游進來。
+func _schedule_respawn(kind: int) -> void:
+	if not RESPAWN_KINDS.has(kind):
+		return
+	_respawns.append({"kind": kind, "timer": RESPAWN_DELAY, "band": RESPAWN_KINDS[kind]})
+
+
+func _tick_respawns(delta: float) -> void:
+	var i := _respawns.size() - 1
+	while i >= 0:
+		var r: Dictionary = _respawns[i]
+		r["timer"] -= delta
+		if r["timer"] <= 0.0:
+			_spawn_one(int(r["kind"]), r["band"] as Vector2)
+			_respawns.remove_at(i)
+		i -= 1
+
+
+func _process(delta: float) -> void:
+	match state:
+		State.READY:
+			state_timer -= delta
+			if state_timer <= 0.0:
+				state = State.PLAYING
+		State.PLAYING:
+			_tick_play(delta)
+		State.RESULT:
+			if Input.is_action_just_pressed("ui_accept"):
+				_start_round()
+	if _pop_timer > 0.0:
+		_pop_timer -= delta
+	queue_redraw()
+
+
+func _tick_play(delta: float) -> void:
+	time_left -= delta
+	if time_left <= 0.0:
+		time_left = 0.0
+		state = State.RESULT
+		return
+
+	_read_input()
+	_move_items(delta)
+	_tick_respawns(delta)
+
+	match hook_state:
+		Hook.SWING:
+			_swing(delta)
+		Hook.EXTEND:
+			_extend(delta)
+		Hook.RETRACT:
+			_retract(delta)
+
+
+func _read_input() -> void:
+	# 放線：A / 空白 / 方向鍵下（GDD 指定 A，方向鍵下為備用）
+	var cast_now := (Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_SPACE)
+		or Input.is_key_pressed(KEY_DOWN) or Input.is_key_pressed(KEY_ENTER))
+	if cast_now and not _prev_cast and hook_state == Hook.SWING:
+		hook_state = Hook.EXTEND      # 放出去就不能取消，這是決策的代價
+	_prev_cast = cast_now
+
+	# 月光能量：B（X 也接受）。GDD 指定只在收線途中可用。
+	var moon_now := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)
+	if moon_now and not _prev_moon:
+		_use_moon()
+	_prev_moon = moon_now
+
+
+func _use_moon() -> void:
+	# 空鉤時按了不扣次數，避免手殘浪費
+	if hook_state != Hook.RETRACT or carried == null or moon_left <= 0:
+		return
+	moon_left -= 1
+	if _is_treasure(carried.kind):
+		moon_active = true            # 寶物：收線 ×3
+		_pop("MOONLIGHT x3", Palette.MOON)
+	else:
+		carried = null                # 廢物：直接丟掉，空鉤快速收回止損
+		moon_active = false
+		_pop("DROPPED", Palette.MOON)
+
+
+func _swing(delta: float) -> void:
+	var rate := RUSH_SWING if time_left <= RUSH_TIME else 1.0
+	swing_t += delta * rate
+	angle = deg_to_rad(MAX_ANGLE_DEG) * sin(TAU * swing_t / SWING_PERIOD)
+	line_len = LINE_MIN
+
+
+func _hook_dir() -> Vector2:
+	# angle = 0 指向正下方，正值往右
+	return Vector2(sin(angle), cos(angle))
+
+
+func _hook_pos() -> Vector2:
+	return PIVOT + _hook_dir() * line_len
+
+
+func _extend(delta: float) -> void:
+	line_len += EXTEND_SPEED * delta
+	var tip := _hook_pos()
+
+	# 碰到任何物件即自動回收
+	for it in items:
+		if it.rect().has_point(tip):
+			carried = it
+			items.erase(it)
+			_schedule_respawn(it.kind)   # 族群類的，讓新的一隻在收線期間游進來
+			hook_state = Hook.RETRACT
+			return
+
+	# 到最大長度或碰到水域邊界就空手收回
+	if (line_len >= LINE_MAX or tip.x <= WATER_L or tip.x >= WATER_R
+			or tip.y >= WATER_B):
+		hook_state = Hook.RETRACT
+
+
+func _retract(delta: float) -> void:
+	var speed := RETRACT_EMPTY
+	if carried != null:
+		speed = float(_defs[carried.kind]["pull"])
+		if moon_active:
+			speed *= MOON_BOOST
+
+	line_len -= speed * delta
+	if line_len > LINE_MIN:
+		if carried != null:
+			carried.pos = _hook_pos()     # 獵物跟著鉤子走
+		return
+
+	# 收回船上，這時才結算
+	line_len = LINE_MIN
+	if carried != null:
+		_land(carried)
+	_reset_hook()
+
+
+## 獵物上船：加分或扣時間
+func _land(it: Item) -> void:
+	if it.kind == Kind.SHADOW_FISH:
+		time_left = maxf(0.0, time_left - 3.0)
+		_pop("-3 SEC", Palette.WARN)
+	else:
+		var gained := _score_of(it.kind)
+		score += gained
+		if gained > 0:
+			var col: Color = Palette.GOLD if it.kind == Kind.CHARM else Palette.TEXT
+			_pop("+%d" % gained, col)
+		else:
+			_pop("+0", Palette.TEXT_DIM)
+
+
+func _pop(text: String, col: Color) -> void:
+	_pop_text = text
+	_pop_col = col
+	_pop_timer = 0.9
+
+
+func _move_items(delta: float) -> void:
+	var tip := _hook_pos()
+	var line_out := hook_state != Hook.SWING
+	for it in items:
+		it.phase += delta
+		if it.vx == 0.0:
+			continue
+
+		if it.kind == Kind.SHADOW_FISH and line_out:
+			# 全場唯一會主動靠近鉤子的目標：線放出來時往鉤頭靠
+			var toward := signf(tip.x - it.pos.x)
+			it.pos.x += toward * 26.0 * delta
+			it.pos.y += signf(tip.y - it.pos.y) * 10.0 * delta
+		else:
+			it.pos.x += it.vx * delta
+
+		# 碰到水域左右邊界就掉頭
+		var half := it.size.x * 0.5
+		if it.pos.x < WATER_L + half:
+			it.pos.x = WATER_L + half
+			it.vx = absf(it.vx)
+		elif it.pos.x > WATER_R - half:
+			it.pos.x = WATER_R - half
+			it.vx = -absf(it.vx)
+		it.pos.y = clampf(it.pos.y, SURFACE_Y + 14.0, WATER_B - 6.0)
+
+
+func chest_tier() -> String:
+	if score >= CHEST_GOLD:
+		return "GOLD CHEST"
+	elif score >= CHEST_SILVER:
+		return "SILVER CHEST"
+	elif score >= CHEST_BRONZE:
+		return "BRONZE CHEST"
+	return "NO CHEST"
+
+
+# ── 繪製 ────────────────────────────────────────────────
+
+func _draw() -> void:
+	_draw_sky()
+	_draw_water()
+	for it in items:
+		_draw_item(it)
+	_draw_line_and_hook()
+	_draw_boat()
+	_draw_hud()
+
+	if state == State.READY:
+		_center("READY!", 150, 24, Palette.GOLD)
+	elif state == State.RESULT:
+		_draw_result()
+
+
+func _draw_sky() -> void:
+	draw_rect(Rect2(0, 0, SCREEN.x, SURFACE_Y), Palette.BG)
+	# 彎月
+	draw_circle(Vector2(402, 30), 13.0, Palette.MOON)
+	draw_circle(Vector2(396, 26), 12.0, Palette.BG)
+	# 星點（用相位固定的偽隨機，不要每幀跳動）
+	for i in 26:
+		var x := fmod(float(i) * 79.0, 470.0) + 5.0
+		var y := fmod(float(i) * 37.0, 74.0) + 6.0
+		draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
+	# 遠山剪影
+	for i in 7:
+		var bx := float(i) * 72.0 - 10.0
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(bx, SURFACE_Y), Vector2(bx + 38, SURFACE_Y - 26),
+			Vector2(bx + 76, SURFACE_Y)]), Palette.FAR)
+
+
+func _draw_water() -> void:
+	draw_rect(Rect2(0, SURFACE_Y, SCREEN.x, SCREEN.y - SURFACE_Y), Palette.NIGHT)
+	draw_line(Vector2(0, SURFACE_Y), Vector2(SCREEN.x, SURFACE_Y), Palette.WALL_DARK, 1.0)
+	# 三條水層分隔線，讓深度一眼可讀
+	for y: float in [SHALLOW.y + 4.0, MID.y + 4.0]:
+		draw_line(Vector2(0, y), Vector2(SCREEN.x, y), Palette.FAR, 1.0)
+
+
+func _draw_item(it: Item) -> void:
+	var col: Color = _defs[it.kind]["col"]
+	var r := it.rect()
+	match it.kind:
+		Kind.SMALL_PEARL:
+			draw_circle(it.pos, 3.0, col)
+		Kind.STARDUST:
+			draw_circle(it.pos, 4.5, col)
+			draw_circle(it.pos + Vector2(-1.5, -1.5), 1.5, Palette.TEXT)
+		Kind.CHARM:
+			# 全水下唯一帶金色呼吸光暈的物件
+			var halo := 6.5 + sin(it.phase * 2.4) * 1.8
+			draw_circle(it.pos, halo, Color(Palette.GOLD, 0.28))
+			draw_circle(it.pos, 4.0, col)
+		Kind.ROCK:
+			draw_rect(r, col)
+			draw_rect(r, Palette.NEAR, false, 1.0)
+		Kind.SHADOW_FISH:
+			draw_rect(r, col)
+			draw_rect(r, Palette.CAT_DARK, false, 1.0)
+			# 保留暗影猫那雙黃眼睛，跟 Seeker 的反派同族
+			var look := signf(it.vx) if it.vx != 0.0 else 1.0
+			draw_circle(it.pos + Vector2(look * 3.0, -2.0), 1.5, Palette.CAT_EYE)
+		Kind.BIG_FISH:
+			draw_rect(r, col)
+			var tail := signf(it.vx) if it.vx != 0.0 else 1.0
+			draw_colored_polygon(PackedVector2Array([
+				it.pos + Vector2(-tail * 16.0, 0),
+				it.pos + Vector2(-tail * 23.0, -6.0),
+				it.pos + Vector2(-tail * 23.0, 6.0)]), col)
+			draw_circle(it.pos + Vector2(tail * 10.0, -3.0), 1.5, Palette.TEXT)
+		_:
+			draw_rect(r, col)
+			var t := signf(it.vx) if it.vx != 0.0 else 1.0
+			draw_circle(it.pos + Vector2(t * 4.0, -2.0), 1.0, Palette.TEXT)
+
+
+func _draw_line_and_hook() -> void:
+	var tip := _hook_pos()
+	# 星光釣線：亮青白 1px
+	draw_line(PIVOT, tip, Palette.MOON, 1.0)
+	# 鉤頭是小星星
+	draw_circle(tip, 2.5, Palette.TEXT)
+	draw_rect(Rect2(tip.x - 3.5, tip.y - 0.5, 7, 1), Palette.MOON)
+	draw_rect(Rect2(tip.x - 0.5, tip.y - 3.5, 1, 7), Palette.MOON)
+	# 掛在鉤上的獵物
+	if carried != null:
+		carried.pos = tip + Vector2(0, 6)
+		_draw_item(carried)
+
+
+func _draw_boat() -> void:
+	# 船身
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(212, SURFACE_Y - 10), Vector2(268, SURFACE_Y - 10),
+		Vector2(260, SURFACE_Y), Vector2(220, SURFACE_Y)]), Palette.NEAR)
+	draw_line(Vector2(212, SURFACE_Y - 10), Vector2(268, SURFACE_Y - 10),
+		Palette.WALL_DARK, 1.0)
+	# 露娜（坐姿 placeholder）＋帽上的心形徽章
+	draw_rect(Rect2(233, SURFACE_Y - 26, 14, 16), Palette.LUNA, false, 1.0)
+	draw_rect(Rect2(230, SURFACE_Y - 32, 20, 6), Palette.LUNA)
+	draw_rect(Rect2(239, SURFACE_Y - 31, 2, 2), Palette.LUNA_LIGHT)
+
+
+func _draw_hud() -> void:
+	var font := ThemeDB.fallback_font
+	var secs := int(ceil(time_left))
+	var time_col: Color = Palette.WARN if secs <= 10 else Palette.TEXT
+	draw_string(font, Vector2(12, 18), "TIME %d:%02d" % [secs / 60, secs % 60],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, time_col)
+	draw_string(font, Vector2(0, 18), "SCORE %06d" % score,
+		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 12, Palette.TEXT)
+	# 鉤子深度（水面下幾 px）
+	var depth := int(maxf(0.0, _hook_pos().y - SURFACE_Y))
+	draw_string(font, Vector2(0, 18), "DEPTH %03d" % depth,
+		HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, 12, Palette.TEXT_DIM)
+
+	# 月光能量剩餘次數：右下三顆月亮
+	for i in MOON_USES:
+		var c := Vector2(432 + i * 14, 254)
+		if i < moon_left:
+			draw_circle(c, 5.0, Palette.MOON)
+			draw_circle(c + Vector2(-2, -1), 4.0, Palette.NIGHT)
+		else:
+			draw_circle(c, 5.0, Palette.FAR)
+
+	if _pop_timer > 0.0:
+		# 飄字：越接近消失越往上飄
+		var rise := (0.9 - _pop_timer) * 18.0
+		_center(_pop_text, 150 - rise, 16, _pop_col)
+
+
+func _draw_result() -> void:
+	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(Palette.NIGHT, 0.82))
+	_center("TIME UP", 96, 22, Palette.GOLD)
+	_center("SCORE  %06d" % score, 134, 18, Palette.TEXT)
+	_center(chest_tier(), 162, 14, Palette.MOON)
+	_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
+	_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
+
+
+func _center(text: String, y: float, size: int, col: Color) -> void:
+	draw_string(ThemeDB.fallback_font, Vector2(0, y), text,
+		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, size, col)

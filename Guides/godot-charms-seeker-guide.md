@@ -1,5 +1,10 @@
 # Godot + Vibe Coding 上手指南 — 從 Charms Seeker 開始
 
+> **注意：這是 Milestone 1 當時的建置紀錄，保留下來是為了「怎麼開始」那一段的思路。**
+> 檔案位置已經在後來的重組中改過了 —— 文中的 `res://scripts/*.gd` 與 `Main.tscn`
+> 現在分別是 `res://games/seeker/*.gd` 與 `Launcher.tscn`。
+> **目前的目錄結構與硬規則一律以 `CLAUDE.md` 為準。**
+
 ---
 
 ## 0. 先回答：推薦嗎？

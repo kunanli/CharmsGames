@@ -38,10 +38,12 @@ const ITEM_MOON := 2
 
 var walls: Dictionary = {}   # Vector2i -> true
 var items: Dictionary = {}   # Vector2i -> ITEM_BEAN / ITEM_MOON
+var open_cells: Array[Vector2i] = []   # 所有走道格，建好就不再變動
 
 
 func _init() -> void:
 	_build_walls()
+	_collect_open_cells()
 	reset_items()
 
 
@@ -61,14 +63,21 @@ func _build_walls() -> void:
 				walls[Vector2i(x, y)] = true
 
 
-## 重新鋪滿珍珠與月光能量（清空全場後會再呼叫一次）
-func reset_items() -> void:
-	items.clear()
+## 把所有走道格收成一個陣列，鋪珍珠與遊蕩貓抽目標都靠它
+func _collect_open_cells() -> void:
+	open_cells.clear()
 	for x in range(1, COLS - 1):
 		for y in range(1, ROWS - 1):
 			var c := Vector2i(x, y)
 			if not walls.has(c):
-				items[c] = ITEM_BEAN
+				open_cells.append(c)
+
+
+## 重新鋪滿珍珠與月光能量（清空全場後會再呼叫一次）
+func reset_items() -> void:
+	items.clear()
+	for c in open_cells:
+		items[c] = ITEM_BEAN
 	for c in MOON_CELLS:
 		if not walls.has(c):
 			items[c] = ITEM_MOON
@@ -86,6 +95,13 @@ func is_open(c: Vector2i) -> bool:
 ## 格子座標 → 該格中心的像素座標
 func cell_center(c: Vector2i) -> Vector2:
 	return Vector2(ORIGIN) + Vector2(c) * TILE + Vector2(TILE, TILE) * 0.5
+
+
+## 隨機挑一格走道（遊蕩貓用來抽下一個目標）
+func random_open_cell(rng: RandomNumberGenerator) -> Vector2i:
+	if open_cells.is_empty():
+		return PLAYER_START
+	return open_cells[rng.randi_range(0, open_cells.size() - 1)]
 
 
 func bean_count() -> int:
