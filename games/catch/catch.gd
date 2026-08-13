@@ -6,9 +6,9 @@ extends Node2D
 # 三款中最直覺的一款：只有左右兩個方向。張力全靠 Combo 倍率與
 # 每 15 秒一跳的落速撐出來。
 #
-# GDD 的數字跟舊版 CLAUDE.md 有出入，這裡一律以 GDD 為準：
-#   基礎速度 60 px/s（不是 92），A 鍵衝刺 ×1.8 且鬆開後有 0.5 秒冷卻，
-#   6 條軌道每軌 80px，同軌連續生成間隔不得低於 0.6 秒。
+# 數值以 GDD 為準，只有移動速度是企劃試玩後刻意調快的（見下方常數註解）。
+# A 鍵衝刺 ×1.8 且鬆開後有 0.5 秒冷卻，6 條軌道每軌 80px，
+# 同軌連續生成間隔不得低於 0.6 秒。
 #
 # 座標一律用 Vector2（像素）。
 # ─────────────────────────────────────────────────────────
@@ -181,7 +181,9 @@ func _process(delta: float) -> void:
 
 
 func _run_state(delta: float) -> void:
-	_juice.look(Vector2.ZERO)     # PLAYING 會覆寫；其他狀態鏡頭回正
+	# **Catch 不做自動鏡頭跟隨。** 實機試玩的結論：玩家要盯著掉落物的軌跡，
+	# 畫面跟著露娜滑會讓人暈。撞擊震動保留。理由詳見 seeker.gd 同一段註解。
+	_juice.look(Vector2.ZERO)
 	match state:
 		State.READY:
 			state_timer -= delta
@@ -252,9 +254,6 @@ func _move_luna(delta: float) -> void:
 	else:
 		_at_wall = false
 	luna_x = clamped
-	# 鏡頭往實際移動方向偏一點（用速度而不是按鍵，滑行時鏡頭才跟得順）。
-	# 只做水平 —— 垂直會讓露娜跟地面線脫開。
-	_juice.look(Vector2(luna_vx / maxf(top, 1.0), 0.0))
 
 	# 主動引爆護盾：清掉畫面上所有炸彈但不加分
 	var burst := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)

@@ -170,8 +170,11 @@ func _process(delta: float) -> void:
 
 
 func _run_state(delta: float) -> void:
-	# 預設把鏡頭帶回中心；PLAYING 分支會在下面覆寫成玩家的朝向。
-	# 頓格期間 _run_state 整個不跑，所以鏡頭會保持傾斜穿過凍結 —— 那是刻意的。
+	# **Seeker 不做自動鏡頭跟隨。** 實機試玩的結論：迷宮裡玩家要靠牆的位置
+	# 定位，畫面自己在飄會讓人暈 —— 眼睛沒有可以錨定的東西。
+	# 對照組是 Fishing：那裡的鏡頭是玩家按方向鍵「主動探看」，就很舒服。
+	# 規則：**玩家主動觸發的鏡頭移動可以，自動跟隨的不行。** 不要再加回來。
+	# 撞擊震動保留 —— 那是離散事件，不是持續位移，不會暈。
 	_juice.look(Vector2.ZERO)
 	match state:
 		State.READY:
@@ -181,11 +184,6 @@ func _run_state(delta: float) -> void:
 		State.PLAYING:
 			_read_skill()
 			_tick_petrify(delta)
-			# 鏡頭往露娜前進方向偏一點；頂著牆時改成往牆的方向壓
-			if player.blocked:
-				_juice.look(Vector2(player.want) * 0.4)
-			else:
-				_juice.look(Vector2(player.dir))
 			# 每幀把露娜的位置與朝向交給每一隻貓，各自算自己的目標格
 			for cat in cats:
 				cat.update_target(player.cell, player.dir, delta)
