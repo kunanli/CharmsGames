@@ -30,6 +30,12 @@ const PETRIFY_WARN := 2.0     # 剩幾秒開始閃爍提示
 # 同一次石化內連續擊碎的分數，超過四隻就維持 400
 const SCORE_BREAK: Array[int] = [50, 100, 200, 400]
 
+# 迷宮後面那層淡星點。純粹是為了讓視差有東西可以咬 —— 迷宮的底是一塊純色。
+# **星點用 FAR 而不是 PEARL**：Fishing/Catch 的星星用 PEARL，但在 Seeker 裡
+# PEARL 就是可收集的星塵珍珠本身，用它畫星星等於在場上灑假目標，
+# 也違反美術規格書「只有三樣東西該發光」。美術有意見的話這行改 false 就關掉。
+const SHOW_STARS := true
+
 const SCORE_BEAN := 10
 const SCORE_MOON := 30
 const SCORE_CLEAR := 500      # 清空全場珍珠的獎勵
@@ -58,13 +64,25 @@ var petrify_left := 0.0       # 石化還剩幾秒，0 表示沒在石化
 var break_chain := 0          # 這一次石化內已經擊碎幾隻
 var _prev_skill := false      # A 鍵的邊緣偵測
 
+# Game feel（見 shared/juice.gd）。
+# 露娜與貓是子節點，draw_set_transform() 管不到它們，所以需要一個真的容器
+# 節點來承載位移 —— 而且**不能**把位移寫進它們的 position，那是移動邏輯
+# 與 9px 碰撞判定在用的值。
+var _world: Node2D
+var _juice := Juice.new(Juice.ARCADE)
+
 
 func _ready() -> void:
 	maze = Maze.new()
 
+	_world = Node2D.new()
+	_world.name = "World"
+	add_child(_world)
+
 	player = Player.new()
-	add_child(player)
+	_world.add_child(player)
 	player.ate.connect(_on_player_ate)
+	player.bumped.connect(_on_player_bumped)
 
 	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來
 	_spawn_cat(Cat.Kind.CHASER, Vector2i(13, 6), 0.0)
@@ -78,7 +96,7 @@ func _ready() -> void:
 func _spawn_cat(kind: Cat.Kind, home: Vector2i, delay: float) -> Cat:
 	var cat := Cat.new()
 	cat.configure(kind, home, delay)
-	add_child(cat)
+	_world.add_child(cat)
 	cats.append(cat)
 	return cat
 
@@ -94,6 +112,7 @@ func _start_round() -> void:
 	time_left = ROUND_TIME
 	game_over = false
 	moon_stock = 0
+	_juice.reset()
 	_enter_ready()
 
 
@@ -136,6 +155,24 @@ func _enter_result(is_game_over: bool = false) -> void:
 
 
 func _process(delta: float) -> void:
+	# 命中頓格：用容器的 process_mode 一次凍住露娜與所有貓。
+	# 不要動它們各自的 set_process() —— 那是 READY/DYING/RESULT 狀態機在用的。
+	var run := _juice.tick(delta)
+	var mode := Node.PROCESS_MODE_INHERIT if run else Node.PROCESS_MODE_DISABLED
+	if _world.process_mode != mode:
+		_world.process_mode = mode
+	if run:
+		_run_state(delta)
+
+	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
+	_world.position = _juice.world_offset()
+	queue_redraw()
+
+
+func _run_state(delta: float) -> void:
+	# 預設把鏡頭帶回中心；PLAYING 分支會在下面覆寫成玩家的朝向。
+	# 頓格期間 _run_state 整個不跑，所以鏡頭會保持傾斜穿過凍結 —— 那是刻意的。
+	_juice.look(Vector2.ZERO)
 	match state:
 		State.READY:
 			state_timer -= delta
@@ -144,6 +181,11 @@ func _process(delta: float) -> void:
 		State.PLAYING:
 			_read_skill()
 			_tick_petrify(delta)
+			# 鏡頭往露娜前進方向偏一點；頂著牆時改成往牆的方向壓
+			if player.blocked:
+				_juice.look(Vector2(player.want) * 0.4)
+			else:
+				_juice.look(Vector2(player.dir))
 			# 每幀把露娜的位置與朝向交給每一隻貓，各自算自己的目標格
 			for cat in cats:
 				cat.update_target(player.cell, player.dir, delta)
@@ -166,8 +208,6 @@ func _process(delta: float) -> void:
 			if Input.is_action_just_pressed("ui_accept"):
 				_start_round()
 
-	queue_redraw()
-
 
 # ── 月光能量與石化（M4）─────────────────────────────────
 
@@ -186,6 +226,8 @@ func _activate_moon() -> void:
 	moon_stock -= 1
 	petrify_left = PETRIFY_TIME
 	break_chain = 0
+	_juice.kick(0.55)
+	_juice.freeze(0.12)
 	for cat in cats:
 		cat.petrify()
 
@@ -228,11 +270,22 @@ func _break_cat(cat: Cat) -> void:
 	var tier := mini(break_chain, SCORE_BREAK.size() - 1)
 	score += SCORE_BREAK[tier]
 	break_chain += 1
+	_juice.kick(0.40 + 0.10 * mini(break_chain, 4))
+	_juice.freeze(0.06)
 	cat.shatter()
+
+
+## 撞牆。方向性震動 —— 沿撞擊方向抖，玩家才讀得出是撞到哪一邊。
+## 不加頓格：頓格會連貓一起停，理論上可以靠撞牆拖慢追兵。
+func _on_player_bumped(d: Vector2i) -> void:
+	if state == State.PLAYING:
+		_juice.kick(0.34, Vector2(d))
 
 
 func _lose_life() -> void:
 	lives -= 1
+	# 不加 freeze —— _enter_dying() 本來就把全世界凍 1.2 秒
+	_juice.kick(0.90)
 	_enter_dying()
 
 
@@ -245,6 +298,7 @@ func _on_player_ate(_cell: Vector2i, kind: int) -> void:
 			score += SCORE_MOON
 			# 撿到不會直接發動，存進 HUD 等玩家按 A（GDD 的 Xbox 協議）
 			moon_stock = mini(moon_stock + 1, MOON_STOCK_MAX)
+			_juice.kick(0.30)
 	if beans_eaten >= beans_total:
 		_refill()
 
@@ -256,6 +310,8 @@ func _refill() -> void:
 	beans_total = maze.bean_count()
 	beans_eaten = 0
 	score += SCORE_CLEAR
+	_juice.kick(0.65)
+	_juice.freeze(0.12)
 
 
 func chest_tier() -> String:
@@ -271,8 +327,14 @@ func chest_tier() -> String:
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
-	draw_rect(Rect2(0, 0, 480, 270), Palette.BG)
+	# 三層，每層一個位移（見 shared/juice.gd 的分層模型）
+	draw_set_transform(_juice.bg_offset())
+	_draw_backdrop()
+	draw_set_transform(_juice.world_offset())
+	# 牆與珍珠畫在這裡，露娜與貓則由 _world 容器位移；
+	# 兩者讀的是同一個 world_offset()，所以不會脫格。
 	_draw_maze()
+	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
 	_draw_petrify_edge()
 
@@ -282,6 +344,19 @@ func _draw() -> void:
 		_draw_center_text("CAUGHT!", 130, 22, Palette.WARN)
 	elif state == State.RESULT:
 		_draw_result()
+
+
+## 視差層。迷宮本身只是一塊純色底，沒有東西可以做視差，所以補一層淡星點。
+func _draw_backdrop() -> void:
+	var m := Juice.OVERDRAW
+	draw_rect(Rect2(-m, -m, 480.0 + m * 2.0, 270.0 + m * 2.0), Palette.BG)
+	if not SHOW_STARS:
+		return
+	# 固定的偽隨機（跟 Fishing/Catch 同一套寫法），不要每幀跳動
+	for i in 22:
+		var x := fmod(float(i) * 97.0, 468.0) + 6.0
+		var y := fmod(float(i) * 53.0, 258.0) + 6.0
+		draw_rect(Rect2(x, y, 1, 1), Palette.FAR)
 
 
 func _draw_maze() -> void:

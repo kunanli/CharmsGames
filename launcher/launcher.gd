@@ -20,12 +20,12 @@ const GAMES := [
 		"script": "res://games/seeker/seeker.gd",
 	},
 	{
-		"title": "CHARM FISHING",
+		"title": "CHARMS FISHING",
 		"blurb": "HOOK THE CHARMS",
 		"script": "res://games/fishing/fishing.gd",
 	},
 	{
-		"title": "CHARM CATCH",
+		"title": "CHARMS CATCH",
 		"blurb": "CATCH AND DODGE",
 		"script": "res://games/catch/catch.gd",
 	},

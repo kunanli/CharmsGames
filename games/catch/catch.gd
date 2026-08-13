@@ -1,7 +1,7 @@
 extends Node2D
 
 # ─────────────────────────────────────────────────────────
-# Charm Catch —— 接珠寶躲炸彈（依 Guides/CharmsCatch.docx 實作）
+# CharmsCatch —— 接珠寶躲炸彈（依 Guides/CharmsCatch.docx 實作）
 #
 # 三款中最直覺的一款：只有左右兩個方向。張力全靠 Combo 倍率與
 # 每 15 秒一跳的落速撐出來。
@@ -21,9 +21,16 @@ const READY_TIME := 1.5
 const SCREEN := Vector2(480, 270)
 
 # ── 露娜 ────────────────────────────────────────────────
-const MOVE_SPEED := 60.0            # GDD：基礎 60 px/s
+# GDD 寫 60 px/s，但實際玩起來太鈍 —— 一趟落下的時間只夠橫move 1.4~2.9 軌，
+# 玩家常常眼睜睜看著珠寶掉在搆不到的地方。企劃試玩後決定調快並加上慣性。
+# 這是**刻意偏離 GDD** 的手感調整，不是筆誤。
+const MOVE_SPEED := 95.0            # 目標速度（GDD 原值 60）
 const DASH_MULT := 1.8              # 按住 A 衝刺 ×1.8
 const DASH_COOLDOWN := 0.5          # 鬆開後 0.5 秒冷卻
+# 慣性：加速比煞車快，所以起步跟手、放開會滑一小段（約 0.14 秒、7px）。
+# 不用物理節點，純數學 move_toward —— 跟專案其他地方的做法一致。
+const ACCEL := 900.0                # px/s²，按住方向鍵時逼近目標速度
+const FRICTION := 700.0             # px/s²，放開後減速
 const LUNA_Y := 236.0               # 站立的地面線
 const BASKET := Vector2(36, 8)      # 提籃頂面判定框 36×8
 const BASKET_DY := -14.0            # 判定框相對露娜中心的高度
@@ -90,6 +97,7 @@ var combo := 0                      # 連續接到有價物的次數
 var multiplier := 1
 
 var luna_x := 240.0
+var luna_vx := 0.0                  # 目前的水平速度，慣性用
 var dash_cd := 0.0
 var was_dashing := false
 
@@ -128,6 +136,7 @@ func _start_round() -> void:
 	multiplier = 1
 	time_left = ROUND_TIME
 	luna_x = 240.0
+	luna_vx = 0.0
 	dash_cd = 0.0
 	shield_left = 0.0
 	moons_spawned = 0
@@ -172,6 +181,7 @@ func _process(delta: float) -> void:
 
 
 func _run_state(delta: float) -> void:
+	_juice.look(Vector2.ZERO)     # PLAYING 會覆寫；其他狀態鏡頭回正
 	match state:
 		State.READY:
 			state_timer -= delta
@@ -220,21 +230,31 @@ func _move_luna(delta: float) -> void:
 		dash_cd = DASH_COOLDOWN
 	was_dashing = dashing
 
-	var speed := MOVE_SPEED * (DASH_MULT if dashing else 1.0)
+	# 慣性：往目標速度加速，放開就用摩擦力減速
+	var top := MOVE_SPEED * (DASH_MULT if dashing else 1.0)
+	if dir != 0.0:
+		luna_vx = move_toward(luna_vx, dir * top, ACCEL * delta)
+	else:
+		luna_vx = move_toward(luna_vx, 0.0, FRICTION * delta)
+
 	# 走到畫面邊界：撞上去的那一幀給一記水平震動，貼著不放不會重複觸發。
-	# 衝刺撞牆比走路撞牆更兇 —— 撞得多用力，地圖就晃多大。
-	var want_x := luna_x + dir * speed * delta
+	# 力道跟著撞擊速度走 —— 用衝的撞上去比慢慢靠過去晃得兇，
+	# 這樣「撞得多用力」在畫面上是看得出來的。
+	var want_x := luna_x + luna_vx * delta
 	var clamped := clampf(want_x, 12.0, SCREEN.x - 12.0)
-	if dir != 0.0 and not is_equal_approx(want_x, clamped):
+	if not is_equal_approx(want_x, clamped) and absf(luna_vx) > 1.0:
 		if not _at_wall:
-			_juice.kick(0.55 if dashing else 0.34, Vector2.RIGHT)
-			_juice.freeze(0.05 if dashing else 0.03)
+			var impact := clampf(absf(luna_vx) / (MOVE_SPEED * DASH_MULT), 0.0, 1.0)
+			_juice.kick(lerpf(0.28, 0.60, impact), Vector2.RIGHT)
+			_juice.freeze(0.03 + impact * 0.03)
 		_at_wall = true
+		luna_vx = 0.0            # 撞牆就停住，不要沿著牆繼續累積速度
 	else:
 		_at_wall = false
 	luna_x = clamped
-	# 鏡頭往移動方向偏一點。只做水平 —— 垂直會讓露娜跟地面線脫開。
-	_juice.look(Vector2(dir, 0.0))
+	# 鏡頭往實際移動方向偏一點（用速度而不是按鍵，滑行時鏡頭才跟得順）。
+	# 只做水平 —— 垂直會讓露娜跟地面線脫開。
+	_juice.look(Vector2(luna_vx / maxf(top, 1.0), 0.0))
 
 	# 主動引爆護盾：清掉畫面上所有炸彈但不加分
 	var burst := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)

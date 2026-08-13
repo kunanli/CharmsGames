@@ -1,7 +1,7 @@
 extends Node2D
 
 # ─────────────────────────────────────────────────────────
-# Charm Fishing —— 黃金礦工式夜釣（依 Guides/CharmsFishing.docx 實作）
+# CharmsFishing —— 黃金礦工式夜釣（依 Guides/CharmsFishing.docx 實作）
 #
 # 玩家只做一個決定：什麼時候放線。鉤子自己擺，放出去就不能取消，
 # 收線速度由勾到的東西決定 —— 所有的取捨都壓在「時間」這一個資源上。
@@ -113,6 +113,10 @@ var _pop_timer := 0.0
 var _prev_cast := false
 var _prev_moon := false
 
+# Game feel（見 shared/juice.gd）
+var _juice := Juice.new(Juice.ARCADE)
+var _rushed := false                # 最後 15 秒的加速只提示一次
+
 
 func _ready() -> void:
 	_rng.randomize()
@@ -153,6 +157,8 @@ func _start_round() -> void:
 	moon_left = MOON_USES
 	swing_t = 0.0
 	_pop_timer = 0.0
+	_juice.reset()
+	_rushed = false
 	_reset_hook()
 	_populate()
 	state = State.READY
@@ -255,6 +261,17 @@ func _tick_respawns(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	# tick() 回 false 代表這一幀在命中頓格中，遊戲邏輯整個停住
+	var run := _juice.tick(delta)
+	if run:
+		_run_state(delta)
+	if _pop_timer > 0.0:
+		_pop_timer -= delta
+	queue_redraw()
+
+
+func _run_state(delta: float) -> void:
+	_juice.look(Vector2.ZERO)     # PLAYING 會覆寫；其他狀態鏡頭回正
 	match state:
 		State.READY:
 			state_timer -= delta
@@ -265,9 +282,6 @@ func _process(delta: float) -> void:
 		State.RESULT:
 			if Input.is_action_just_pressed("ui_accept"):
 				_start_round()
-	if _pop_timer > 0.0:
-		_pop_timer -= delta
-	queue_redraw()
 
 
 func _tick_play(delta: float) -> void:
@@ -276,6 +290,10 @@ func _tick_play(delta: float) -> void:
 		time_left = 0.0
 		state = State.RESULT
 		return
+
+	if not _rushed and time_left <= RUSH_TIME:
+		_rushed = true
+		_juice.kick(0.35)          # 擺速 +15% 的那一刻給個提示
 
 	_read_input()
 	_move_items(delta)
@@ -298,6 +316,15 @@ func _read_input() -> void:
 		hook_state = Hook.EXTEND      # 放出去就不能取消，這是決策的代價
 	_prev_cast = cast_now
 
+	# 左右探看湖面。只做水平 —— 垂直漂移會讓 y=96 的水面線上下滑，
+	# 在固定鏡頭的釣魚遊戲裡看起來像船在沉。
+	var pan := 0.0
+	if Input.is_action_pressed("ui_left"):
+		pan -= 1.0
+	if Input.is_action_pressed("ui_right"):
+		pan += 1.0
+	_juice.look(Vector2(pan, 0.0))
+
 	# 月光能量：B（X 也接受）。GDD 指定只在收線途中可用。
 	var moon_now := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)
 	if moon_now and not _prev_moon:
@@ -312,10 +339,13 @@ func _use_moon() -> void:
 	moon_left -= 1
 	if _is_treasure(carried.kind):
 		moon_active = true            # 寶物：收線 ×3
+		_juice.kick(0.40)
+		_juice.freeze(0.08)
 		_pop("MOONLIGHT x3", Palette.MOON)
 	else:
 		carried = null                # 廢物：直接丟掉，空鉤快速收回止損
 		moon_active = false
+		_juice.kick(0.30)
 		_pop("DROPPED", Palette.MOON)
 
 
@@ -343,8 +373,15 @@ func _extend(delta: float) -> void:
 	for it in items:
 		if it.rect().has_point(tip):
 			carried = it
+			carried.pos = tip + Vector2(0, 6)
 			items.erase(it)
 			_schedule_respawn(it.kind)   # 族群類的，讓新的一隻在收線期間游進來
+			# 力道與重量成反比（pull 就是 GDD 的重量欄）：還沒看清楚就先
+			# 感覺到鉤到什麼。石頭最重最慢最不值錢，撞得最兇。
+			var pull := float(_defs[it.kind]["pull"])
+			var hit := clampf(0.75 - pull / 320.0, 0.20, 0.75)
+			_juice.kick(hit, _hook_dir())
+			_juice.freeze(0.05 + hit * 0.10)
 			hook_state = Hook.RETRACT
 			return
 
@@ -364,13 +401,17 @@ func _retract(delta: float) -> void:
 	line_len -= speed * delta
 	if line_len > LINE_MIN:
 		if carried != null:
-			carried.pos = _hook_pos()     # 獵物跟著鉤子走
+			carried.pos = _hook_pos() + Vector2(0, 6)   # 獵物跟著鉤子走
 		return
 
 	# 收回船上，這時才結算
 	line_len = LINE_MIN
 	if carried != null:
 		_land(carried)
+	else:
+		# 空鉤的失落感。放在這裡而不是 _reset_hook() ——
+		# 後者也被 _start_round() 呼叫，會變成每局開場都震一下。
+		_juice.kick(0.20, Vector2.UP)
 	_reset_hook()
 
 
@@ -378,12 +419,20 @@ func _retract(delta: float) -> void:
 func _land(it: Item) -> void:
 	if it.kind == Kind.SHADOW_FISH:
 		time_left = maxf(0.0, time_left - 3.0)
+		_juice.kick(0.80)
+		_juice.freeze(0.12)
 		_pop("-3 SEC", Palette.WARN)
 	else:
 		var gained := _score_of(it.kind)
 		score += gained
 		if gained > 0:
 			var col: Color = Palette.GOLD if it.kind == Kind.CHARM else Palette.TEXT
+			if it.kind == Kind.CHARM:
+				_juice.kick(0.55)
+				_juice.freeze(0.10)
+			elif it.kind == Kind.STARDUST:
+				_juice.kick(0.35)
+				_juice.freeze(0.05)
 			_pop("+%d" % gained, col)
 		else:
 			_pop("+0", Palette.TEXT_DIM)
@@ -435,12 +484,16 @@ func chest_tier() -> String:
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
-	_draw_sky()
-	_draw_water()
+	# 三層，每層一個位移（見 shared/juice.gd 的分層模型）
+	draw_set_transform(_juice.bg_offset())
+	_draw_sky()                        # 天空／月亮／星星／遠山：視差層
+	draw_set_transform(_juice.world_offset())
+	_draw_water()                      # 水面線跟世界同步，船才不會浮起來
 	for it in items:
 		_draw_item(it)
 	_draw_line_and_hook()
 	_draw_boat()
+	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
 
 	if state == State.READY:
@@ -449,8 +502,11 @@ func _draw() -> void:
 		_draw_result()
 
 
+## 視差層。天空底色要往下延伸超過水面線 —— 水體是畫在 WORLD 層的，
+## 兩層分離時如果天空只畫到 y=96，水面線附近就會裂開一條沒人畫的縫。
 func _draw_sky() -> void:
-	draw_rect(Rect2(0, 0, SCREEN.x, SURFACE_Y), Palette.BG)
+	var m := Juice.OVERDRAW
+	draw_rect(Rect2(-m, -m, SCREEN.x + m * 2.0, SURFACE_Y + m * 2.0), Palette.BG)
 	# 彎月
 	draw_circle(Vector2(402, 30), 13.0, Palette.MOON)
 	draw_circle(Vector2(396, 26), 12.0, Palette.BG)
@@ -459,20 +515,24 @@ func _draw_sky() -> void:
 		var x := fmod(float(i) * 79.0, 470.0) + 5.0
 		var y := fmod(float(i) * 37.0, 74.0) + 6.0
 		draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
-	# 遠山剪影
-	for i in 7:
-		var bx := float(i) * 72.0 - 10.0
+	# 遠山剪影：多跑一輪並往左移，補上多畫出來的那一圈
+	for i in 8:
+		var bx := float(i) * 72.0 - 10.0 - Juice.OVERDRAW
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(bx, SURFACE_Y), Vector2(bx + 38, SURFACE_Y - 26),
 			Vector2(bx + 76, SURFACE_Y)]), Palette.FAR)
 
 
+## 水體屬於 WORLD 而不是背景 —— 船釘在水面線上，兩者必須共用同一個位移。
 func _draw_water() -> void:
-	draw_rect(Rect2(0, SURFACE_Y, SCREEN.x, SCREEN.y - SURFACE_Y), Palette.NIGHT)
-	draw_line(Vector2(0, SURFACE_Y), Vector2(SCREEN.x, SURFACE_Y), Palette.WALL_DARK, 1.0)
+	var m := Juice.OVERDRAW
+	draw_rect(Rect2(-m, SURFACE_Y, SCREEN.x + m * 2.0, SCREEN.y - SURFACE_Y + m),
+		Palette.NIGHT)
+	draw_line(Vector2(-m, SURFACE_Y), Vector2(SCREEN.x + m, SURFACE_Y),
+		Palette.WALL_DARK, 1.0)
 	# 三條水層分隔線，讓深度一眼可讀
 	for y: float in [SHALLOW.y + 4.0, MID.y + 4.0]:
-		draw_line(Vector2(0, y), Vector2(SCREEN.x, y), Palette.FAR, 1.0)
+		draw_line(Vector2(-m, y), Vector2(SCREEN.x + m, y), Palette.FAR, 1.0)
 
 
 func _draw_item(it: Item) -> void:
@@ -520,9 +580,10 @@ func _draw_line_and_hook() -> void:
 	draw_circle(tip, 2.5, Palette.TEXT)
 	draw_rect(Rect2(tip.x - 3.5, tip.y - 0.5, 7, 1), Palette.MOON)
 	draw_rect(Rect2(tip.x - 0.5, tip.y - 3.5, 1, 7), Palette.MOON)
-	# 掛在鉤上的獵物
+	# 掛在鉤上的獵物。位置在 _extend()/_retract() 更新，
+	# **不要在這裡改** —— _draw() 裡改遊戲狀態的話，鏡頭位移會被寫進
+	# carried.pos 再被 _retract() 讀回去，讓獵物的真實位置被污染。
 	if carried != null:
-		carried.pos = tip + Vector2(0, 6)
 		_draw_item(carried)
 
 
