@@ -28,13 +28,13 @@ const AMBUSH_LEAD := 4          # 預判貓瞄準露娜前方幾格
 const WANDER_RETARGET := 2.5    # 遊蕩貓多久重抽一次目標（秒）
 const WANDER_POUNCE := 6        # 遊蕩貓在幾格內會改成直追
 
-const COL_EYE := Color("FFE066")
 const HOLD_ALPHA := 0.45        # 還沒登場時的半透明程度
 
 var maze: Maze
 var kind: Kind = Kind.CHASER
 var speed := 60.0
-var body_col := Color("A878DC")
+var body_col := Palette.CAT
+var fill_col := Color(0, 0, 0, 0)   # 只有遊蕩貓有填色
 var home_cell := Vector2i.ZERO      # 出生格，每次重生都回到這裡
 var release_delay := 0.0            # 出生後等幾秒才動，用來錯開三隻貓的登場
 
@@ -48,21 +48,27 @@ var _wander_timer := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
-## 設定個性。顏色與速度都跟著個性走，讓玩家一眼認得出是哪一隻。
+## 設定個性。速度與外觀都跟著個性走，讓玩家一眼認得出是哪一隻。
+##
+## 顏色只能從色盤的三個暗影猫紫挑（美術規格書第三條，不准自己調中間色），
+## 所以三隻的辨識度主要靠亮度與剪影，不是靠色相。反正玩家真正用來定位
+## 威脅的是那雙黃眼睛 —— 那是全畫面唯一的暖色，三隻都有。
 func configure(k: Kind, home: Vector2i, delay: float) -> void:
 	kind = k
 	home_cell = home
 	release_delay = delay
+	fill_col = Color(0, 0, 0, 0)
 	match kind:
 		Kind.CHASER:
 			speed = 60.0
-			body_col = Color("A878DC")   # 紫：基準款，穩穩跟在屁股後面
+			body_col = Palette.CAT        # 身體主色：基準款，穩穩跟在屁股後面
 		Kind.AMBUSHER:
 			speed = 66.0
-			body_col = Color("FF9A6A")   # 橘：最快，負責抄前面
+			body_col = Palette.CAT_GLOW   # 最亮的紫：最快，負責抄前面
 		Kind.WANDERER:
 			speed = 54.0
-			body_col = Color("7ADCA0")   # 綠：最慢，亂晃，但會突然撲上來
+			body_col = Palette.CAT        # 最慢，靠填滿暗部色做出「潛伏」的重量感
+			fill_col = Palette.CAT_DARK
 
 
 func setup(m: Maze, start_cell: Vector2i) -> void:
@@ -165,10 +171,12 @@ func _cell_dist(a: Vector2i, b: Vector2i) -> int:
 
 
 func _draw() -> void:
-	# Placeholder：三個個性用不同顏色與外型，之後換成 Sprite2D + 像素素材
+	# Placeholder：三個個性用不同亮度與剪影，之後換成 Sprite2D + 像素素材
+	if fill_col.a > 0.0:
+		draw_rect(Rect2(-7, -7, 14, 14), fill_col)
 	draw_rect(Rect2(-7, -7, 14, 14), body_col, false, 1.0)
-	draw_circle(Vector2(-3, -2), 1.5, COL_EYE)
-	draw_circle(Vector2(3, -2), 1.5, COL_EYE)
+	draw_circle(Vector2(-3, -2), 1.5, Palette.CAT_EYE)
+	draw_circle(Vector2(3, -2), 1.5, Palette.CAT_EYE)
 	match kind:
 		Kind.AMBUSHER:
 			# 額前一對尖角，暗示牠會抄你前面

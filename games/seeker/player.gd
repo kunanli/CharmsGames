@@ -88,5 +88,7 @@ func _arrive_at_cell() -> void:
 
 func _draw() -> void:
 	# Placeholder：之後換成 Sprite2D + 像素素材
-	draw_rect(Rect2(-8, -20, 16, 28), Color("EEB4D2"), false, 1.0)
-	draw_rect(Rect2(-5, -17, 10, 8), Color("EEB4D2"))   # 帽子
+	draw_rect(Rect2(-8, -20, 16, 28), Palette.LUNA, false, 1.0)
+	draw_rect(Rect2(-5, -17, 10, 8), Palette.LUNA)      # 帽子
+	# 帽上的心形徽章：品牌識別，全畫面該發光的三樣東西之一
+	draw_rect(Rect2(-1, -15, 2, 2), Palette.LUNA_LIGHT)
