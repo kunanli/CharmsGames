@@ -1,7 +1,7 @@
 extends Node2D
 
 # ─────────────────────────────────────────────────────────
-# Milestone 3c：三隻暗影猫，各自不同的追擊個性
+# Milestone 4：月光能量存入 HUD、主動啟動石化、擊碎暗影猫
 #
 # 狀態機：READY（開場停頓）→ PLAYING（計時中）→ DYING（被抓到）→ RESULT（結算）
 # 被抓到時分數與剩餘時間都保留，只是位置重置；三條命用完才結束。
@@ -9,6 +9,10 @@ extends Node2D
 # 三隻貓的個性寫在 cat.gd，這裡只負責生出來、擺位置、每幀餵目標。
 # 出生格排在迷宮中央同一條走道上，登場時間錯開 0 / 2.5 / 5 秒，
 # 不然三隻會同時撲過來，開場就沒得玩。
+#
+# 月光能量不是撿到就發動（GDD 的 Xbox 協議）：撿到存進 HUD 最多囤 2 個，
+# 按 A 才啟動 8 秒石化，讓玩家可以留著救急。石化期間貓站著不動，
+# 撞上去就碎，同一次石化內連續擊碎分數倍增 50→100→200→400。
 # ─────────────────────────────────────────────────────────
 
 enum State { READY, PLAYING, DYING, RESULT }
@@ -18,6 +22,13 @@ const READY_TIME := 1.5       # 開場停頓秒數
 const DYING_TIME := 1.2       # 被抓到後的停頓秒數
 const CATCH_DIST := 9.0       # 碰撞判定距離（px），約半格多一點
 const START_LIVES := 3
+
+# ── 月光能量與石化（M4）─────────────────────────────────
+const MOON_STOCK_MAX := 2     # HUD 最多囤幾個（GDD）
+const PETRIFY_TIME := 8.0     # 啟動後石化幾秒
+const PETRIFY_WARN := 2.0     # 剩幾秒開始閃爍提示
+# 同一次石化內連續擊碎的分數，超過四隻就維持 400
+const SCORE_BREAK: Array[int] = [50, 100, 200, 400]
 
 const SCORE_BEAN := 10
 const SCORE_MOON := 30
@@ -41,6 +52,11 @@ var lives := START_LIVES
 var beans_total := 0
 var beans_eaten := 0
 var game_over := false        # 結算畫面要顯示 GAME OVER 還是 TIME UP
+
+var moon_stock := 0           # HUD 上囤著的月光能量
+var petrify_left := 0.0       # 石化還剩幾秒，0 表示沒在石化
+var break_chain := 0          # 這一次石化內已經擊碎幾隻
+var _prev_skill := false      # A 鍵的邊緣偵測
 
 
 func _ready() -> void:
@@ -77,6 +93,7 @@ func _start_round() -> void:
 	lives = START_LIVES
 	time_left = ROUND_TIME
 	game_over = false
+	moon_stock = 0
 	_enter_ready()
 
 
@@ -87,6 +104,8 @@ func _enter_ready() -> void:
 	player.reset_direction()
 	player.set_process(false)      # 開場停頓期間不能動
 	player.visible = true
+	# 石化不跨越死亡，但囤著的月光能量保留 —— 那是玩家掙來的資源
+	_end_petrify()
 	for cat in cats:
 		cat.setup(maze, cat.home_cell)
 		cat.set_process(false)
@@ -123,6 +142,8 @@ func _process(delta: float) -> void:
 			if state_timer <= 0.0:
 				_enter_playing()
 		State.PLAYING:
+			_read_skill()
+			_tick_petrify(delta)
 			# 每幀把露娜的位置與朝向交給每一隻貓，各自算自己的目標格
 			for cat in cats:
 				cat.update_target(player.cell, player.dir, delta)
@@ -130,8 +151,8 @@ func _process(delta: float) -> void:
 			if time_left <= 0.0:
 				time_left = 0.0
 				_enter_result()
-			elif _check_caught():
-				_lose_life()
+			else:
+				_resolve_contact()
 		State.DYING:
 			# 露娜閃爍，然後重新開始或結束
 			player.visible = fmod(state_timer, 0.24) < 0.12
@@ -148,12 +169,66 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## 露娜與任何一隻暗影猫距離夠近就算被抓到
-func _check_caught() -> bool:
+# ── 月光能量與石化（M4）─────────────────────────────────
+
+## A 鍵主動啟動。GDD 的 Xbox 協議指定 A，與另兩款的主動技能鍵一致。
+func _read_skill() -> void:
+	var now := Input.is_key_pressed(KEY_A)
+	if now and not _prev_skill:
+		_activate_moon()
+	_prev_skill = now
+
+
+func _activate_moon() -> void:
+	# 石化中再按不會疊加，也不浪費庫存
+	if moon_stock <= 0 or petrify_left > 0.0:
+		return
+	moon_stock -= 1
+	petrify_left = PETRIFY_TIME
+	break_chain = 0
 	for cat in cats:
-		if player.position.distance_to(cat.position) < CATCH_DIST:
-			return true
-	return false
+		cat.petrify()
+
+
+func _tick_petrify(delta: float) -> void:
+	if petrify_left <= 0.0:
+		return
+	petrify_left -= delta
+	var ending := petrify_left <= PETRIFY_WARN
+	for cat in cats:
+		cat.petrify_ending = ending
+	if petrify_left <= 0.0:
+		_end_petrify()
+
+
+func _end_petrify() -> void:
+	petrify_left = 0.0
+	break_chain = 0
+	for cat in cats:
+		cat.petrify_ending = false
+		cat.unpetrify()
+
+
+## 露娜碰到貓：石化的擊碎，沒石化的扣命。
+## 一幀最多處理一隻，避免同時撞到兩隻時的行為變得難以預測。
+func _resolve_contact() -> void:
+	for cat in cats:
+		if player.position.distance_to(cat.position) >= CATCH_DIST:
+			continue
+		if cat.is_breakable():
+			_break_cat(cat)
+			return
+		if cat.is_dangerous():
+			_lose_life()
+			return
+
+
+## 同一次石化內連續擊碎，分數倍增 50 → 100 → 200 → 400
+func _break_cat(cat: Cat) -> void:
+	var tier := mini(break_chain, SCORE_BREAK.size() - 1)
+	score += SCORE_BREAK[tier]
+	break_chain += 1
+	cat.shatter()
 
 
 func _lose_life() -> void:
@@ -168,7 +243,8 @@ func _on_player_ate(_cell: Vector2i, kind: int) -> void:
 			beans_eaten += 1
 		Maze.ITEM_MOON:
 			score += SCORE_MOON
-			# M4 會在這裡觸發石化狀態
+			# 撿到不會直接發動，存進 HUD 等玩家按 A（GDD 的 Xbox 協議）
+			moon_stock = mini(moon_stock + 1, MOON_STOCK_MAX)
 	if beans_eaten >= beans_total:
 		_refill()
 
@@ -198,6 +274,7 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, 480, 270), Palette.BG)
 	_draw_maze()
 	_draw_hud()
+	_draw_petrify_edge()
 
 	if state == State.READY:
 		_draw_center_text("READY!", 130, 24, Palette.GOLD)
@@ -242,6 +319,37 @@ func _draw_hud() -> void:
 	# 右下角：珍珠進度
 	draw_string(font, Vector2(0, 264), "BEANS %d/%d" % [beans_eaten, beans_total],
 		HORIZONTAL_ALIGNMENT_RIGHT, 464, 8, Palette.TEXT_DIM)
+
+	# 左下角：囤著的月光能量（最多 2 個），空的畫成暗框
+	for i in MOON_STOCK_MAX:
+		var c := Vector2(22 + i * 14, 258)
+		if i < moon_stock:
+			draw_circle(c, 5.0, Palette.MOON)
+			draw_circle(c + Vector2(-2, -1), 4.0, Palette.BG)
+		else:
+			draw_arc(c, 5.0, 0.0, TAU, 14, Palette.TEXT_DIM, 1.0)
+	if moon_stock > 0 and petrify_left <= 0.0:
+		draw_string(font, Vector2(50, 262), "PRESS A",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.MOON)
+
+	# 石化倒數與連擊
+	if petrify_left > 0.0:
+		draw_string(font, Vector2(0, 34), "PETRIFIED %.1f" % petrify_left,
+			HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.MOON)
+		if break_chain > 0:
+			draw_string(font, Vector2(0, 46), "BREAK x%d" % break_chain,
+				HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
+
+
+## 石化剩 2 秒時畫面邊緣閃爍提示（GDD 的 UI 需求）
+func _draw_petrify_edge() -> void:
+	if petrify_left <= 0.0 or petrify_left > PETRIFY_WARN:
+		return
+	if fmod(petrify_left, 0.24) >= 0.12:
+		return
+	var col := Color(Palette.MOON, 0.75)
+	for i in 3:
+		draw_rect(Rect2(i, i, 480 - i * 2, 270 - i * 2), col, false, 1.0)
 
 
 func _draw_result() -> void:

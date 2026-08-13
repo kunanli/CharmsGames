@@ -37,14 +37,15 @@ func _process(delta: float) -> void:
 
 func _read_input() -> void:
 	var new_want := want
-	# 同時支援方向鍵與 WASD
-	if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
+	# 只吃方向鍵。M4 之後 A 鍵是「啟動石化」的主動技能（GDD 的 Xbox 協議），
+	# 原本的 WASD 會跟它打架，而 GDD 本來就只指定方向鍵與左搖桿。
+	if Input.is_action_pressed("ui_left"):
 		new_want = Vector2i.LEFT
-	elif Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
+	elif Input.is_action_pressed("ui_right"):
 		new_want = Vector2i.RIGHT
-	elif Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
+	elif Input.is_action_pressed("ui_up"):
 		new_want = Vector2i.UP
-	elif Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
+	elif Input.is_action_pressed("ui_down"):
 		new_want = Vector2i.DOWN
 	want = new_want
 
