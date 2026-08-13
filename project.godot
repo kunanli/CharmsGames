@@ -10,8 +10,8 @@ config_version=5
 
 [application]
 
-config/name="CharmsSeeker"
-run/main_scene="uid://congpep6mukij"
+config/name="CharmsGames"
+run/main_scene="res://Launcher.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 

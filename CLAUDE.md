@@ -3,7 +3,7 @@
 Pandora 品牌合作的三款 8-bit 像素小遊戲，共用世界觀、色盤與結算系統。
 
 **引擎**：Godot 4.7 / GDScript / Compatibility renderer
-**目前進度**：三款都有可玩原型，Seeker 進度最深（M3c）
+**目前進度**：Seeker 做到 M3c（三隻暗影猫）。Fishing 與 Catch **還沒有程式碼**，只有下面的玩法規格，選單上會顯示 COMING SOON。
 
 ---
 
@@ -31,16 +31,19 @@ res://
 │   │   ├── maze.gd         迷宮資料（class_name Maze）
 │   │   ├── player.gd       露娜的格子移動（class_name Player）
 │   │   └── cat.gd          暗影猫追逐 AI（class_name Cat）
-│   ├── fishing/
-│   │   └── fishing.gd      Charm Fishing：黃金礦工式垂釣（單檔）
-│   └── catch/
-│       └── catch.gd        Charm Catch：接珠寶躲炸彈（單檔）
-└── assets/                 美術素材（尚未進場）
-    ├── seeker/  fishing/  catch/
-    └── shared/             露娜、Charm、字型等三款共用
+│   ├── fishing/            （空）Charm Fishing：黃金礦工式垂釣，預計單檔 fishing.gd
+│   └── catch/              （空）Charm Catch：接珠寶躲炸彈，預計單檔 catch.gd
+├── assets/                 美術素材（尚未進場，目前都是空資料夾）
+│   ├── seeker/  fishing/  catch/
+│   └── shared/             露娜、Charm、字型等三款共用
+└── docs/                   企劃書、美術規格書、色盤
 ```
 
 啟動選單用 `load(path)` + `set_script()` 把遊戲掛到臨時節點上，所以新增遊戲不需要新增場景，只要在 `launcher.gd` 的 `GAMES` 陣列加一筆。
+
+生成順序不能調換：`load()` → `Node2D.new()` → `set_script()` → `add_child()`，因為 `add_child()` 那一刻才會觸發遊戲的 `_ready()`。回選單時 `remove_child()` + `queue_free()` 整個節點，遊戲自己生的子節點跟著消失，所以每款遊戲**不需要各自寫清理邏輯**。
+
+`GAMES` 裡指到還不存在的腳本不會讓選單當掉，只會顯示 COMING SOON —— Fishing 與 Catch 目前就是這個狀態。
 
 ---
 
@@ -101,9 +104,10 @@ res://
 
 ## 相關文件
 
-- `docs/` — 三款的企劃書（世界觀、角色設定、Xbox 協議、流程圖）
-- `docs/art-spec-charms-seeker.md` — 美術素材規格書（尺寸、幀數、命名、交付順序）
-- `docs/charms-palette.png` — 鎖定的 20 色共用色盤
+- `docs/godot-charms-seeker-guide.md` — M1 的建置紀錄（檔案路徑是重組前的舊版，結構以本檔為準）
+
+**還沒進 repo 的**（有的話放進 `docs/`）：三款的企劃書（世界觀、角色設定、Xbox 協議、流程圖）、
+`art-spec-charms-seeker.md` 美術規格書、`charms-palette.png` 20 色共用色盤。
 
 ---
 
