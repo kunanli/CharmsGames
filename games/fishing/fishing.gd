@@ -115,7 +115,10 @@ var _prev_moon := false
 
 # Game feel（見 shared/juice.gd）
 var _juice := Juice.new(Juice.ARCADE)
+var _fx := Fx.new()                 # 粒子（見 shared/fx.gd）
 var _rushed := false                # 最後 15 秒的加速只提示一次
+var _line_flash := 0.0              # 勾中時釣線閃一下（GDD 指定的表現）
+var _score_shown := 0.0             # HUD 上滾動中的分數
 
 
 func _ready() -> void:
@@ -158,7 +161,10 @@ func _start_round() -> void:
 	swing_t = 0.0
 	_pop_timer = 0.0
 	_juice.reset()
+	_fx.clear()
 	_rushed = false
+	_line_flash = 0.0
+	_score_shown = 0.0
 	_reset_hook()
 	_populate()
 	state = State.READY
@@ -265,8 +271,14 @@ func _process(delta: float) -> void:
 	var run := _juice.tick(delta)
 	if run:
 		_run_state(delta)
+		_fx.update(delta)
 	if _pop_timer > 0.0:
 		_pop_timer -= delta
+	if _line_flash > 0.0:
+		_line_flash -= delta
+	# 分數滾動：小魚幾乎瞬間，Charm（+500）會滾個 0.3 秒
+	_score_shown = move_toward(_score_shown, float(score),
+		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
 	queue_redraw()
 
 
@@ -289,6 +301,7 @@ func _tick_play(delta: float) -> void:
 	if time_left <= 0.0:
 		time_left = 0.0
 		state = State.RESULT
+		_score_shown = 0.0         # 結算的總分從 0 滾上去
 		return
 
 	if not _rushed and time_left <= RUSH_TIME:
@@ -341,6 +354,7 @@ func _use_moon() -> void:
 		moon_active = true            # 寶物：收線 ×3
 		_juice.kick(0.40)
 		_juice.freeze(0.08)
+		_fx.burst(_hook_pos(), 16, Palette.MOON, 90.0, 0.6, 3.0, 0.15)
 		_pop("MOONLIGHT x3", Palette.MOON)
 	else:
 		carried = null                # 廢物：直接丟掉，空鉤快速收回止損
@@ -382,6 +396,10 @@ func _extend(delta: float) -> void:
 			var hit := clampf(0.75 - pull / 320.0, 0.20, 0.75)
 			_juice.kick(hit, _hook_dir())
 			_juice.freeze(0.05 + hit * 0.10)
+			_line_flash = 0.14
+			# 水中的碎屑：重力壓很低，看起來才像在水裡飄而不是掉下去
+			_fx.burst(tip, int(6 + hit * 10), Palette.WALL_LIGHT,
+				40.0 + hit * 50.0, 0.5, 2.0, 0.12)
 			hook_state = Hook.RETRACT
 			return
 
@@ -421,6 +439,7 @@ func _land(it: Item) -> void:
 		time_left = maxf(0.0, time_left - 3.0)
 		_juice.kick(0.80)
 		_juice.freeze(0.12)
+		_fx.burst(PIVOT, 16, Palette.WARN, 100.0, 0.6, 3.0, 0.7)
 		_pop("-3 SEC", Palette.WARN)
 	else:
 		var gained := _score_of(it.kind)
@@ -430,9 +449,13 @@ func _land(it: Item) -> void:
 			if it.kind == Kind.CHARM:
 				_juice.kick(0.55)
 				_juice.freeze(0.10)
+				_fx.burst(PIVOT, 22, Palette.GOLD, 115.0, 0.75, 3.0, 0.55)
 			elif it.kind == Kind.STARDUST:
 				_juice.kick(0.35)
 				_juice.freeze(0.05)
+				_fx.burst(PIVOT, 12, Palette.PEARL, 85.0, 0.55, 2.0, 0.5)
+			else:
+				_fx.burst(PIVOT, 5, Palette.TEXT, 55.0, 0.35, 2.0, 0.6)
 			_pop("+%d" % gained, col)
 		else:
 			_pop("+0", Palette.TEXT_DIM)
@@ -493,8 +516,10 @@ func _draw() -> void:
 		_draw_item(it)
 	_draw_line_and_hook()
 	_draw_boat()
+	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
+	_draw_urgency()
 
 	if state == State.READY:
 		_center("READY!", 150, 24, Palette.GOLD)
@@ -574,8 +599,10 @@ func _draw_item(it: Item) -> void:
 
 func _draw_line_and_hook() -> void:
 	var tip := _hook_pos()
-	# 星光釣線：亮青白 1px
-	draw_line(PIVOT, tip, Palette.MOON, 1.0)
+	# 星光釣線：亮青白 1px。勾中的瞬間整條線閃一次白（GDD 指定）。
+	var line_col: Color = Palette.TEXT if _line_flash > 0.0 else Palette.MOON
+	var line_w := 2.0 if _line_flash > 0.0 else 1.0
+	draw_line(PIVOT, tip, line_col, line_w)
 	# 鉤頭是小星星
 	draw_circle(tip, 2.5, Palette.TEXT)
 	draw_rect(Rect2(tip.x - 3.5, tip.y - 0.5, 7, 1), Palette.MOON)
@@ -604,9 +631,13 @@ func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
 	var secs := int(ceil(time_left))
 	var time_col: Color = Palette.WARN if secs <= 10 else Palette.TEXT
+	# 最後 10 秒每秒脈動一次，像心跳
+	var tsize := 12
+	if secs <= 10 and state == State.PLAYING:
+		tsize = int(12.0 + (1.0 - fmod(time_left, 1.0)) * 4.0)
 	draw_string(font, Vector2(12, 18), "TIME %d:%02d" % [secs / 60, secs % 60],
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, time_col)
-	draw_string(font, Vector2(0, 18), "SCORE %06d" % score,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
+	draw_string(font, Vector2(0, 18), "SCORE %06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 12, Palette.TEXT)
 	# 鉤子深度（水面下幾 px）
 	var depth := int(maxf(0.0, _hook_pos().y - SURFACE_Y))
@@ -628,13 +659,28 @@ func _draw_hud() -> void:
 		_center(_pop_text, 150 - rise, 16, _pop_col)
 
 
+## 最後 10 秒的收尾張力：四周壓一圈越來越深的暗角。純氛圍，不擋視線。
+func _draw_urgency() -> void:
+	if state != State.PLAYING or time_left > 10.0:
+		return
+	var k := (10.0 - time_left) / 10.0
+	var band := 10.0 + k * 14.0
+	var base := 0.10 + k * 0.28
+	for i in int(band):
+		var a := base * (1.0 - float(i) / band)
+		draw_rect(Rect2(i, i, SCREEN.x - i * 2, SCREEN.y - i * 2),
+			Color(Palette.NIGHT, a), false, 1.0)
+
+
 func _draw_result() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(Palette.NIGHT, 0.82))
 	_center("TIME UP", 96, 22, Palette.GOLD)
-	_center("SCORE  %06d" % score, 134, 18, Palette.TEXT)
-	_center(chest_tier(), 162, 14, Palette.MOON)
-	_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
-	_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
+	_center("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
+	# 寶箱等級等分數滾完才揭曉
+	if int(round(_score_shown)) >= score:
+		_center(chest_tier(), 162, 14, Palette.MOON)
+		_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
+		_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:

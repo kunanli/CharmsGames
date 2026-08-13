@@ -6,9 +6,9 @@ extends Node2D
 # 三款中最直覺的一款：只有左右兩個方向。張力全靠 Combo 倍率與
 # 每 15 秒一跳的落速撐出來。
 #
-# GDD 的數字跟舊版 CLAUDE.md 有出入，這裡一律以 GDD 為準：
-#   基礎速度 60 px/s（不是 92），A 鍵衝刺 ×1.8 且鬆開後有 0.5 秒冷卻，
-#   6 條軌道每軌 80px，同軌連續生成間隔不得低於 0.6 秒。
+# 數值以 GDD 為準，只有移動速度是企劃試玩後刻意調快的（見下方常數註解）。
+# A 鍵衝刺 ×1.8 且鬆開後有 0.5 秒冷卻，6 條軌道每軌 80px，
+# 同軌連續生成間隔不得低於 0.6 秒。
 #
 # 座標一律用 Vector2（像素）。
 # ─────────────────────────────────────────────────────────
@@ -120,8 +120,15 @@ var _prev_burst := false
 
 # Game feel（見 shared/juice.gd）。位移只作用在繪製，不碰任何遊戲數值。
 var _juice := Juice.new(Juice.ARCADE)
+var _fx := Fx.new()                 # 粒子（見 shared/fx.gd）
 var _at_wall := false               # 去抖：貼著邊界時只在「剛撞上」那一幀 kick
 var _last_phase := 0
+var _score_shown := 0.0             # HUD 上滾動中的分數
+# 擠壓變形（見 shared/fx.gd）：撞邊界壓露娜、接到東西壓提籃
+const SQUASH_TIME := 0.20
+var _luna_squash := 0.0
+var _luna_axis := Vector2.ZERO
+var _basket_squash := 0.0
 
 
 func _ready() -> void:
@@ -149,8 +156,12 @@ func _start_round() -> void:
 	_flash = 0.0
 	_pop_timer = 0.0
 	_juice.reset()
+	_fx.clear()
 	_at_wall = false
 	_last_phase = 0
+	_score_shown = 0.0
+	_luna_squash = 0.0
+	_basket_squash = 0.0
 	state = State.READY
 	state_timer = READY_TIME
 
@@ -172,6 +183,15 @@ func _process(delta: float) -> void:
 	var run := _juice.tick(delta)
 	if run:
 		_run_state(delta)
+		_fx.update(delta)
+		if _luna_squash > 0.0:
+			_luna_squash = maxf(0.0, _luna_squash - delta / SQUASH_TIME)
+		if _basket_squash > 0.0:
+			_basket_squash = maxf(0.0, _basket_squash - delta / SQUASH_TIME)
+
+	# 分數滾動：珠寶（+50）幾乎瞬間，Charm ×5（+1500）會滾個 0.3 秒
+	_score_shown = move_toward(_score_shown, float(score),
+		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
 
 	if _pop_timer > 0.0:
 		_pop_timer -= delta
@@ -181,7 +201,9 @@ func _process(delta: float) -> void:
 
 
 func _run_state(delta: float) -> void:
-	_juice.look(Vector2.ZERO)     # PLAYING 會覆寫；其他狀態鏡頭回正
+	# **Catch 不做自動鏡頭跟隨。** 實機試玩的結論：玩家要盯著掉落物的軌跡，
+	# 畫面跟著露娜滑會讓人暈。撞擊震動保留。理由詳見 seeker.gd 同一段註解。
+	_juice.look(Vector2.ZERO)
 	match state:
 		State.READY:
 			state_timer -= delta
@@ -199,6 +221,7 @@ func _tick_play(delta: float) -> void:
 	if time_left <= 0.0:
 		time_left = 0.0
 		state = State.RESULT
+		_score_shown = 0.0         # 結算的總分從 0 滾上去
 		return
 
 	var ph_now := _phase_index()
@@ -247,14 +270,16 @@ func _move_luna(delta: float) -> void:
 			var impact := clampf(absf(luna_vx) / (MOVE_SPEED * DASH_MULT), 0.0, 1.0)
 			_juice.kick(lerpf(0.28, 0.60, impact), Vector2.RIGHT)
 			_juice.freeze(0.03 + impact * 0.03)
+			# 露娜貼著邊界壓扁 —— 這比震動更看得出「我撞到左邊還右邊」
+			_luna_squash = 1.0
+			_luna_axis = Vector2(signf(luna_vx), 0.0)
+			_fx.burst(Vector2(luna_x + signf(luna_vx) * 8.0, LUNA_Y - 12.0),
+				int(3 + impact * 5), Palette.WALL_LIGHT, 45.0, 0.3, 2.0, 0.8)
 		_at_wall = true
 		luna_vx = 0.0            # 撞牆就停住，不要沿著牆繼續累積速度
 	else:
 		_at_wall = false
 	luna_x = clamped
-	# 鏡頭往實際移動方向偏一點（用速度而不是按鍵，滑行時鏡頭才跟得順）。
-	# 只做水平 —— 垂直會讓露娜跟地面線脫開。
-	_juice.look(Vector2(luna_vx / maxf(top, 1.0), 0.0))
 
 	# 主動引爆護盾：清掉畫面上所有炸彈但不加分
 	var burst := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)
@@ -278,6 +303,7 @@ func _burst_shield() -> void:
 	if cleared > 0:
 		_juice.kick(minf(0.45 + 0.06 * cleared, 0.80))
 		_juice.freeze(0.12)
+		_fx.burst(Vector2(luna_x, LUNA_Y - 12.0), 24, Palette.MOON, 140.0, 0.7, 3.0, 0.35)
 		_pop("BURST! x%d" % cleared, Palette.MOON, Vector2(240, 150))
 
 
@@ -439,6 +465,7 @@ func _on_caught(d: Drop) -> void:
 				shield_left = 0.0          # 護盾擋掉一顆炸彈後消失
 				_juice.kick(0.50)
 				_juice.freeze(0.10)
+				_fx.burst(d.pos, 18, Palette.MOON, 105.0, 0.55, 3.0, 0.5)
 				_pop("BLOCKED", Palette.MOON, d.pos)
 			else:
 				lives -= 1
@@ -447,13 +474,19 @@ func _on_caught(d: Drop) -> void:
 				_flash = 0.28
 				_juice.kick(0.95)
 				_juice.freeze(0.14)
+				# 炸開：暖橘的火花 ＋ 暗紫的碎片
+				_fx.burst(d.pos, 20, Palette.WARN, 135.0, 0.55, 3.0, 0.8)
+				_fx.burst(d.pos, 12, Palette.CAT_GLOW, 90.0, 0.7, 2.0, 0.9)
 				_pop("-1 LIFE", Palette.WARN, d.pos)
 				if lives <= 0:
 					state = State.RESULT
+					_score_shown = 0.0
 		Kind.MOON:
 			shield_left = SHIELD_TIME
 			_juice.kick(0.30)
 			_juice.freeze(0.05)
+			_basket_squash = 1.0
+			_fx.burst(d.pos, 14, Palette.MOON, 80.0, 0.6, 3.0, 0.3)
 			_pop("SHIELD 8s", Palette.MOON, d.pos)
 		_:
 			var base := _base_score(d.kind)
@@ -463,14 +496,18 @@ func _on_caught(d: Drop) -> void:
 			var gained := base * multiplier
 			score += gained
 			# 珠寶約 1.5 秒掉一顆，力道必須極小，不然會變成整局的背景震動
+			_basket_squash = 1.0        # 提籃彈跳（GDD 的「接取彈跳 2 幀」）
 			match d.kind:
 				Kind.CHARM:
 					_juice.kick(0.45)
 					_juice.freeze(0.09)
+					_fx.burst(d.pos, 20, Palette.GOLD, 110.0, 0.7, 3.0, 0.6)
 				Kind.STARDUST:
 					_juice.kick(0.12)
+					_fx.burst(d.pos, 8, Palette.PEARL, 70.0, 0.45, 2.0, 0.7)
 				_:
 					_juice.kick(0.06)
+					_fx.burst(d.pos, 5, Palette.LUNA_LIGHT, 55.0, 0.35, 2.0, 0.8)
 			if multiplier > was_mult:
 				_juice.kick(0.25 + 0.08 * (multiplier - 1))
 				_juice.freeze(0.03 * (multiplier - 1))
@@ -484,6 +521,9 @@ func _on_missed(d: Drop) -> void:
 		return
 	if combo > 0:
 		_juice.kick(0.32, Vector2.DOWN)
+		# 落地的塵土，提醒玩家「這顆掉了」
+		_fx.burst(Vector2(d.pos.x, KILL_Y - 4.0), 6, Palette.TEXT_DIM,
+			50.0, 0.35, 2.0, 0.5, -PI * 0.5, PI * 0.8)
 		_pop("COMBO LOST", Palette.TEXT_DIM, Vector2(d.pos.x, KILL_Y - 12))
 	combo = 0
 	multiplier = 1
@@ -528,9 +568,11 @@ func _draw() -> void:
 	for d in drops:
 		_draw_drop(d)
 	_draw_luna()
+	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	_draw_pop()                        # _pop_at 是世界座標，必須畫在這一層
 	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
+	_draw_urgency()
 
 	if _flash > 0.0:
 		draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(Palette.WARN, _flash * 0.5))
@@ -593,14 +635,34 @@ func _draw_drop(d: Drop) -> void:
 
 func _draw_luna() -> void:
 	var cx := luna_x
-	# 身體（16×32 placeholder）＋帽子＋心形徽章
-	draw_rect(Rect2(cx - 6, LUNA_Y - 22, 12, 22), Palette.LUNA, false, 1.0)
-	draw_rect(Rect2(cx - 9, LUNA_Y - 30, 18, 6), Palette.LUNA)
-	draw_rect(Rect2(cx - 1, LUNA_Y - 29, 2, 2), Palette.LUNA_LIGHT)
-	# 星光提籃：判定框就是頂面那條
+	# 撞邊界時整個人貼著牆壓扁。以腳底為支點縮放，人才不會浮起來。
+	var world := _juice.world_offset()
+	if _luna_squash > 0.0:
+		var sc := Fx.squash(_luna_squash, _luna_axis)
+		draw_set_transform(world + Vector2(cx, LUNA_Y), 0.0, sc)
+		_draw_luna_body(0.0, 0.0)
+		draw_set_transform(world)
+	else:
+		_draw_luna_body(cx, LUNA_Y)
+
+	# 星光提籃：判定框就是頂面那條。接到東西時彈跳一下（GDD 的「接取彈跳」）。
 	var b := _basket_rect()
-	draw_rect(b, Palette.GOLD)
-	draw_rect(Rect2(b.position.x, b.position.y, b.size.x, 10), Palette.GOLD, false, 1.0)
+	if _basket_squash > 0.0:
+		var bs := Fx.squash(_basket_squash, Vector2.DOWN, 0.38)
+		draw_set_transform(world + b.position + Vector2(b.size.x * 0.5, b.size.y), 0.0, bs)
+		_draw_basket(-b.size.x * 0.5, -b.size.y, b.size)
+		draw_set_transform(world)
+	else:
+		_draw_basket(b.position.x, b.position.y, b.size)
+
+	# Combo 光圈：倍率越高圈越亮越大。原本倍率只是 HUD 上一個數字，
+	# 在遊戲區裡完全看不到，玩家不會「感覺」到自己正在連。
+	if multiplier > 1:
+		var t := float(multiplier - 1) / float(COMBO_MAX - 1)
+		var r := 18.0 + t * 8.0 + sin(Time.get_ticks_msec() / 1000.0 * 6.0) * 1.5
+		draw_arc(Vector2(cx, LUNA_Y - 12), r, 0.0, TAU, 28,
+			Color(Palette.GOLD, 0.25 + t * 0.45), 1.0)
+
 	# 護盾光圈，剩 2 秒開始閃爍
 	if shield_left > 0.0:
 		var show := shield_left > SHIELD_WARN or fmod(shield_left, 0.24) < 0.12
@@ -608,13 +670,28 @@ func _draw_luna() -> void:
 			draw_arc(Vector2(cx, LUNA_Y - 12), 20.0, 0.0, TAU, 24, Palette.MOON, 1.0)
 
 
+func _draw_luna_body(cx: float, cy: float) -> void:
+	# 身體（16×32 placeholder）＋帽子＋心形徽章
+	draw_rect(Rect2(cx - 6, cy - 22, 12, 22), Palette.LUNA, false, 1.0)
+	draw_rect(Rect2(cx - 9, cy - 30, 18, 6), Palette.LUNA)
+	draw_rect(Rect2(cx - 1, cy - 29, 2, 2), Palette.LUNA_LIGHT)
+
+
+func _draw_basket(x: float, y: float, size: Vector2) -> void:
+	draw_rect(Rect2(x, y, size.x, size.y), Palette.GOLD)
+	draw_rect(Rect2(x, y, size.x, 10), Palette.GOLD, false, 1.0)
+
+
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
 	var secs := int(ceil(time_left))
 	var time_col: Color = Palette.WARN if secs <= 10 else Palette.TEXT
+	var tsize := 12
+	if secs <= 10 and state == State.PLAYING:
+		tsize = int(12.0 + (1.0 - fmod(time_left, 1.0)) * 4.0)   # 每秒脈動一次
 	draw_string(font, Vector2(12, 18), "TIME %d:%02d" % [secs / 60, secs % 60],
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, time_col)
-	draw_string(font, Vector2(0, 18), "SCORE %06d" % score,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
+	draw_string(font, Vector2(0, 18), "SCORE %06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 12, Palette.TEXT)
 
 	# 生命愛心
@@ -645,15 +722,30 @@ func _draw_pop() -> void:
 		_pop_text, HORIZONTAL_ALIGNMENT_CENTER, 80, 12, _pop_col)
 
 
+## 最後 10 秒的收尾張力：四周壓一圈越來越深的暗角。純氛圍，不擋視線。
+func _draw_urgency() -> void:
+	if state != State.PLAYING or time_left > 10.0:
+		return
+	var k := (10.0 - time_left) / 10.0
+	var band := 10.0 + k * 14.0
+	var base := 0.10 + k * 0.28
+	for i in int(band):
+		var a := base * (1.0 - float(i) / band)
+		draw_rect(Rect2(i, i, SCREEN.x - i * 2, SCREEN.y - i * 2),
+			Color(Palette.NIGHT, a), false, 1.0)
+
+
 func _draw_result() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(Palette.NIGHT, 0.82))
 	var over := lives <= 0
 	_center("GAME OVER" if over else "TIME UP", 96, 22,
 		Palette.WARN if over else Palette.GOLD)
-	_center("SCORE  %06d" % score, 134, 18, Palette.TEXT)
-	_center(chest_tier(), 162, 14, Palette.MOON)
-	_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
-	_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
+	_center("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
+	# 寶箱等級等分數滾完才揭曉
+	if int(round(_score_shown)) >= score:
+		_center(chest_tier(), 162, 14, Palette.MOON)
+		_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
+		_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:

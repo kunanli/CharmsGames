@@ -21,6 +21,11 @@ signal bumped(dir: Vector2i)
 ## 這個**不發 signal** —— 它每幀都成立，發 signal 會變成每秒 60 次的閃頻。
 var blocked := false
 
+# 撞牆的擠壓變形（見 shared/fx.gd）。只影響繪製，不碰 position。
+const SQUASH_TIME := 0.20
+var _squash := 0.0
+var _squash_axis := Vector2.ZERO
+
 
 func setup(m: Maze, start_cell: Vector2i) -> void:
 	maze = m
@@ -33,11 +38,14 @@ func reset_direction() -> void:
 	dir = Vector2i.ZERO
 	want = Vector2i.ZERO
 	blocked = false
+	_squash = 0.0
 
 
 func _process(delta: float) -> void:
 	if maze == null:
 		return
+	if _squash > 0.0:
+		_squash = maxf(0.0, _squash - delta / SQUASH_TIME)
 	_read_input()
 	_move(delta)
 
@@ -94,11 +102,18 @@ func _arrive_at_cell() -> void:
 	if want != Vector2i.ZERO and maze.is_open(cell + want):
 		dir = want
 	if not maze.is_open(cell + dir):
-		bumped.emit(dir)      # 撞上去了，給一記震動
+		# 撞上去了：發震動，並讓露娜貼著牆壓扁一下
+		_squash = 1.0
+		_squash_axis = Vector2(dir)
+		bumped.emit(dir)
 		dir = Vector2i.ZERO   # 前面是牆，停下來
 
 
 func _draw() -> void:
+	# 擠壓變形：撞到哪一邊就往哪一邊壓扁。這比震動的資訊量更大 ——
+	# 玩家看得出是撞到左牆還右牆，而且畫面完全沒動，不會暈。
+	if _squash > 0.0:
+		draw_set_transform(Vector2.ZERO, 0.0, Fx.squash(_squash, _squash_axis))
 	# Placeholder：之後換成 Sprite2D + 像素素材
 	draw_rect(Rect2(-8, -20, 16, 28), Palette.LUNA, false, 1.0)
 	draw_rect(Rect2(-5, -17, 10, 8), Palette.LUNA)      # 帽子

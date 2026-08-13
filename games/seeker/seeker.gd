@@ -70,6 +70,8 @@ var _prev_skill := false      # A 鍵的邊緣偵測
 # 與 9px 碰撞判定在用的值。
 var _world: Node2D
 var _juice := Juice.new(Juice.ARCADE)
+var _fx := Fx.new()               # 粒子（見 shared/fx.gd）
+var _score_shown := 0.0           # HUD 上滾動中的分數，會追上 score
 
 
 func _ready() -> void:
@@ -113,6 +115,8 @@ func _start_round() -> void:
 	game_over = false
 	moon_stock = 0
 	_juice.reset()
+	_fx.clear()
+	_score_shown = 0.0
 	_enter_ready()
 
 
@@ -148,6 +152,7 @@ func _enter_dying() -> void:
 func _enter_result(is_game_over: bool = false) -> void:
 	state = State.RESULT
 	game_over = is_game_over
+	_score_shown = 0.0             # 結算的總分從 0 滾上去
 	player.set_process(false)
 	player.visible = true
 	for cat in cats:
@@ -163,6 +168,14 @@ func _process(delta: float) -> void:
 		_world.process_mode = mode
 	if run:
 		_run_state(delta)
+		_fx.update(delta)          # 頓格期間粒子也跟著凍住，那正是頓格的用意
+
+	# 分數滾動：數字追上去而不是直接跳。速度跟差距成正比，所以吃珍珠（+10）
+	# 幾乎是瞬間，擊碎連擊或清空全場（+400/+500）會滾個 0.3 秒 ——
+	# 大分數才需要「賺到」的感覺，小分數滾起來只會拖。
+	# 放在頓格外面，純表現不受凍結影響。
+	_score_shown = move_toward(_score_shown, float(score),
+		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
 
 	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
 	_world.position = _juice.world_offset()
@@ -170,8 +183,11 @@ func _process(delta: float) -> void:
 
 
 func _run_state(delta: float) -> void:
-	# 預設把鏡頭帶回中心；PLAYING 分支會在下面覆寫成玩家的朝向。
-	# 頓格期間 _run_state 整個不跑，所以鏡頭會保持傾斜穿過凍結 —— 那是刻意的。
+	# **Seeker 不做自動鏡頭跟隨。** 實機試玩的結論：迷宮裡玩家要靠牆的位置
+	# 定位，畫面自己在飄會讓人暈 —— 眼睛沒有可以錨定的東西。
+	# 對照組是 Fishing：那裡的鏡頭是玩家按方向鍵「主動探看」，就很舒服。
+	# 規則：**玩家主動觸發的鏡頭移動可以，自動跟隨的不行。** 不要再加回來。
+	# 撞擊震動保留 —— 那是離散事件，不是持續位移，不會暈。
 	_juice.look(Vector2.ZERO)
 	match state:
 		State.READY:
@@ -181,11 +197,6 @@ func _run_state(delta: float) -> void:
 		State.PLAYING:
 			_read_skill()
 			_tick_petrify(delta)
-			# 鏡頭往露娜前進方向偏一點；頂著牆時改成往牆的方向壓
-			if player.blocked:
-				_juice.look(Vector2(player.want) * 0.4)
-			else:
-				_juice.look(Vector2(player.dir))
 			# 每幀把露娜的位置與朝向交給每一隻貓，各自算自己的目標格
 			for cat in cats:
 				cat.update_target(player.cell, player.dir, delta)
@@ -228,6 +239,7 @@ func _activate_moon() -> void:
 	break_chain = 0
 	_juice.kick(0.55)
 	_juice.freeze(0.12)
+	_fx.burst(player.position, 20, Palette.MOON, 120.0, 0.7, 3.0, 0.2)
 	for cat in cats:
 		cat.petrify()
 
@@ -272,6 +284,9 @@ func _break_cat(cat: Cat) -> void:
 	break_chain += 1
 	_juice.kick(0.40 + 0.10 * mini(break_chain, 4))
 	_juice.freeze(0.06)
+	# 碎裂成星塵消散（美術規格書 3.2 指定的表現）
+	_fx.burst(cat.position, 14, Palette.MOON, 95.0, 0.55, 3.0, 0.35)
+	_fx.burst(cat.position, 8, Palette.PEARL, 70.0, 0.7, 2.0, 0.25)
 	cat.shatter()
 
 
@@ -280,12 +295,17 @@ func _break_cat(cat: Cat) -> void:
 func _on_player_bumped(d: Vector2i) -> void:
 	if state == State.PLAYING:
 		_juice.kick(0.34, Vector2(d))
+		# 撞擊點噴一點碎屑，方向沿著牆面散開
+		var n := Vector2(d)
+		_fx.burst(player.position + n * 7.0, 5, Palette.WALL_LIGHT,
+			55.0, 0.3, 2.0, 0.8, n.angle() + PI, PI * 0.7)
 
 
 func _lose_life() -> void:
 	lives -= 1
 	# 不加 freeze —— _enter_dying() 本來就把全世界凍 1.2 秒
 	_juice.kick(0.90)
+	_fx.burst(player.position, 18, Palette.LUNA, 110.0, 0.6, 3.0, 0.6)
 	_enter_dying()
 
 
@@ -294,11 +314,14 @@ func _on_player_ate(_cell: Vector2i, kind: int) -> void:
 		Maze.ITEM_BEAN:
 			score += SCORE_BEAN
 			beans_eaten += 1
+			# 一局 205 顆，所以只給 2 顆極小的閃光 —— 再多就變成整片雜訊
+			_fx.burst(player.position, 2, Palette.PEARL, 34.0, 0.26, 2.0, 0.4)
 		Maze.ITEM_MOON:
 			score += SCORE_MOON
 			# 撿到不會直接發動，存進 HUD 等玩家按 A（GDD 的 Xbox 協議）
 			moon_stock = mini(moon_stock + 1, MOON_STOCK_MAX)
 			_juice.kick(0.30)
+			_fx.burst(player.position, 12, Palette.MOON, 80.0, 0.5, 3.0, 0.3)
 	if beans_eaten >= beans_total:
 		_refill()
 
@@ -312,6 +335,7 @@ func _refill() -> void:
 	score += SCORE_CLEAR
 	_juice.kick(0.65)
 	_juice.freeze(0.12)
+	_fx.burst(player.position, 26, Palette.GOLD, 130.0, 0.8, 3.0, 0.5)
 
 
 func chest_tier() -> String:
@@ -334,8 +358,10 @@ func _draw() -> void:
 	# 牆與珍珠畫在這裡，露娜與貓則由 _world 容器位移；
 	# 兩者讀的是同一個 world_offset()，所以不會脫格。
 	_draw_maze()
+	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
+	_draw_urgency()
 	_draw_petrify_edge()
 
 	if state == State.READY:
@@ -377,14 +403,20 @@ func _draw_maze() -> void:
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
 
-	# 左：剩餘時間，最後 10 秒轉為警示色
+	# 左：剩餘時間。最後 10 秒轉警示色，並隨秒數脈動 ——
+	# 原本這 10 秒在畫面上完全沒有變化，時間到就突然結束。
 	var secs := int(ceil(time_left))
+	var urgent := secs <= 10 and state == State.PLAYING
 	var time_col := Palette.WARN if secs <= 10 else Palette.TEXT
+	var tsize := 12
+	if urgent:
+		# 每一秒放大一次再縮回去，像心跳
+		tsize = int(12.0 + (1.0 - fmod(time_left, 1.0)) * 4.0)
 	draw_string(font, Vector2(16, 20), "TIME %d:%02d" % [secs / 60, secs % 60],
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, time_col)
+		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
 
-	# 中：分數
-	draw_string(font, Vector2(0, 20), "SCORE %06d" % score,
+	# 中：分數（滾動中的值，不是瞬間跳到位）
+	draw_string(font, Vector2(0, 20), "SCORE %06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, 480, 12, Palette.TEXT)
 
 	# 右：生命（三顆圓點）
@@ -416,6 +448,19 @@ func _draw_hud() -> void:
 				HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
 
 
+## 最後 10 秒的收尾張力：畫面四周壓一圈越來越深的暗角。
+## 純粹是氛圍，不擋視線 —— 迷宮的可視範圍完全沒被吃掉。
+func _draw_urgency() -> void:
+	if state != State.PLAYING or time_left > 10.0:
+		return
+	var k := (10.0 - time_left) / 10.0        # 0 → 1
+	var band := 10.0 + k * 14.0
+	var col := Color(Palette.NIGHT, 0.10 + k * 0.28)
+	for i in int(band):
+		var a := col.a * (1.0 - float(i) / band)
+		draw_rect(Rect2(i, i, 480 - i * 2, 270 - i * 2), Color(Palette.NIGHT, a), false, 1.0)
+
+
 ## 石化剩 2 秒時畫面邊緣閃爍提示（GDD 的 UI 需求）
 func _draw_petrify_edge() -> void:
 	if petrify_left <= 0.0 or petrify_left > PETRIFY_WARN:
@@ -435,9 +480,11 @@ func _draw_result() -> void:
 	var title := "GAME OVER" if game_over else "TIME UP"
 	var title_col := Palette.WARN if game_over else Palette.GOLD
 	_draw_center_text(title, 96, 22, title_col)
-	_draw_center_text("SCORE  %06d" % score, 134, 18, Palette.TEXT)
-	_draw_center_text(chest_tier(), 162, 14, Palette.MOON)
-	_draw_center_text("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
+	_draw_center_text("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
+	# 寶箱等級等分數滾完才揭曉，變成一個「結果出來了」的瞬間
+	if int(round(_score_shown)) >= score:
+		_draw_center_text(chest_tier(), 162, 14, Palette.MOON)
+		_draw_center_text("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
 
 
 func _draw_center_text(text: String, y: float, size: int, col: Color) -> void:
