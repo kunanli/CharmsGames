@@ -110,6 +110,11 @@ var _pop_at := Vector2.ZERO
 
 var _prev_burst := false
 
+# Game feel（見 shared/juice.gd）。位移只作用在繪製，不碰任何遊戲數值。
+var _juice := Juice.new(Juice.ARCADE)
+var _at_wall := false               # 去抖：貼著邊界時只在「剛撞上」那一幀 kick
+var _last_phase := 0
+
 
 func _ready() -> void:
 	_rng.randomize()
@@ -134,6 +139,9 @@ func _start_round() -> void:
 	_charm_timer = CHARM_EVERY
 	_flash = 0.0
 	_pop_timer = 0.0
+	_juice.reset()
+	_at_wall = false
+	_last_phase = 0
 	state = State.READY
 	state_timer = READY_TIME
 
@@ -150,6 +158,20 @@ func _phase() -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	# tick() 回 false 代表這一幀在命中頓格中，遊戲邏輯整個停住。
+	# 純表現用的計時器留在下面、不受影響。
+	var run := _juice.tick(delta)
+	if run:
+		_run_state(delta)
+
+	if _pop_timer > 0.0:
+		_pop_timer -= delta
+	if _flash > 0.0:
+		_flash -= delta
+	queue_redraw()
+
+
+func _run_state(delta: float) -> void:
 	match state:
 		State.READY:
 			state_timer -= delta
@@ -161,12 +183,6 @@ func _process(delta: float) -> void:
 			if Input.is_action_just_pressed("ui_accept"):
 				_start_round()
 
-	if _pop_timer > 0.0:
-		_pop_timer -= delta
-	if _flash > 0.0:
-		_flash -= delta
-	queue_redraw()
-
 
 func _tick_play(delta: float) -> void:
 	time_left -= delta
@@ -174,6 +190,11 @@ func _tick_play(delta: float) -> void:
 		time_left = 0.0
 		state = State.RESULT
 		return
+
+	var ph_now := _phase_index()
+	if ph_now != _last_phase:
+		_last_phase = ph_now
+		_juice.kick(0.32)          # 每 15 秒一次的段落推進，給一個節奏點
 
 	_move_luna(delta)
 	_tick_shield(delta)
@@ -200,7 +221,20 @@ func _move_luna(delta: float) -> void:
 	was_dashing = dashing
 
 	var speed := MOVE_SPEED * (DASH_MULT if dashing else 1.0)
-	luna_x = clampf(luna_x + dir * speed * delta, 12.0, SCREEN.x - 12.0)
+	# 走到畫面邊界：撞上去的那一幀給一記水平震動，貼著不放不會重複觸發。
+	# 衝刺撞牆比走路撞牆更兇 —— 撞得多用力，地圖就晃多大。
+	var want_x := luna_x + dir * speed * delta
+	var clamped := clampf(want_x, 12.0, SCREEN.x - 12.0)
+	if dir != 0.0 and not is_equal_approx(want_x, clamped):
+		if not _at_wall:
+			_juice.kick(0.55 if dashing else 0.34, Vector2.RIGHT)
+			_juice.freeze(0.05 if dashing else 0.03)
+		_at_wall = true
+	else:
+		_at_wall = false
+	luna_x = clamped
+	# 鏡頭往移動方向偏一點。只做水平 —— 垂直會讓露娜跟地面線脫開。
+	_juice.look(Vector2(dir, 0.0))
 
 	# 主動引爆護盾：清掉畫面上所有炸彈但不加分
 	var burst := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)
@@ -222,6 +256,8 @@ func _burst_shield() -> void:
 	drops = kept
 	shield_left = 0.0
 	if cleared > 0:
+		_juice.kick(minf(0.45 + 0.06 * cleared, 0.80))
+		_juice.freeze(0.12)
 		_pop("BURST! x%d" % cleared, Palette.MOON, Vector2(240, 150))
 
 
@@ -381,24 +417,43 @@ func _on_caught(d: Drop) -> void:
 		Kind.BOMB:
 			if shield_left > 0.0:
 				shield_left = 0.0          # 護盾擋掉一顆炸彈後消失
+				_juice.kick(0.50)
+				_juice.freeze(0.10)
 				_pop("BLOCKED", Palette.MOON, d.pos)
 			else:
 				lives -= 1
 				combo = 0
 				multiplier = 1
 				_flash = 0.28
+				_juice.kick(0.95)
+				_juice.freeze(0.14)
 				_pop("-1 LIFE", Palette.WARN, d.pos)
 				if lives <= 0:
 					state = State.RESULT
 		Kind.MOON:
 			shield_left = SHIELD_TIME
+			_juice.kick(0.30)
+			_juice.freeze(0.05)
 			_pop("SHIELD 8s", Palette.MOON, d.pos)
 		_:
 			var base := _base_score(d.kind)
+			var was_mult := multiplier
 			combo += 1
 			multiplier = clampi(1 + combo / COMBO_STEP, 1, COMBO_MAX)
 			var gained := base * multiplier
 			score += gained
+			# 珠寶約 1.5 秒掉一顆，力道必須極小，不然會變成整局的背景震動
+			match d.kind:
+				Kind.CHARM:
+					_juice.kick(0.45)
+					_juice.freeze(0.09)
+				Kind.STARDUST:
+					_juice.kick(0.12)
+				_:
+					_juice.kick(0.06)
+			if multiplier > was_mult:
+				_juice.kick(0.25 + 0.08 * (multiplier - 1))
+				_juice.freeze(0.03 * (multiplier - 1))
 			var col: Color = Palette.GOLD if d.kind == Kind.CHARM else Palette.TEXT
 			_pop("+%d" % gained, col, d.pos)
 
@@ -408,6 +463,7 @@ func _on_missed(d: Drop) -> void:
 	if d.kind == Kind.BOMB or d.kind == Kind.MOON:
 		return
 	if combo > 0:
+		_juice.kick(0.32, Vector2.DOWN)
 		_pop("COMBO LOST", Palette.TEXT_DIM, Vector2(d.pos.x, KILL_Y - 12))
 	combo = 0
 	multiplier = 1
@@ -444,10 +500,16 @@ func chest_tier() -> String:
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
-	_draw_bg()
+	# 三層，每層一個位移（見 shared/juice.gd 的分層模型）
+	draw_set_transform(_juice.bg_offset())
+	_draw_bg_far()                     # 星星與屋頂剪影：視差層
+	draw_set_transform(_juice.world_offset())
+	_draw_ground()                     # 地面線跟世界同步，露娜才不會在地上滑動
 	for d in drops:
 		_draw_drop(d)
 	_draw_luna()
+	_draw_pop()                        # _pop_at 是世界座標，必須畫在這一層
+	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
 
 	if _flash > 0.0:
@@ -458,21 +520,27 @@ func _draw() -> void:
 		_draw_result()
 
 
-func _draw_bg() -> void:
-	draw_rect(Rect2(Vector2.ZERO, SCREEN), Palette.BG)
+## 視差層：只有遠到不會跟任何東西接觸的元素。往外多畫 OVERDRAW 避免露出缺口。
+func _draw_bg_far() -> void:
+	var m := Juice.OVERDRAW
+	draw_rect(Rect2(-m, -m, SCREEN.x + m * 2.0, SCREEN.y + m * 2.0), Palette.BG)
 	# 星點
 	for i in 34:
 		var x := fmod(float(i) * 71.0, 474.0) + 3.0
 		var y := fmod(float(i) * 43.0, 190.0) + 6.0
 		draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
-	# 屋頂與樹林剪影
-	for i in 9:
-		var bx := float(i) * 56.0 - 8.0
+	# 屋頂與樹林剪影：多跑一輪並往左移，補上多畫出來的那一圈
+	for i in 10:
+		var bx := float(i) * 56.0 - 8.0 - m
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(bx, 214), Vector2(bx + 28, 186), Vector2(bx + 56, 214)]), Palette.FAR)
-	# 地面
-	draw_rect(Rect2(0, 214, SCREEN.x, SCREEN.y - 214), Palette.NEAR)
-	draw_line(Vector2(0, 214), Vector2(SCREEN.x, 214), Palette.WALL_DARK, 1.0)
+
+
+## 地面屬於 WORLD 而不是背景 —— 露娜站在這條線上，兩者必須共用同一個位移。
+func _draw_ground() -> void:
+	var m := Juice.OVERDRAW
+	draw_rect(Rect2(-m, 214, SCREEN.x + m * 2.0, SCREEN.y - 214 + m), Palette.NEAR)
+	draw_line(Vector2(-m, 214), Vector2(SCREEN.x + m, 214), Palette.WALL_DARK, 1.0)
 
 
 func _draw_drop(d: Drop) -> void:
@@ -546,10 +614,15 @@ func _draw_hud() -> void:
 		draw_string(font, Vector2(12, 34), "COMBO %d/%d" % [combo, COMBO_STEP],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Palette.TEXT_DIM)
 
-	if _pop_timer > 0.0:
-		var rise := (0.7 - _pop_timer) * 16.0
-		draw_string(font, Vector2(_pop_at.x - 40, _pop_at.y - rise), _pop_text,
-			HORIZONTAL_ALIGNMENT_CENTER, 80, 12, _pop_col)
+
+
+## 分數飄字用的是世界座標，所以畫在 world pass，不能留在 HUD
+func _draw_pop() -> void:
+	if _pop_timer <= 0.0:
+		return
+	var rise := (0.7 - _pop_timer) * 16.0
+	draw_string(ThemeDB.fallback_font, Vector2(_pop_at.x - 40, _pop_at.y - rise),
+		_pop_text, HORIZONTAL_ALIGNMENT_CENTER, 80, 12, _pop_col)
 
 
 func _draw_result() -> void:
