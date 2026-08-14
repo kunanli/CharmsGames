@@ -73,6 +73,10 @@ var _juice := Juice.new(Juice.ARCADE)
 var _fx := Fx.new()               # 粒子（見 shared/fx.gd）
 var _score_shown := 0.0           # HUD 上滾動中的分數，會追上 score
 
+var s_bg: Texture2D = preload("res://assets/seeker/S_Bg.png")
+var s_perl1: Texture2D = preload("res://assets/seeker/S_Perl1.png")
+var s_heart: Texture2D = preload("res://assets/seeker/S_Heart.png")
+
 
 func _ready() -> void:
 	maze = Maze.new()
@@ -376,6 +380,7 @@ func _draw() -> void:
 func _draw_backdrop() -> void:
 	var m := Juice.OVERDRAW
 	draw_rect(Rect2(-m, -m, 480.0 + m * 2.0, 270.0 + m * 2.0), Palette.BG)
+	draw_texture(s_bg, Vector2.ZERO)
 	if not SHOW_STARS:
 		return
 	# 固定的偽隨機（跟 Fishing/Catch 同一套寫法），不要每幀跳動
@@ -395,9 +400,17 @@ func _draw_maze() -> void:
 	for c in maze.items:
 		var center := maze.cell_center(c)
 		if maze.items[c] == Maze.ITEM_MOON:
-			draw_circle(center, 4.0, Palette.MOON)
+			_draw_centered_texture(s_heart, center)
 		else:
-			draw_circle(center, 1.5, Palette.PEARL)
+			_draw_centered_texture(s_perl1, center)
+
+
+func _draw_centered_texture(texture: Texture2D, center: Vector2) -> void:
+	if texture == null:
+		return
+		
+	var size := texture.get_size()
+	draw_texture(texture, center - size * 0.5)
 
 
 func _draw_hud() -> void:

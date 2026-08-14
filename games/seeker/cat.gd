@@ -58,6 +58,9 @@ var _wander_cell := Vector2i.ZERO   # 遊蕩貓目前晃去哪
 var _wander_timer := 0.0
 var _rng := RandomNumberGenerator.new()
 
+var s_enemy1: Texture2D = preload("res://assets/seeker/S_Enemy1.png")
+var s_enemy2: Texture2D = preload("res://assets/seeker/S_Enemy2.png")
+
 
 ## 設定個性。速度與外觀都跟著個性走，讓玩家一眼認得出是哪一隻。
 ##
@@ -261,12 +264,7 @@ func _draw() -> void:
 		_draw_petrified()
 		return
 
-	if fill_col.a > 0.0:
-		draw_rect(Rect2(-7, -7, 14, 14), fill_col)
-	draw_rect(Rect2(-7, -7, 14, 14), body_col, false, 1.0)
-	draw_circle(Vector2(-3, -2), 1.5, Palette.CAT_EYE)
-	draw_circle(Vector2(3, -2), 1.5, Palette.CAT_EYE)
-	_draw_accent(body_col)
+	_draw_enemy_texture(Color.WHITE)
 
 
 ## 石化：半透明藍白緩慢閃爍（美術規格書 3.2）。
@@ -278,12 +276,15 @@ func _draw_petrified() -> void:
 	if petrify_ending:
 		body = Palette.TEXT                           # 閃白
 		alpha = 1.0 if fmod(t, 0.24) < 0.12 else 0.35
-	draw_rect(Rect2(-7, -7, 14, 14), Color(body, alpha * 0.5))
-	draw_rect(Rect2(-7, -7, 14, 14), Color(body, alpha), false, 1.0)
-	# 眼睛也一起石化，暖色暫時消失 —— 這一瞬間場上沒有威脅
-	draw_circle(Vector2(-3, -2), 1.5, Color(body, alpha))
-	draw_circle(Vector2(3, -2), 1.5, Color(body, alpha))
-	_draw_accent(Color(body, alpha))
+	_draw_enemy_texture(Color(body, alpha))
+
+
+func _draw_enemy_texture(modulate_color: Color) -> void:
+	var texture := s_enemy2 if kind == Kind.WANDERER else s_enemy1
+	if texture == null:
+		return
+	var size := texture.get_size()
+	draw_texture(texture, -size * 0.5, modulate_color)
 
 
 ## 個性的剪影特徵。石化時要跟著換成石化色，不然會露出原本的紫色。

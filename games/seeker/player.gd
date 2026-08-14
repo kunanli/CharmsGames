@@ -26,6 +26,8 @@ const SQUASH_TIME := 0.20
 var _squash := 0.0
 var _squash_axis := Vector2.ZERO
 
+var s_player: Texture2D = preload("res://assets/seeker/S_Player.png")
+
 
 func setup(m: Maze, start_cell: Vector2i) -> void:
 	maze = m
@@ -114,8 +116,7 @@ func _draw() -> void:
 	# 玩家看得出是撞到左牆還右牆，而且畫面完全沒動，不會暈。
 	if _squash > 0.0:
 		draw_set_transform(Vector2.ZERO, 0.0, Fx.squash(_squash, _squash_axis))
-	# Placeholder：之後換成 Sprite2D + 像素素材
-	draw_rect(Rect2(-8, -20, 16, 28), Palette.LUNA, false, 1.0)
-	draw_rect(Rect2(-5, -17, 10, 8), Palette.LUNA)      # 帽子
-	# 帽上的心形徽章：品牌識別，全畫面該發光的三樣東西之一
-	draw_rect(Rect2(-1, -15, 2, 2), Palette.LUNA_LIGHT)
+	if s_player == null:
+		return
+	var size := s_player.get_size()
+	draw_texture(s_player, Vector2(-size.x * 0.5, 8.0 - size.y))

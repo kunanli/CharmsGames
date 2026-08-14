@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://congpep6mukij"]
+[gd_scene format=3 uid="uid://congpep6mukij"]
 
-[ext_resource type="Script" path="res://launcher/launcher.gd" id="1_launcher"]
+[ext_resource type="Script" uid="uid://vs8abkstniju" path="res://launcher/launcher.gd" id="1_launcher"]
 
-[node name="Launcher" type="Node2D"]
+[node name="Launcher" type="Node2D" unique_id=2003662513]
 script = ExtResource("1_launcher")

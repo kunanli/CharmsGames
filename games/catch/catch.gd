@@ -130,6 +130,13 @@ var _luna_squash := 0.0
 var _luna_axis := Vector2.ZERO
 var _basket_squash := 0.0
 
+var bg_texture: Texture2D = preload("res://assets/catch/CC_Bg.png")
+var cc_01: Texture2D = preload("res://assets/catch/CC_01.png")
+var cc_02: Texture2D = preload("res://assets/catch/CC_02.png")
+var cc_03: Texture2D = preload("res://assets/catch/CC_03.png")
+var cc_04: Texture2D = preload("res://assets/catch/CC_04.png")
+var cc_05: Texture2D = preload("res://assets/catch/CC_05.png")
+var cc_person1: Texture2D = preload("res://assets/catch/CC_Person1.png")
 
 func _ready() -> void:
 	_rng.randomize()
@@ -596,6 +603,7 @@ func _draw_bg_far() -> void:
 		var bx := float(i) * 56.0 - 8.0 - m
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(bx, 214), Vector2(bx + 28, 186), Vector2(bx + 56, 214)]), Palette.FAR)
+	draw_texture(bg_texture, Vector2.ZERO)
 
 
 ## 地面屬於 WORLD 而不是背景 —— 露娜站在這條線上，兩者必須共用同一個位移。
@@ -608,29 +616,22 @@ func _draw_ground() -> void:
 func _draw_drop(d: Drop) -> void:
 	match d.kind:
 		Kind.JEWEL:
-			draw_rect(Rect2(d.pos - Vector2(4, 4), Vector2(8, 8)), Palette.LUNA)
-			draw_rect(Rect2(d.pos - Vector2(2, 2), Vector2(3, 3)), Palette.LUNA_LIGHT)
+			_draw_drop_texture(cc_01, d.pos)
 		Kind.STARDUST:
-			draw_circle(d.pos, 4.5, Palette.PEARL)
-			draw_circle(d.pos + Vector2(-1.5, -1.5), 1.5, Palette.TEXT)
+			_draw_drop_texture(cc_02, d.pos)
 		Kind.CHARM:
-			# 金色光暈與拖尾，遠遠就能判讀
-			draw_line(d.pos, d.pos - Vector2(0, 14), Color(Palette.GOLD, 0.35), 3.0)
-			var halo := 7.0 + sin(d.phase * 3.0) * 1.5
-			draw_circle(d.pos, halo, Color(Palette.GOLD, 0.3))
-			draw_circle(d.pos, 4.5, Palette.GOLD)
+			_draw_drop_texture(cc_03, d.pos)
 		Kind.BOMB:
-			draw_circle(d.pos, 6.5, Palette.CAT_DARK)
-			draw_circle(d.pos, 6.5, Palette.CAT, false, 1.0)
-			# 暗影猫的黃眼睛
-			draw_circle(d.pos + Vector2(-2.5, -1.0), 1.5, Palette.CAT_EYE)
-			draw_circle(d.pos + Vector2(2.5, -1.0), 1.5, Palette.CAT_EYE)
-			# 引信火花：畫面唯一的暖橘色，120px/s 落速下也要能瞬間辨識
-			var spark := 1.5 + sin(d.phase * 14.0) * 0.8
-			draw_circle(d.pos + Vector2(0, -8.0), spark, Palette.WARN)
+			_draw_drop_texture(cc_04, d.pos)
 		Kind.MOON:
-			draw_circle(d.pos, 6.0, Palette.MOON)
-			draw_circle(d.pos + Vector2(-2, -1), 5.0, Palette.BG)
+			_draw_drop_texture(cc_05, d.pos)
+
+
+func _draw_drop_texture(texture: Texture2D, center: Vector2) -> void:
+	if texture == null:
+		return
+	var size := texture.get_size()
+	draw_texture(texture, center - size * 0.5)
 
 
 func _draw_luna() -> void:
@@ -671,10 +672,10 @@ func _draw_luna() -> void:
 
 
 func _draw_luna_body(cx: float, cy: float) -> void:
-	# 身體（16×32 placeholder）＋帽子＋心形徽章
-	draw_rect(Rect2(cx - 6, cy - 22, 12, 22), Palette.LUNA, false, 1.0)
-	draw_rect(Rect2(cx - 9, cy - 30, 18, 6), Palette.LUNA)
-	draw_rect(Rect2(cx - 1, cy - 29, 2, 2), Palette.LUNA_LIGHT)
+	if cc_person1 == null:
+		return
+	var size := cc_person1.get_size()
+	draw_texture(cc_person1, Vector2(cx - size.x * 0.5, cy - size.y))
 
 
 func _draw_basket(x: float, y: float, size: Vector2) -> void:
