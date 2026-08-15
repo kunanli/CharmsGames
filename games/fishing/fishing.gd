@@ -120,6 +120,29 @@ var _rushed := false                # 最後 15 秒的加速只提示一次
 var _line_flash := 0.0              # 勾中時釣線閃一下（GDD 指定的表現）
 var _score_shown := 0.0             # HUD 上滾動中的分數
 
+var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
+var _textures := {
+	Kind.JUNK_FISH: preload("res://assets/catch/CC_04.png"),
+	Kind.SMALL_PEARL: preload("res://assets/fishing/F_Perl1.png"),
+	Kind.STARDUST: preload("res://assets/fishing/F_stardust.png"),
+	Kind.CHARM: preload("res://assets/fishing/F_CHARM.png"),
+	Kind.ROCK: preload("res://assets/catch/CC_05.png"),
+	Kind.SHADOW_FISH: preload("res://assets/fishing/F_SHADOW_FISH.png"),
+	Kind.BIG_FISH: preload("res://assets/fishing/F_SHADOW_FISH.png"),
+}
+
+var _item_sizes := {
+	Kind.JUNK_FISH: Vector2(30, 30),
+	Kind.SMALL_PEARL: Vector2(30, 30),
+	Kind.STARDUST: Vector2(35, 35),
+	Kind.CHARM: Vector2(20, 20),
+	Kind.ROCK: Vector2(40, 40),
+	Kind.SHADOW_FISH: Vector2(20, 20),
+	Kind.BIG_FISH: Vector2(35, 35),
+}
+
+
+
 
 func _ready() -> void:
 	_rng.randomize()
@@ -511,7 +534,7 @@ func _draw() -> void:
 	draw_set_transform(_juice.bg_offset())
 	_draw_sky()                        # 天空／月亮／星星／遠山：視差層
 	draw_set_transform(_juice.world_offset())
-	_draw_water()                      # 水面線跟世界同步，船才不會浮起來
+	#_draw_water()                      # 水面線跟世界同步，船才不會浮起來
 	for it in items:
 		_draw_item(it)
 	_draw_line_and_hook()
@@ -546,55 +569,45 @@ func _draw_sky() -> void:
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(bx, SURFACE_Y), Vector2(bx + 38, SURFACE_Y - 26),
 			Vector2(bx + 76, SURFACE_Y)]), Palette.FAR)
+			
+	draw_texture(bg_texture, Vector2.ZERO)
 
 
 ## 水體屬於 WORLD 而不是背景 —— 船釘在水面線上，兩者必須共用同一個位移。
-func _draw_water() -> void:
-	var m := Juice.OVERDRAW
-	draw_rect(Rect2(-m, SURFACE_Y, SCREEN.x + m * 2.0, SCREEN.y - SURFACE_Y + m),
-		Palette.NIGHT)
-	draw_line(Vector2(-m, SURFACE_Y), Vector2(SCREEN.x + m, SURFACE_Y),
-		Palette.WALL_DARK, 1.0)
-	# 三條水層分隔線，讓深度一眼可讀
-	for y: float in [SHALLOW.y + 4.0, MID.y + 4.0]:
-		draw_line(Vector2(-m, y), Vector2(SCREEN.x + m, y), Palette.FAR, 1.0)
+#func _draw_water() -> void:
+#	var m := Juice.OVERDRAW
+#	draw_rect(Rect2(-m, SURFACE_Y, SCREEN.x + m * 2.0, SCREEN.y - SURFACE_Y + m),
+#		Palette.NIGHT)
+#	draw_line(Vector2(-m, SURFACE_Y), Vector2(SCREEN.x + m, SURFACE_Y),
+#		Palette.WALL_DARK, 1.0)
+#	# 三條水層分隔線，讓深度一眼可讀
+#	for y: float in [SHALLOW.y + 4.0, MID.y + 4.0]:
+#		draw_line(Vector2(-m, y), Vector2(SCREEN.x + m, y), Palette.FAR, 1.0)
 
+func _draw_centered_texture(
+		texture: Texture2D,
+		center: Vector2,
+		size: Vector2
+	) -> void:
+
+	if texture == null:
+		return
+
+	draw_texture_rect(
+		texture,
+		Rect2(center - size * 0.5, size),
+		false
+	)
 
 func _draw_item(it: Item) -> void:
-	var col: Color = _defs[it.kind]["col"]
-	var r := it.rect()
-	match it.kind:
-		Kind.SMALL_PEARL:
-			draw_circle(it.pos, 3.0, col)
-		Kind.STARDUST:
-			draw_circle(it.pos, 4.5, col)
-			draw_circle(it.pos + Vector2(-1.5, -1.5), 1.5, Palette.TEXT)
-		Kind.CHARM:
-			# 全水下唯一帶金色呼吸光暈的物件
-			var halo := 6.5 + sin(it.phase * 2.4) * 1.8
-			draw_circle(it.pos, halo, Color(Palette.GOLD, 0.28))
-			draw_circle(it.pos, 4.0, col)
-		Kind.ROCK:
-			draw_rect(r, col)
-			draw_rect(r, Palette.NEAR, false, 1.0)
-		Kind.SHADOW_FISH:
-			draw_rect(r, col)
-			draw_rect(r, Palette.CAT_DARK, false, 1.0)
-			# 保留暗影猫那雙黃眼睛，跟 Seeker 的反派同族
-			var look := signf(it.vx) if it.vx != 0.0 else 1.0
-			draw_circle(it.pos + Vector2(look * 3.0, -2.0), 1.5, Palette.CAT_EYE)
-		Kind.BIG_FISH:
-			draw_rect(r, col)
-			var tail := signf(it.vx) if it.vx != 0.0 else 1.0
-			draw_colored_polygon(PackedVector2Array([
-				it.pos + Vector2(-tail * 16.0, 0),
-				it.pos + Vector2(-tail * 23.0, -6.0),
-				it.pos + Vector2(-tail * 23.0, 6.0)]), col)
-			draw_circle(it.pos + Vector2(tail * 10.0, -3.0), 1.5, Palette.TEXT)
-		_:
-			draw_rect(r, col)
-			var t := signf(it.vx) if it.vx != 0.0 else 1.0
-			draw_circle(it.pos + Vector2(t * 4.0, -2.0), 1.0, Palette.TEXT)
+	var texture: Texture2D = _textures.get(it.kind)
+	if texture == null:
+		return
+
+	var size : Vector2 = _item_sizes.get(it.kind, texture.get_size())
+	_draw_centered_texture(texture, it.pos, size)
+
+
 
 
 func _draw_line_and_hook() -> void:
