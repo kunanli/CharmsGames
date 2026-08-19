@@ -73,9 +73,12 @@ var _juice := Juice.new(Juice.ARCADE)
 var _fx := Fx.new()               # 粒子（見 shared/fx.gd）
 var _score_shown := 0.0           # HUD 上滾動中的分數，會追上 score
 
-var s_bg: Texture2D = preload("res://assets/seeker/S_Bg.png")
+var s_bg: Texture2D = preload("res://assets/seeker/Map/S_MAP.png")
+var s_hinder: Texture2D = preload("res://assets/seeker/Map/S_Hinder.png")
 var s_perl1: Texture2D = preload("res://assets/seeker/S_Perl1.png")
 var s_heart: Texture2D = preload("res://assets/seeker/S_Heart.png")
+var s_logo: Texture2D = preload("res://assets/seeker/Map/S_Hinder_logo.png")
+var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 
 
 func _ready() -> void:
@@ -91,9 +94,9 @@ func _ready() -> void:
 	player.bumped.connect(_on_player_bumped)
 
 	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來
-	_spawn_cat(Cat.Kind.CHASER, Vector2i(13, 6), 0.0)
-	_spawn_cat(Cat.Kind.AMBUSHER, Vector2i(12, 6), 2.5)
-	_spawn_cat(Cat.Kind.WANDERER, Vector2i(14, 6), 5.0)
+	_spawn_cat(Cat.Kind.CHASER, Vector2i(10, 5), 0.0)
+	_spawn_cat(Cat.Kind.AMBUSHER, Vector2i(9, 5), 2.5)
+	_spawn_cat(Cat.Kind.WANDERER, Vector2i(11, 7), 5.0)
 
 	_start_round()
 
@@ -364,6 +367,7 @@ func _draw() -> void:
 	_draw_maze()
 	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	draw_set_transform(Vector2.ZERO)
+	_draw_ui_frame()
 	_draw_hud()
 	_draw_urgency()
 	_draw_petrify_edge()
@@ -390,12 +394,22 @@ func _draw_backdrop() -> void:
 		draw_rect(Rect2(x, y, 1, 1), Palette.FAR)
 
 
+## 全螢幕邊框圖（美術出圖 1920×1080，拉伸到 480×270）。
+## 畫在 HUD 文字之下：邊框上緣的實心條不會蓋掉時間／分數。
+func _draw_ui_frame() -> void:
+	if s_ui_kuang == null:
+		return
+	draw_texture_rect(s_ui_kuang, Rect2(0, 0, 480, 270), false)
+
+
 func _draw_maze() -> void:
-	var o := Vector2(Maze.ORIGIN)
-	var t := float(Maze.TILE)
-	draw_rect(Rect2(o, Vector2(Maze.COLS, Maze.ROWS) * t), Palette.WALL, false, 1.0)
+	var o := Maze.ORIGIN
+	# 迷宮外框不再自己畫邊框，由全螢幕 UI 邊框圖（_draw_ui_frame）取代
+	# 暫時用 S_Hinder.png 拉伸填滿每一塊當示意圖，正式障礙美術進場後再換
 	for b in Maze.BLOCKS:
-		draw_rect(Rect2(o + Vector2(b.position) * t, Vector2(b.size) * t), Palette.WALL, false, 1.0)
+		var r := Rect2(o + Vector2(b.position) * Maze.CELL_SIZE,
+			Vector2(b.size) * Maze.CELL_SIZE)
+		draw_texture_rect(s_hinder, r, false)
 
 	for c in maze.items:
 		var center := maze.cell_center(c)
@@ -403,6 +417,18 @@ func _draw_maze() -> void:
 			_draw_centered_texture(s_heart, center)
 		else:
 			_draw_centered_texture(s_perl1, center)
+
+	_draw_logo()
+
+
+## 中央 Logo 佔位：S_Hinder_logo.png 按 5×2 格（75×30）放在固定格上。
+## 正式 Logo 圖進場後改大小或換圖都在這裡。
+func _draw_logo() -> void:
+	if s_logo == null:
+		return
+	var c := maze.cell_center(Maze.LOGO_CELL)
+	var size := Vector2(75.0, 30.0)      # 5×2 格
+	draw_texture_rect(s_logo, Rect2(c - size * 0.5, size), false)
 
 
 func _draw_centered_texture(texture: Texture2D, center: Vector2) -> void:

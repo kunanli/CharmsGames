@@ -6,21 +6,20 @@ extends RefCounted
 # 要改迷宮外觀，只需要動下面的 BLOCKS 陣列。
 # ─────────────────────────────────────────────────────────
 
-const TILE := 16                      # 一格 16 px
-const COLS := 28                      # 迷宮寬（含外框牆）
-const ROWS := 14                      # 迷宮高（含外框牆）
-const ORIGIN := Vector2i(16, 32)      # 迷宮左上角在 480x270 畫面上的位置
+const LEVEL_SIZE := Vector2(330.0, 210.0)      # 關卡像素尺寸（22×14 格）
+const COLS := 22                              # 迷宮寬（含外框牆）
+const ROWS := 14                              # 迷宮高（含外框牆）
+# CELL_SIZE 剛好是 15×15 正方形，珍珠素材 15×15 正好一格一顆
+const CELL_SIZE := Vector2(LEVEL_SIZE.x / COLS, LEVEL_SIZE.y / ROWS)
+const ORIGIN := Vector2(75.0, 46.0)           # 關卡左上角在 480x270 畫面上的位置
 
 # 障礙塊：Rect2i(x, y, 寬, 高)，單位是 tile。
-# 規則：每塊之間至少隔一格，且不要碰到外框（x 範圍 1~26、y 範圍 1~12）。
+# 規則：每塊之間至少隔一格，且不要碰到外框（x 範圍 1~20、y 範圍 1~12）。
 # 只要守住這條規則，所有走道就保證連通。
 const BLOCKS: Array[Rect2i] = [
-	Rect2i(2, 2, 4, 2),   Rect2i(8, 2, 3, 2),   Rect2i(13, 2, 2, 4),
-	Rect2i(17, 2, 3, 2),  Rect2i(22, 2, 4, 2),
-	Rect2i(2, 6, 3, 3),   Rect2i(7, 5, 4, 2),   Rect2i(17, 5, 4, 2),
-	Rect2i(23, 6, 3, 3),
-	Rect2i(7, 9, 3, 3),   Rect2i(12, 8, 4, 2),  Rect2i(18, 9, 3, 3),
-	Rect2i(2, 11, 3, 1),  Rect2i(23, 11, 3, 1),
+	Rect2i(3, 2, 3, 2),   Rect2i(8, 2, 2, 3),   Rect2i(13, 2, 4, 2),
+	Rect2i(3, 6, 4, 2),   Rect2i(11, 5, 3, 2),  Rect2i(16, 6, 2, 2),
+	Rect2i(7, 9, 3, 1),   Rect2i(13, 9, 3, 1),
 ]
 
 # 月光能量的位置（四個角落）
@@ -30,7 +29,11 @@ const MOON_CELLS: Array[Vector2i] = [
 ]
 
 # 露娜的出生格
-const PLAYER_START := Vector2i(14, 11)
+const PLAYER_START := Vector2i(10, 10)
+
+# 中央 Logo 的固定格：保留給品牌圖。不鋪珍珠、也不是障礙物（要一直保持走道格）。
+# Logo 圖還沒進場，seeker.gd 先在這裡畫一個佔位框。
+const LOGO_CELL := Vector2i(10, 6)
 
 const ITEM_NONE := 0
 const ITEM_BEAN := 1
@@ -81,8 +84,9 @@ func reset_items() -> void:
 	for c in MOON_CELLS:
 		if not walls.has(c):
 			items[c] = ITEM_MOON
-	# 出生格不放東西，避免一開始就自動吃掉
+	# 出生格與中央 Logo 格不放東西，避免一開場就自動吃掉或蓋住 Logo
 	items.erase(PLAYER_START)
+	items.erase(LOGO_CELL)
 
 
 ## 這一格能不能走
@@ -94,7 +98,7 @@ func is_open(c: Vector2i) -> bool:
 
 ## 格子座標 → 該格中心的像素座標
 func cell_center(c: Vector2i) -> Vector2:
-	return Vector2(ORIGIN) + Vector2(c) * TILE + Vector2(TILE, TILE) * 0.5
+	return ORIGIN + Vector2(c) * CELL_SIZE + CELL_SIZE * 0.5
 
 
 ## 隨機挑一格走道（遊蕩貓用來抽下一個目標）

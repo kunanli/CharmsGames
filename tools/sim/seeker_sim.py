@@ -10,15 +10,17 @@ import random
 import statistics as st
 
 # ── 與 games/seeker/maze.gd 同步 ───────────────────────────
-TILE, COLS, ROWS = 16, 28, 14
-ORIGIN = (16, 32)
+LEVEL_SIZE = (330.0, 210.0)
+COLS, ROWS = 22, 14
+CELL_SIZE = (LEVEL_SIZE[0] / COLS, LEVEL_SIZE[1] / ROWS)
+ORIGIN = (75.0, 46.0)
 BLOCKS = [
-    (2, 2, 4, 2), (8, 2, 3, 2), (13, 2, 2, 4), (17, 2, 3, 2), (22, 2, 4, 2),
-    (2, 6, 3, 3), (7, 5, 4, 2), (17, 5, 4, 2), (23, 6, 3, 3),
-    (7, 9, 3, 3), (12, 8, 4, 2), (18, 9, 3, 3),
-    (2, 11, 3, 1), (23, 11, 3, 1),
+    (3, 2, 3, 2), (8, 2, 2, 3), (13, 2, 4, 2),
+    (3, 6, 4, 2), (11, 5, 3, 2), (16, 6, 2, 2),
+    (7, 9, 3, 1), (13, 9, 3, 1),
 ]
-PLAYER_START = (14, 11)
+PLAYER_START = (10, 10)
+LOGO_CELL = (10, 6)
 MOON_CELLS = [(1, 1), (COLS - 2, 1), (1, ROWS - 2), (COLS - 2, ROWS - 2)]
 
 # ── 與 games/seeker/player.gd / cat.gd / seeker.gd 同步 ────
@@ -27,7 +29,7 @@ CATCH_DIST = 9.0
 AMBUSH_LEAD, WANDER_RETARGET, WANDER_POUNCE = 4, 2.5, 6
 CHASER, AMBUSHER, WANDERER = 0, 1, 2
 CAT_SPEED = {CHASER: 60.0, AMBUSHER: 66.0, WANDERER: 54.0}
-CAT_HOME = {CHASER: (13, 6), AMBUSHER: (12, 6), WANDERER: (14, 6)}
+CAT_HOME = {CHASER: (10, 5), AMBUSHER: (9, 5), WANDERER: (11, 7)}
 CAT_DELAY = {CHASER: 0.0, AMBUSHER: 2.5, WANDERER: 5.0}
 SCORE_BREAK = [50, 100, 200, 400]
 PETRIFY_TIME, PETRIFY_WARN, REVIVE_TIME, REVIVE_GRACE = 8.0, 2.0, 5.0, 1.0
@@ -56,7 +58,10 @@ def is_open(c):
 
 
 def cell_center(c):
-    return (ORIGIN[0] + c[0] * TILE + TILE / 2, ORIGIN[1] + c[1] * TILE + TILE / 2)
+    return (
+        ORIGIN[0] + c[0] * CELL_SIZE[0] + CELL_SIZE[0] / 2,
+        ORIGIN[1] + c[1] * CELL_SIZE[1] + CELL_SIZE[1] / 2,
+    )
 
 
 FAILED = []
@@ -181,9 +186,10 @@ class Cat:
 
 def structural():
     print("== 1. 迷宮結構 ==")
-    beans = len(OPEN) - len([c for c in MOON_CELLS if is_open(c)]) - 1
+    # 減 1 顆玩家出生格、1 顆中央 Logo 格（與 maze.gd 的 reset_items 同步）
+    beans = len(OPEN) - len([c for c in MOON_CELLS if is_open(c)]) - 2
     print(f"  走道格 {len(OPEN)}，鋪完後珍珠 {beans} 顆")
-    for name, c in [("PLAYER_START", PLAYER_START)] + \
+    for name, c in [("PLAYER_START", PLAYER_START), ("LOGO_CELL", LOGO_CELL)] + \
                    [(f"CAT {k}", CAT_HOME[k]) for k in (CHASER, AMBUSHER, WANDERER)]:
         ok(is_open(c), f"{name} {c} 是通路")
     ok(all(is_open(c) for c in MOON_CELLS), "四角月光能量都在通路上")
