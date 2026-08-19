@@ -137,6 +137,7 @@ var cc_03: Texture2D = preload("res://assets/catch/CC_03.png")
 var cc_04: Texture2D = preload("res://assets/catch/CC_04.png")
 var cc_05: Texture2D = preload("res://assets/catch/CC_05.png")
 var cc_person1: Texture2D = preload("res://assets/catch/CC_Person1.png")
+var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 
 func _ready() -> void:
 	_rng.randomize()
@@ -578,6 +579,7 @@ func _draw() -> void:
 	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	_draw_pop()                        # _pop_at 是世界座標，必須畫在這一層
 	draw_set_transform(Vector2.ZERO)
+	_draw_ui_frame()
 	_draw_hud()
 	_draw_urgency()
 
@@ -587,6 +589,14 @@ func _draw() -> void:
 		_center("READY!", 140, 24, Palette.GOLD)
 	elif state == State.RESULT:
 		_draw_result()
+
+
+## 全螢幕邊框圖（美術出圖 1920×1080，拉伸到 480×270）。
+## 畫在 HUD 文字之下：邊框上緣的實心條不會蓋掉時間／分數。
+func _draw_ui_frame() -> void:
+	if s_ui_kuang == null:
+		return
+	draw_texture_rect(s_ui_kuang, Rect2(0, 0, 480, 270), false)
 
 
 ## 視差層：只有遠到不會跟任何東西接觸的元素。往外多畫 OVERDRAW 避免露出缺口。

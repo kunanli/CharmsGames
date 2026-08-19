@@ -121,6 +121,7 @@ var _line_flash := 0.0              # 勾中時釣線閃一下（GDD 指定的�
 var _score_shown := 0.0             # HUD 上滾動中的分數
 
 var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
+var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var _textures := {
 	Kind.JUNK_FISH: preload("res://assets/catch/CC_04.png"),
 	Kind.SMALL_PEARL: preload("res://assets/fishing/F_Perl1.png"),
@@ -541,6 +542,7 @@ func _draw() -> void:
 	_draw_boat()
 	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	draw_set_transform(Vector2.ZERO)
+	_draw_ui_frame()
 	_draw_hud()
 	_draw_urgency()
 
@@ -548,6 +550,15 @@ func _draw() -> void:
 		_center("READY!", 150, 24, Palette.GOLD)
 	elif state == State.RESULT:
 		_draw_result()
+
+
+## 全螢幕邊框圖（美術出圖 1920×1080，拉伸到 480×270）。
+## 畫在 HUD 文字之下：邊框上緣的實心條不會蓋掉時間／分數。
+## 放在位移恆為 0 的 HUD 層 —— 左右探看湖面時邊框不會跟著畫面飄。
+func _draw_ui_frame() -> void:
+	if s_ui_kuang == null:
+		return
+	draw_texture_rect(s_ui_kuang, Rect2(0, 0, 480, 270), false)
 
 
 ## 視差層。天空底色要往下延伸超過水面線 —— 水體是畫在 WORLD 層的，
