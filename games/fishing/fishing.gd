@@ -45,11 +45,6 @@ const RETRACT_EMPTY := 210.0               # 空鉤回收速度
 const MOON_USES := 3
 const MOON_BOOST := 3.0                    # 勾到寶物時收線 ×3
 
-# ── 寶箱門檻（GDD：1000 / 2000 / 3500）──────────────────
-const CHEST_BRONZE := 1000
-const CHEST_SILVER := 2000
-const CHEST_GOLD := 3500
-
 # ── 水層（y 範圍）───────────────────────────────────────
 # 注意水層不是等面積的：鉤子從 (240,96) 以 ±75° 掃，可及範圍是一個倒三角形，
 # 越淺越窄。淺層實際只有約 10000px²（放得下約 13 個），中層與深層各有其兩倍。
@@ -62,8 +57,8 @@ const DEEP := Vector2(212, 258)
 # 這些種類撈走後會有新的游進來，回到同一個水層。
 #
 # 為什麼要有這個：GDD 把星塵珍珠固定 4~5 顆、Charm 固定 2~3 顆，
-# 盤面總值上限因此只有約 3070 分，但金寶箱門檻是 3500 —— 不補充的話
-# 金寶箱在數學上就拿不到（模擬過：抓走盤面 91% 的機器人也只有 2800）。
+# 盤面總值上限因此只有約 3070 分 —— 不補充的話，撈得再快也會撞到
+# 天花板（模擬過：抓走盤面 91% 的機器人也只有 2800）。
 # 有限的寶物（星塵珍珠／Charm）維持 GDD 的固定顆數不動，只讓魚群回補，
 # 這樣 60 秒的上限就取決於玩家手速而不是盤面大小，也符合「湖裡的魚會游進來」。
 const RESPAWN_DELAY := 2.2
@@ -528,16 +523,6 @@ func _move_items(delta: float) -> void:
 		it.pos.y = clampf(it.pos.y, SURFACE_Y + 14.0, WATER_B - 6.0)
 
 
-func chest_tier() -> String:
-	if score >= CHEST_GOLD:
-		return "GOLD CHEST"
-	elif score >= CHEST_SILVER:
-		return "SILVER CHEST"
-	elif score >= CHEST_BRONZE:
-		return "BRONZE CHEST"
-	return "NO CHEST"
-
-
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
@@ -710,9 +695,8 @@ func _draw_result() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(Palette.NIGHT, 0.82))
 	_center("TIME UP", 96, 22, Palette.GOLD)
 	_center("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
-	# 寶箱等級等分數滾完才揭曉
+	# 提示等分數滾完才出現，跟分數揭曉同一個瞬間
 	if int(round(_score_shown)) >= score:
-		_center(chest_tier(), 162, 14, Palette.MOON)
 		_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
 		_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
 

@@ -54,11 +54,6 @@ const MOON_MAX_PER_ROUND := 3       # 每局最多出現 3 個月光能量
 const COMBO_STEP := 5               # 每 5 連 +1 倍率
 const COMBO_MAX := 5                # 上限 ×5
 
-# ── 寶箱門檻（GDD：1500 / 3000 / 5000，與 Seeker 同）────
-const CHEST_BRONZE := 1500
-const CHEST_SILVER := 3000
-const CHEST_GOLD := 5000
-
 # ── 難度曲線（GDD 表格，每 15 秒一段）───────────────────
 # 落速 / 同屏上限 / 炸彈比例 / Charm 出現率倍數 / 生成間隔
 #
@@ -571,16 +566,6 @@ func _pop(text: String, col: Color, at: Vector2) -> void:
 	_pop_timer = 0.7
 
 
-func chest_tier() -> String:
-	if score >= CHEST_GOLD:
-		return "GOLD CHEST"
-	elif score >= CHEST_SILVER:
-		return "SILVER CHEST"
-	elif score >= CHEST_BRONZE:
-		return "BRONZE CHEST"
-	return "NO CHEST"
-
-
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
@@ -629,7 +614,8 @@ func _draw_bg_far() -> void:
 		var bx := float(i) * 56.0 - 8.0 - m
 		draw_colored_polygon(PackedVector2Array([
 			Vector2(bx, 214), Vector2(bx + 28, 186), Vector2(bx + 56, 214)]), Palette.FAR)
-	draw_texture(bg_texture, Vector2.ZERO)
+	# 背景圖原始尺寸是螢幕的整數倍（如 1920×1080），拉伸到邏輯螢幕 480×270
+	draw_texture_rect(bg_texture, Rect2(0, 0, SCREEN.x, SCREEN.y), false)
 
 
 ## 地面屬於 WORLD 而不是背景 —— 露娜站在這條線上，兩者必須共用同一個位移。
@@ -768,9 +754,8 @@ func _draw_result() -> void:
 	_center("GAME OVER" if over else "TIME UP", 96, 22,
 		Palette.WARN if over else Palette.GOLD)
 	_center("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
-	# 寶箱等級等分數滾完才揭曉
+	# 提示等分數滾完才出現，跟分數揭曉同一個瞬間
 	if int(round(_score_shown)) >= score:
-		_center(chest_tier(), 162, 14, Palette.MOON)
 		_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
 		_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
 

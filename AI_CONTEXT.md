@@ -1,0 +1,138 @@
+# AI_CONTEXT — 快速上下文速查
+
+> 本档是给 AI 工具的**快照速查**，内容提炼自 `AGENTS.md`。
+> 规格细节的权威是 `AGENTS.md` 与 `Guides/` 的三份 GDD；
+> 两边有出入时以 `AGENTS.md` 为准，改了 `AGENTS.md` 记得同步这里。
+
+## 项目概况
+
+Pandora 品牌合作的三款 8-bit 像素小游戏，共用世界观、色盘与结算（排行榜）系统。
+
+### 技术
+
+- **Godot 4.7** / 纯 GDScript / Compatibility renderer
+- 逻辑分辨率固定 **480×270**，一格 tile 16px，4 倍整数放大显示
+- 复古像素 + Y2K 风格；**只用 `shared/palette.gd` 的 20 色**，不新增中间色（唯一允许的变体是对既有色套 alpha）
+- 画面上的东西目前全部是**程序绘制的色块与线条**（粉色方框的露娜、紫色方框的猫是预期现象），美术素材 M6 才接入
+- HUD 文字一律英文（内置字体无中文字符，接中文字型后再改）
+
+### 游戏
+
+| # | 游戏剧名 | 类型 | 主脚本 |
+|---|---|---|---|
+| 1 | CharmsSeeker | 吃豆人（迷宫追逐） | `games/seeker/seeker.gd` |
+| 2 | CharmsFishing | 黄金矿工（垂钓） | `games/fishing/fishing.gd` |
+| 3 | CharmsCatch | 接金币（接珠宝躲炸弹） | `games/catch/catch.gd` |
+
+三款共通：单一关卡 60 秒、统一状态机 `READY`（1.5 秒开场停顿）→ 游玩 → `RESULT`。**局终只结算分数与排名**——宝箱系统已于 2026-08 整体移除（原先按分数阈值判铜/银/金并在结算揭示，无随机抽取逻辑），不要再加回来。
+
+## 当前系统
+
+| 系统 | 实现位置 | 说明 |
+|---|---|---|
+| 流程状态机 | `launcher/launcher.gd` | `enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }`。相当于总管：标题、名字、游戏、排行榜面板的切换全在这。**没有独立的 GameManager** |
+| 场景管理 | 无独立 SceneManager | **刻意单场景架构**：全项目只有 `Launcher.tscn`（一个 Node2D）。游戏用 `load()` → `Node2D.new()` → `set_script()` → `add_child()` 挂到临时节点，退出 `queue_free()` 整个节点即自动清理。新增游戏只需在 `launcher.gd` 的 `GAMES` 数组加一笔 |
+| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）按 1/2/3 进二级标题（各款的全屏图，不叠文字）。二级标题是固定场所：不响应 1/2/3 与 ESC，唯一回一级的路径是 F3 管理员密码（`admin` / `pandora`） |
+| 玩家名字（PlayerName） | `ui/name_input.gd` + `shared/player_session.gd` | 名字生命周期：首次进游戏要输、面板 Enter 重开保留、ESC 退出清除 |
+| 排行榜（Leaderboard） | `shared/leaderboard_record.gd` / `leaderboard_manager.gd` / `date_utils.gd` + `ui/leaderboard_panel.gd` | 本地存储 `user://leaderboard.json`（version:1，每款最多 1000 条，按 game_id 分榜）。三款共用一个面板。游戏只发 `round_finished(score, duration, game_over)` 信号，不知道排行榜存在，组装与提交在 launcher |
+| 管理员弹窗 | `ui/admin_password.gd` | F3 弹出的 Modal Overlay，开着时 launcher 不处理任何按键 |
+| 视觉反馈 | `shared/juice.gd`（全画面）+ `shared/fx.gd`（单物件） | 震动/镜头偏移/顿格/粒子/挤压变形。预设 SUBTLE / ARCADE 两档，目前三款都挂 ARCADE，未实机定案 |
+
+## 场景结构
+
+```
+Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
+└── 所有游戏物件都由代码 add_child() 生成，不写 .tscn
+```
+
+绘制分层（三款一致，按 FAR → WORLD → HUD 顺序画）：
+
+| 层 | 内容 | 位移 |
+|---|---|---|
+| FAR | 星星、月亮、远山/屋顶剪影 | `bg_offset()` |
+| WORLD | 玩家、敌人、道具、以及它们实际踩着的背景（水面线、地面线） | `world_offset()` |
+| HUD | 分数、时间、生命、结算 | 恒为 0 |
+
+背景一律外扩多画 `Juice.OVERDRAW`（24px）防震动露边。
+
+## 重要脚本
+
+| 脚本 | 职责 |
+|---|---|
+| `launcher/launcher.gd` | 标题选单与全流程状态机、F3 密码、排行榜接线的组装端 |
+| `games/seeker/seeker.gd` | Seeker 主程序与状态机；同目录 `maze.gd`（迷宫数据）、`player.gd`（露娜格子移动）、`cat.gd`（暗影猫 AI） |
+| `games/fishing/fishing.gd` | Fishing 单文件实现 |
+| `games/catch/catch.gd` | Catch 单文件实现 |
+| `shared/palette.gd` | 锁定的 20 色共用色盘 |
+| `shared/juice.gd` | 全画面效果：震动、镜头偏移、视差、顿格（状态机） |
+| `shared/fx.gd` | 单物件效果：粒子爆散、挤压变形、分数滚动 |
+| `shared/leaderboard_record.gd` | 单条记录的字段与序列化 |
+| `shared/leaderboard_manager.gd` | 存储/排序/分页/清除，全部 static |
+| `shared/player_session.gd` | 玩家名字生命周期 |
+| `shared/date_utils.gd` | 排行榜日期工具（今天/昨天/前天），所有日期运算必须走这里，禁止字符串截断算日期 |
+| `ui/leaderboard_panel.gd` | 三款共用的排行榜面板 |
+| `ui/name_input.gd` | 姓名输入屏 |
+| `ui/admin_password.gd` | F3 管理员密码弹窗 |
+| `tools/sim/*.py` | 平衡模拟脚本（Python 移植 GDScript 逻辑，跑几百局用统计验证数值），常量是 `.gd` 的副本，改了 `.gd` 要同步 |
+
+## 输入规则
+
+| 场景 | 按键 | 行为 |
+|---|---|---|
+| 一级标题 | **1 / 2 / 3** | 进对应款二级标题 |
+| 二级标题 | **Space / Enter** | 起名开局（下方有缓慢闪烁的英文提示） |
+| 二级标题 | **F3** | 管理员密码弹窗（`admin` / `pandora`），正确才回一级 |
+| 游戏中 / 结算面板 | **ESC** | 回该款的二级标题（名字清除） |
+| 排行榜面板 | **← →** | 翻页（每页 20 条） |
+| 排行榜面板 | **C** | 清除记录（选 TODAY/YESTERDAY/DAY BEFORE，Enter 二次确认） |
+| 排行榜面板 | **Enter / ESC** | 重开同款（名字保留）/ 退出 |
+
+三款操作（GDD 协议，A/B/X 为主动技能键）：
+
+| 游戏 | 移动 | 主动技能 | 备注 |
+|---|---|---|---|
+| Seeker | 方向键（**不支持 WASD**，A 被技能占用） | **A** 发动 8 秒石化 | 需先捡到月光能量，最多囤 2 个 |
+| Fishing | ← → 探看湖面（三款唯一有镜头移动的） | **A / 空格 / ↓ / Enter** 放线；**B / X** 月光能量（每局 3 次，收线途中才有效） | 放线后不可取消 |
+| Catch | ← → | **A** 按住冲刺（松开 0.5 秒冷却）；**B / X** 引爆护盾清全场炸弹 | |
+
+## 当前开发进度
+
+| 游戏 | 状态 |
+|---|---|
+| CharmsSeeker | 做到 M4（月光石化 + 击碎暗影猫）。**M5 未做**（每 20 秒加猫，上限 8） |
+| CharmsFishing | 依 GDD 完成首版，玩法完整 |
+| CharmsCatch | 依 GDD 完成首版，移动手感已调（60→95 px/s） |
+
+待办（优先序）：
+
+1. 实机试玩定案 SUBTLE 或 ARCADE（需要人玩）
+2. 对齐 Seeker 与 GDD 的差异（珍珠数 180/200/205、被抓处理，卡企划拍板）
+3. M5：每 20 秒加一只暗影猫（坑很多，见 AGENTS.md 待办第 3 条）
+4. M6：接美术素材、音效（**目前最大缺口**）、Xbox 手柄
+5. M7：导出 Windows / Web，接排行榜
+
+待企划确认：Seeker 珍珠数、被抓无敌 vs 重置、Fishing 大鱼尺寸 16×32 vs 32×16。
+
+## 已确定的设计决策
+
+- **单场景纯代码架构**：所有逻辑都在 `.gd` 里，方便 AI 读写与 git diff，不写 `.tscn`。
+- **格子坐标 `Vector2i`、像素坐标 `Vector2`**，用各游戏自己的 `cell_center()` 转换，混用是最容易出的 bug。
+- **格子移动用纯数学判断**（`move_toward` 等），不用物理节点 —— 物理碰撞会卡墙角、抖动。
+- **画布位移（震动、镜头偏移）只走绘制层 `draw_set_transform()`，绝不写进 `position`** —— `position` 每帧参与移动与碰撞判定。
+- **镜头移动只有 Fishing 有**（玩家主动按键探看）；Seeker/Catch 禁止自动跟随镜头，实测会晕。
+- **排行榜**：score 降序 → played_at 升序 → record_id 升序；新提交的记录永不因裁剪丢失；记录 ID 由时间戳 + 引擎毫秒 + 同次执行递增序号 + 随机尾码组成（防同毫秒撞号）；档损坏自动改名 `.bak` 重来。
+- **Catch 移动速度 95 px/s 是刻意偏离 GDD 的 60**（企划试玩后拍板），配套加惯性（ACCEL 900 / FRICTION 700）；难度因此下降（模拟中位分 3400→4300），回调难度的杠杆是生成间隔或炸弹比例。
+- **Fishing 族群补充机制**（GDD 没写，自补）：杂鱼/珍珠/大鱼/石头/猫鱼捞走后补新进的；没有它盘面总值上限只有约 3070，手速再快也撞天花板。
+- **Seeker 月光能量是「捡到囤、按 A 发动」**，不是捡到即发；被击碎的猫重生一律回 ACTIVE 不带石化（防中央蹲点刷分）。
+- **改任何玩法数值的前后都要跑 `tools/sim/` 对应脚本**对比 —— 平衡全靠数字，看不出来。
+
+## 禁止修改的系统
+
+- **`Launcher.tscn` 及一切 `.tscn` 场景文件** —— 单场景是核心架构决定。
+- **480×270 逻辑分辨率与 16px tile** —— 所有坐标以此为准。
+- **`shared/palette.gd` 的 20 色** —— 需要新色先跟企划讨论加进色盘，不自创中间色。
+- **不要重新引入局末宝箱 / 奖励抽取** —— 2026-08 已整体移除（`CHEST_*` 常量、`chest_tier()`、面板宝箱行、launcher 的 `chest_tiers` 传参全部拆除），局终仅计分数与排名。
+- **不引入任何外部套件 / addon / 物理碰撞做格子移动**。
+- **`user://leaderboard.json` 的 version:1 格式** 与排行榜排序/裁剪/ID 生成规则（有 300 笔连发的压力测试背书）。
+- **`tools/sim/` 的同步纪律** —— 改 `.gd` 数值必须同步 sim 副本并重跑对比。
+- **`AGENTS.md` 是单一权威文件** —— 规格变更写进它，本档只做摘要同步，不另立规格。

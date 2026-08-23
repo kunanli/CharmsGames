@@ -1,7 +1,7 @@
 # CharmsGames
 
 Pandora 品牌合作的三款 8-bit 像素小遊戲，共用世界觀、色盤與結算系統。
-每款都是單一關卡、60 秒、結算換算 Pandora 寶箱等級。
+每款都是單一關卡、60 秒，局終計分數並進當地排行榜（寶箱系統已移除）。
 
 **Godot 4.7 / GDScript**，邏輯畫面 480×270，4 倍整數放大。
 
@@ -58,10 +58,10 @@ Pandora 品牌合作的三款 8-bit 像素小遊戲，共用世界觀、色盤�
 ```bash
 python3 tools/sim/juice_sim.py      # 震動／漂移／擠壓的數學性質
 python3 tools/sim/seeker_sim.py     # 迷宮結構、貓 AI、石化狀態機、難度
-python3 tools/sim/fishing_sim.py    # 物件放置、死內容、寶箱達成率
-python3 tools/sim/catch_sim.py      # Combo 可達性、寶箱達成率、頓格
+python3 tools/sim/fishing_sim.py    # 物件放置、死內容、分數分佈
+python3 tools/sim/catch_sim.py      # Combo 可達性、分數分佈、頓格
 ```
 
 只需要 Python 3，無相依套件。**改數值前跑一次記下基準，改完再跑一次比較。**
-用眼睛看程式碼判斷不出「金寶箱到底拿不拿得到」—— 這套做法實際抓到過五個
+用眼睛看程式碼判斷不出「中位分數會落在哪個區間」—— 這套做法實際抓到過五個
 會出貨的 bug，清單在 [`tools/sim/README.md`](tools/sim/README.md)。

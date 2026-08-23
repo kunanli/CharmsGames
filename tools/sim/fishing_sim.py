@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CharmsFishing：物件放置、可及性（死內容）、寶箱達成率。
+"""CharmsFishing：物件放置、可及性（死內容）、分數分佈。
 
 執行： python3 tools/sim/fishing_sim.py
 
@@ -18,7 +18,6 @@ SWING_PERIOD, RUSH_TIME, RUSH_SWING = 2.4, 15.0, 1.15
 LINE_MIN, LINE_MAX = 12.0, 205.0
 EXTEND_SPEED, RETRACT_EMPTY = 150.0, 210.0
 MOON_USES, MOON_BOOST = 3, 3.0
-CHEST = (1000, 2000, 3500)
 SHALLOW, MID, DEEP = (112, 158), (162, 208), (212, 258)
 RESPAWN_DELAY = 2.2
 ROUND_TIME = 60.0
@@ -243,21 +242,18 @@ def play(seed, skill="good", respawn=True):
 
 
 def scores(rounds=40):
-    print(f"\n== 2. 寶箱達成率（{rounds} 局）==")
+    print(f"\n== 2. 分數分佈（{rounds} 局）==")
     for skill, label in [("good", "會挑的玩家"), ("greedy", "照單全收")]:
         rs = [play(s, skill) for s in range(rounds)]
         xs = sorted(r[0] for r in rs)
-        t = [100 * sum(1 for x in xs if x >= v) // rounds for v in CHEST]
         print(f"  {label:8s} 中位 {xs[rounds//2]:5d}  最高 {xs[-1]:5d}  "
               f"平均撈 {st.mean(r[1] for r in rs):.0f} 件")
-        print(f"  {'':8s} 銅 {t[0]:3d}%  銀 {t[1]:3d}%  金 {t[2]:3d}%")
 
     print("\n  沒有族群補充會怎樣（GDD 原始設定）：")
     xs = sorted(play(s, "greedy", respawn=False)[0] for s in range(rounds))
-    t = [100 * sum(1 for x in xs if x >= v) // rounds for v in CHEST]
-    print(f"    中位 {xs[rounds//2]}  最高 {xs[-1]}  金 {t[2]}%")
-    ok(t[2] == 0,
-       f"金寶箱在無補充時拿不到（{CHEST[2]} 分在數學上超過盤面總值）—— "
+    print(f"    中位 {xs[rounds//2]}  最高 {xs[-1]}")
+    ok(xs[-1] < 3300,
+       "無補充時分數天花板就是盤面總值（約 3070）—— "
        "這就是補充機制存在的理由")
 
 

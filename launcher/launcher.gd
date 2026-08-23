@@ -69,7 +69,7 @@ var _password_modal: Node2D = null   # F3 管理員密碼彈窗；非 null 時�
 var _built: Array[bool] = []  # 每一款的腳本存不存在，開場算一次就好
 var _notice := ""
 var _notice_timer := 0.0
-var _finish_data := {}        # 局終暫存：record_id / score / game_over / consts
+var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _title_time := 0.0        # 二級標題的閃爍提示計時器
 
 
@@ -195,7 +195,6 @@ func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 		"record_id": LeaderboardManager.submit_score(record),
 		"score": score,
 		"game_over": game_over,
-		"consts": consts,
 	}
 	# 推遲到這幀結束再切換：不能在發射者的 signal 回呼裡把它移出場景樹
 	_open_leaderboard.call_deferred()
@@ -217,7 +216,6 @@ func _open_leaderboard() -> void:
 	panel.set("current_record_id", _finish_data["record_id"])
 	panel.set("score", _finish_data["score"])
 	panel.set("game_over", _finish_data["game_over"])
-	panel.set("chest_tiers", _chest_tiers_from(_finish_data["consts"]))
 	panel.connect("restart_requested", Callable(self, "_on_panel_restart"))
 	panel.connect("exit_requested", Callable(self, "_on_panel_exit"))
 	_panel = panel
@@ -238,16 +236,6 @@ func _on_panel_exit() -> void:
 	CurrentPlayerSession.clear()
 	mode = Mode.GAME_TITLE
 	queue_redraw()
-
-
-## 寶箱門檻從遊戲腳本的常數讀（每款不同：Seeker/Catch 1500/3000/5000，
-## Fishing 1000/2000/3500），改數值時只動遊戲那一支，面板不用碰。
-func _chest_tiers_from(consts: Dictionary) -> Array[int]:
-	return [
-		int(consts.get("CHEST_BRONZE", 1500)),
-		int(consts.get("CHEST_SILVER", 3000)),
-		int(consts.get("CHEST_GOLD", 5000)),
-	]
 
 
 # ── 姓名輸入 ────────────────────────────────────────────

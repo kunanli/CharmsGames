@@ -42,11 +42,6 @@ const SCORE_BEAN := 10
 const SCORE_MOON := 30
 const SCORE_CLEAR := 500      # 清空全場珍珠的獎勵
 
-# 寶箱門檻（企劃書：1500 / 3000 / 5000）
-const CHEST_BRONZE := 1500
-const CHEST_SILVER := 3000
-const CHEST_GOLD := 5000
-
 
 var maze: Maze
 var player: Player
@@ -350,16 +345,6 @@ func _refill() -> void:
 	_fx.burst(player.position, 26, Palette.GOLD, 130.0, 0.8, 3.0, 0.5)
 
 
-func chest_tier() -> String:
-	if score >= CHEST_GOLD:
-		return "GOLD CHEST"
-	elif score >= CHEST_SILVER:
-		return "SILVER CHEST"
-	elif score >= CHEST_BRONZE:
-		return "BRONZE CHEST"
-	return "NO CHEST"
-
-
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
@@ -525,9 +510,8 @@ func _draw_result() -> void:
 	var title_col := Palette.WARN if game_over else Palette.GOLD
 	_draw_center_text(title, 96, 22, title_col)
 	_draw_center_text("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
-	# 寶箱等級等分數滾完才揭曉，變成一個「結果出來了」的瞬間
+	# 提示等分數滾完才出現，跟分數揭曉同一個瞬間
 	if int(round(_score_shown)) >= score:
-		_draw_center_text(chest_tier(), 162, 14, Palette.MOON)
 		_draw_center_text("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
 
 

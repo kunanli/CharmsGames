@@ -273,7 +273,7 @@ def m4_state_machine():
         t += DT
     ok(breaks == 3 and score == 350,
        f"整段石化最多碎 {breaks} 次、共 {score} 分 —— 中央蹲點刷分已封住"
-       f"（石化重生的話會是 1550，比銅寶箱門檻還多）")
+       f"（石化重生的話會是 1550）")
 
     # 重生時序
     rng = random.Random(3)

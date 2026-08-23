@@ -5,11 +5,11 @@ extends Node2D
 #
 # launcher 負責在 add_child 前設定欄位：
 #   game_id / game_name / player_name / current_record_id /
-#   score / game_over / chest_tiers
+#   score / game_over
 # 之後面板自己跟 LeaderboardManager 要資料，排行榜邏輯完全不進遊戲腳本。
 #
-# 取代各遊戲原本的結算畫面：頂部承接「GAME OVER / TIME UP + 分數滾動 +
-# 寶箱等級揭曉」，下面就是排行榜。
+# 取代各遊戲原本的結算畫面：頂部承接「GAME OVER / TIME UP + 分數滾動」，
+# 下面就是排行榜。
 #
 # 按鍵：
 #   ← →       翻頁（首／末頁無操作）
@@ -31,7 +31,6 @@ var player_name := ""           # 底部「你的成績」要用，不從記錄�
 var current_record_id := ""
 var score := 0                  # 本局最終分數（頂部結算行）
 var game_over := false          # 顯示 GAME OVER 還是 TIME UP
-var chest_tiers: Array[int] = [1500, 3000, 5000]   # 銅／銀／金
 
 const SCREEN := Vector2(480, 270)
 const PAGE_SIZE := 20
@@ -128,16 +127,6 @@ func _do_clear() -> void:
 	_refresh()
 
 
-func _chest_tier() -> String:
-	if score >= chest_tiers[2]:
-		return "GOLD CHEST"
-	elif score >= chest_tiers[1]:
-		return "SILVER CHEST"
-	elif score >= chest_tiers[0]:
-		return "BRONZE CHEST"
-	return "NO CHEST"
-
-
 # ── 繪製 ─────────────────────────────────────────────────
 
 func _draw() -> void:
@@ -146,15 +135,12 @@ func _draw() -> void:
 
 	_center(game_name, 16, 12, Palette.GOLD)
 
-	# 結算行：TIME UP / GAME OVER + 滾動分數 + 寶箱等級（滾完才揭曉）
+	# 結算行：TIME UP / GAME OVER + 滾動分數
 	var over_col: Color = Palette.WARN if game_over else Palette.GOLD
 	draw_string(font, Vector2(12, 32), "GAME OVER" if game_over else "TIME UP",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 10, over_col)
 	draw_string(font, Vector2(0, 32), "SCORE %06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 10, Palette.TEXT)
-	if int(round(_score_shown)) >= score:
-		draw_string(font, Vector2(0, 32), _chest_tier(),
-			HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, 10, Palette.MOON)
 
 	# 表頭（x 座標與 _draw_rows 完全一致）
 	draw_string(font, Vector2(44, 44), "RANK", HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, Palette.TEXT_DIM)

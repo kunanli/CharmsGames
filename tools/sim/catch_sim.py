@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CharmsCatch：Combo 可達性、寶箱達成率、頓格是否偷走比賽時間。
+"""CharmsCatch：Combo 可達性、分數分佈、頓格是否偷走比賽時間。
 
 執行： python3 tools/sim/catch_sim.py
 
@@ -20,7 +20,6 @@ LANES, LANE_W, LANE_MIN_GAP = 6, 80.0, 0.6
 SPAWN_Y, KILL_Y = -10.0, 262.0
 START_LIVES, SHIELD_TIME, MOON_MAX = 3, 8.0, 3
 COMBO_STEP, COMBO_MAX = 5, 5
-CHEST = (1500, 3000, 5000)
 ROUND_TIME, PHASE_LEN, CHARM_EVERY = 60.0, 15.0, 15.0
 PHASES = [
     dict(speed=60.0,  max_on=2, bomb=0.10, cm=1.0, gap=(1.6, 2.2)),
@@ -214,13 +213,12 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
 def report(label, rounds=120, **kw):
     rs = [play(s, **kw) for s in range(rounds)]
     xs = sorted(r["score"] for r in rs)
-    t = [100 * sum(1 for x in xs if x >= v) // rounds for v in CHEST]
     cap = 100 * st.mean(r["vc"] for r in rs) / max(st.mean(r["vs"] for r in rs), 1)
     c = Counter(r["bm"] for r in rs)
-    print(f"  {label:28s} 中位 {xs[rounds//2]:5d}  銅 {t[0]:3d}%  銀 {t[1]:3d}%  金 {t[2]:3d}%")
+    print(f"  {label:28s} 中位 {xs[rounds//2]:5d}  最高 {xs[-1]:5d}")
     print(f"  {'':28s} 接取率 {cap:.0f}%  最高倍率 {dict(sorted(c.items()))}")
     mean_mult = st.mean(r["bm"] for r in rs)
-    return dict(median=xs[rounds // 2], tiers=t, capture=cap, dist=dict(c),
+    return dict(median=xs[rounds // 2], capture=cap, dist=dict(c),
                 mean_mult=mean_mult, walls=st.mean(r["walls"] for r in rs))
 
 
@@ -244,10 +242,9 @@ def main():
     print("\n== 3. 移動速度的影響（刻意偏離 GDD 的那一項）==")
     g = report("60 px/s 瞬時（GDD 原值）", speed=60.0, inertia=False)
     report("95 px/s 瞬時（無慣性）", speed=95.0, inertia=False)
-    print(f"  → 速度 60→95 讓金寶箱從 {g['tiers'][2]}% 升到 {cur['tiers'][2]}%。")
+    print(f"  → 速度 60→95 讓中位分數從 {g['median']} 升到 {cur['median']}。")
     print("    慣性本身幾乎不影響平衡（純手感），變化來自速度。")
-    print("    要把金寶箱拉回 10~15%，槓桿是生成間隔或炸彈比例，")
-    print("    不要動三款共用的寶箱門檻。")
+    print("    要把難度拉回來，槓桿是生成間隔或炸彈比例。")
 
     print("\n== 4. 顧 Combo 的打法是否真的比搶高分好（GDD 的設計意圖）==")
     u = report("顧 Combo（接最快落地的）")
