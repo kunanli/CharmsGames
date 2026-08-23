@@ -13,6 +13,8 @@ extends Node2D
 # 座標一律用 Vector2（像素）。
 # ─────────────────────────────────────────────────────────
 
+signal round_finished(score: int, duration: float, game_over: bool)
+
 enum State { READY, PLAYING, RESULT }
 enum Kind { JEWEL, STARDUST, CHARM, BOMB, MOON }
 
@@ -95,6 +97,7 @@ var score := 0
 var lives := START_LIVES
 var combo := 0                      # 連續接到有價物的次數
 var multiplier := 1
+var _round_sent := false            # 局終信號只發一次（同幀連中兩顆炸彈的保險）
 
 var luna_x := 240.0
 var luna_vx := 0.0                  # 目前的水平速度，慣性用
@@ -172,6 +175,17 @@ func _start_round() -> void:
 	_basket_squash = 0.0
 	state = State.READY
 	state_timer = READY_TIME
+	_round_sent = false
+
+
+## 本局結束：把成績交給 launcher，由它提交排行榜並打開面板。
+## 發完之後 launcher 會在下一幀釋放本節點，遊戲自己不需要清場。
+## duration = 純遊玩秒數（READY 停頓不算），三款一致。
+func _finish_round() -> void:
+	if _round_sent:
+		return
+	_round_sent = true
+	round_finished.emit(score, ROUND_TIME - time_left, lives <= 0)
 
 
 # ── 難度分段 ────────────────────────────────────────────
@@ -220,8 +234,8 @@ func _run_state(delta: float) -> void:
 		State.PLAYING:
 			_tick_play(delta)
 		State.RESULT:
-			if Input.is_action_just_pressed("ui_accept"):
-				_start_round()
+			# 結算與重開由 launcher 的排行榜面板接手，這裡只負責發過信號
+			pass
 
 
 func _tick_play(delta: float) -> void:
@@ -230,6 +244,7 @@ func _tick_play(delta: float) -> void:
 		time_left = 0.0
 		state = State.RESULT
 		_score_shown = 0.0         # 結算的總分從 0 滾上去
+		_finish_round()
 		return
 
 	var ph_now := _phase_index()
@@ -489,6 +504,7 @@ func _on_caught(d: Drop) -> void:
 				if lives <= 0:
 					state = State.RESULT
 					_score_shown = 0.0
+					_finish_round()
 		Kind.MOON:
 			shield_left = SHIELD_TIME
 			_juice.kick(0.30)

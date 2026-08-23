@@ -37,7 +37,7 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 1. 裝 **Godot 4.7**（純 GDScript，不需要 .NET 版）
 2. Godot Project Manager → Import → 選這個 repo 的 `project.godot`
 3. 按 Run（F5 也可以）
-4. 選單按 **1 / 2 / 3** 進遊戲，遊戲中按 **ESC** 回選單
+4. 選單按 **1 / 2 / 3** 進遊戲（第一次進要先輸入名字），遊戲中按 **ESC** 回選單
 
 操作：
 
@@ -47,7 +47,38 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 | Fishing | ← → 探看湖面 | **A**／空白／↓／Enter 放線，**B**／**X** 用月光能量 | 月光能量只在收線途中有效 |
 | Catch | ← → | **A** 衝刺，**B**／**X** 引爆護盾 | 衝刺鬆開後 0.5 秒冷卻 |
 
-結算畫面按 **Enter** 重來。
+局終進排行榜面板：**Enter** 重開同一款（名字保留），**ESC** 回選單（名字清除）。
+
+---
+
+## 排行榜（本地，三款共用）
+
+一套本地排行榜系統，選單 → 輸入名字 → 玩 → 局終自動提交成績 → 排行榜面板。
+儲存在 `user://leaderboard.json`（`version:1`，每款最多 1000 條，各按 `game_id`
+分榜互不干擾；檔案損壞自動改名 `.bak` 以空資料重來；**新提交的記錄永不因
+裁剪丟失**，刪的永遠是最差的老記錄）。
+
+- **檔案分工**：`shared/leaderboard_record.gd`（一條記錄的欄位與序列化）、
+  `shared/leaderboard_manager.gd`（儲存／排序／分頁／清除，全部 static）、
+  `shared/player_session.gd`（名字生命週期：首次進遊戲要輸，重開保留，退出清除）、
+  `ui/leaderboard_panel.gd`（通用面板，三款共用一份，取代各遊戲的結算畫面）、
+  `ui/name_input.gd`（姓名輸入屏）。
+- **流程控制在 launcher**：`enum Mode { MENU, NAME_INPUT, PLAYING, LEADERBOARD }`。
+  遊戲**只**發 `round_finished(score, duration, game_over)` 信號，不知道排行榜存在；
+  launcher 組裝 LeaderboardRecord、提交、開面板。面板 Enter = 重開、ESC = 退出。
+- **面板按鍵**：← → 翻頁（每頁 20 條）、**C** 清除（TODAY / YESTERDAY /
+  DAY BEFORE，`1/2/3` 或 ←→ 選日子，Enter 二次確認）、Enter 重開、ESC 退出。
+  本局成績不在前 20 名時底部補一行「YOUR SCORE #N」。
+- **排序**：score 降冪 → played_at 升冪 → record_id 升冪（同分先玩的高，
+  第三鍵兜底排序確定性）。記錄 ID 由時間戳＋引擎毫秒＋**序號**＋隨機尾碼組成
+  —— 序號在同一次執行內嚴格遞增，同毫秒連續提交也不撞（300 筆連發的
+  壓力測試驗證過；最初兩版生成器都曾在連發測試下撞號，見 commit 歷史）。
+- **現況**：三款都已接（Fishing 先接，Seeker／Catch 同模式補上）。發信號的
+  位置各不同：Fishing 在時間到的分支、Seeker 在唯一的 `_enter_result()`、
+  Catch 在兩處入口共用 `_finish_round()`（有只發一次的保險，防同幀連中兩顆炸彈）。
+  launcher 對沒有 `round_finished` 的遊戲仍會自動跳過接線（兜底，目前沒用到）。
+- 驗證：`python tools/sim/leaderboard_sim.py`（11 節：排序／同名／同分／分頁／
+  玩家定位／日期清除／裁剪／重載／損壞恢復／名字清洗／清空）。
 
 第一次用 Godot 開啟專案會多出一批 `*.gd.uid`（Godot 自動生成的資源 ID），
 那是正常的，**請一起 commit**。目前只有 `games/seeker/` 下的幾支有 —— 其餘是在
@@ -167,7 +198,7 @@ python3 tools/sim/catch_sim.py
 ## 三款共通的設計規格
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
-- **共用外框**：選單 → 遊戲 → 結算（分數 + 寶箱等級）→ 重來。
+- **共用外框**：選單 → 名字（首次進遊戲）→ 遊戲 → 排行榜面板（承接分數 + 寶箱等級）→ 重開／退出。
 - **寶箱門檻**：Seeker/Catch 是 1500/3000/5000，Fishing 是 1000/2000/3500（銅/銀/金）。**這是三款共用的值，調某一款的難度時不要動它。**
 - **狀態機模式統一**：`READY`（開場停頓 1.5 秒）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
 

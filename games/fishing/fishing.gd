@@ -14,6 +14,8 @@ extends Node2D
 # 座標一律用 Vector2（像素）—— 這款沒有格子，不會有 Vector2i 混用問題。
 # ─────────────────────────────────────────────────────────
 
+signal round_finished(score: int, duration: float, game_over: bool)
+
 enum State { READY, PLAYING, RESULT }
 enum Hook { SWING, EXTEND, RETRACT }
 enum Kind { JUNK_FISH, SMALL_PEARL, BIG_FISH, STARDUST, CHARM, ROCK, SHADOW_FISH }
@@ -195,6 +197,13 @@ func _start_round() -> void:
 	state_timer = READY_TIME
 
 
+## 本局結束：把成績交給 launcher，由它提交排行榜並打開面板。
+## 發完之後 launcher 會在下一幀釋放本節點，遊戲自己不需要清場。
+## duration = 純遊玩秒數（READY 停頓不算），三款一致。
+func _finish_round() -> void:
+	round_finished.emit(score, ROUND_TIME - time_left, false)
+
+
 func _reset_hook() -> void:
 	hook_state = Hook.SWING
 	line_len = LINE_MIN
@@ -316,8 +325,8 @@ func _run_state(delta: float) -> void:
 		State.PLAYING:
 			_tick_play(delta)
 		State.RESULT:
-			if Input.is_action_just_pressed("ui_accept"):
-				_start_round()
+			# 結算與重開由 launcher 的排行榜面板接手，這裡只負責發過信號
+			pass
 
 
 func _tick_play(delta: float) -> void:
@@ -326,6 +335,7 @@ func _tick_play(delta: float) -> void:
 		time_left = 0.0
 		state = State.RESULT
 		_score_shown = 0.0         # 結算的總分從 0 滾上去
+		_finish_round()
 		return
 
 	if not _rushed and time_left <= RUSH_TIME:

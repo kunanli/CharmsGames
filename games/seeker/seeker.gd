@@ -15,6 +15,8 @@ extends Node2D
 # 撞上去就碎，同一次石化內連續擊碎分數倍增 50→100→200→400。
 # ─────────────────────────────────────────────────────────
 
+signal round_finished(score: int, duration: float, game_over: bool)
+
 enum State { READY, PLAYING, DYING, RESULT }
 
 const ROUND_TIME := 60.0      # 一局的秒數
@@ -164,6 +166,9 @@ func _enter_result(is_game_over: bool = false) -> void:
 	player.visible = true
 	for cat in cats:
 		cat.set_process(false)
+	# 把成績交給 launcher：它提交排行榜、打開面板，之後釋放本節點。
+	# duration = 純遊玩秒數（READY／DYING 停頓不算），三款一致。
+	round_finished.emit(score, ROUND_TIME - time_left, is_game_over)
 
 
 func _process(delta: float) -> void:
@@ -223,8 +228,8 @@ func _run_state(delta: float) -> void:
 				else:
 					_enter_result(true)
 		State.RESULT:
-			if Input.is_action_just_pressed("ui_accept"):
-				_start_round()
+			# 結算與重開由 launcher 的排行榜面板接手，這裡只負責發過信號
+			pass
 
 
 # ── 月光能量與石化（M4）─────────────────────────────────
