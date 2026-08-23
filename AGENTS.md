@@ -37,7 +37,12 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 1. 裝 **Godot 4.7**（純 GDScript，不需要 .NET 版）
 2. Godot Project Manager → Import → 選這個 repo 的 `project.godot`
 3. 按 Run（F5 也可以）
-4. 選單按 **1 / 2 / 3** 進遊戲（第一次進要先輸入名字），遊戲中按 **ESC** 回選單
+4. 一級標題（Title_ChooseGames.png 全屏）按 **1 / 2 / 3** 進二級標題 →
+   **Space／Enter** 起名開局（二級標題下方有緩慢閃爍的提示，字串先掛英文，
+   接中文字型後換）。二級標題是固定場所：**不響應 1/2/3 與 ESC**，
+   唯一回一級的路徑是 **F3 管理員密碼**（`admin`／`pandora`，正確才回一級）。
+   遊戲結束（面板 **ESC**）與遊戲中 **ESC** 都回**該款的二級標題**（名字清除，
+   重開用面板 **Enter** 則名字保留）
 
 操作：
 
@@ -63,7 +68,9 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
   `shared/player_session.gd`（名字生命週期：首次進遊戲要輸，重開保留，退出清除）、
   `ui/leaderboard_panel.gd`（通用面板，三款共用一份，取代各遊戲的結算畫面）、
   `ui/name_input.gd`（姓名輸入屏）。
-- **流程控制在 launcher**：`enum Mode { MENU, NAME_INPUT, PLAYING, LEADERBOARD }`。
+- **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }`。
+  一級/二級標題只畫 `assets/title/` 的全屏圖不疊文字；F3 密碼彈窗
+  （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
   遊戲**只**發 `round_finished(score, duration, game_over)` 信號，不知道排行榜存在；
   launcher 組裝 LeaderboardRecord、提交、開面板。面板 Enter = 重開、ESC = 退出。
 - **面板按鍵**：← → 翻頁（每頁 20 條）、**C** 清除（TODAY / YESTERDAY /
@@ -104,7 +111,7 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 ```
 res://
 ├── Launcher.tscn           唯一的場景（Node2D + launcher.gd）
-├── launcher/launcher.gd    啟動選單，按 1/2/3 進遊戲、ESC 返回
+├── launcher/launcher.gd    標題選單與流程狀態機（一級/二級標題、F3 密碼）
 ├── games/
 │   ├── seeker/             CharmsSeeker：迷宮追逐（小精靈）
 │   │   ├── seeker.gd       主程式與狀態機
@@ -198,7 +205,7 @@ python3 tools/sim/catch_sim.py
 ## 三款共通的設計規格
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
-- **共用外框**：選單 → 名字（首次進遊戲）→ 遊戲 → 排行榜面板（承接分數 + 寶箱等級）→ 重開／退出。
+- **共用外框**：一級標題 → 二級標題 → 名字（首次進遊戲）→ 遊戲 → 排行榜面板（承接分數 + 寶箱等級）→ 重開／退出（回一級標題）。
 - **寶箱門檻**：Seeker/Catch 是 1500/3000/5000，Fishing 是 1000/2000/3500（銅/銀/金）。**這是三款共用的值，調某一款的難度時不要動它。**
 - **狀態機模式統一**：`READY`（開場停頓 1.5 秒）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
 

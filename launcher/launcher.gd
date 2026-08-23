@@ -1,8 +1,16 @@
 extends Node2D
 
 # ─────────────────────────────────────────────────────────
-# 啟動選單 + 遊戲流程狀態機：
-#   MENU → NAME_INPUT → PLAYING → LEADERBOARD（重開 / 退出）
+# 啟動標題 + 遊戲流程狀態機：
+#   MENU（一級標題圖）→ GAME_TITLE（二級標題圖）
+#     → NAME_INPUT → PLAYING → LEADERBOARD（重開 / 退出）
+#
+# 標題層只畫全屏圖（assets/title/）＋二級標題下方一條緩慢閃爍的開局提示
+# （中文「按空格键开启游戏」內建字型顯示不了，先掛英文，接中文字型後換字串）。
+# 二級標題是「固定場所」：不響應 1/2/3 與 ESC，**唯一回一級的路徑是
+# F3 管理員密碼**（ui/admin_password.gd，Modal Overlay）：正確 → 回一級，
+# ESC → 留在二級。遊戲結束（面板 ESC）與遊戲中 ESC 都回**該款的二級標題**。
+# 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_key_input 註解）。
 #
 # 遊戲不是場景，是「掛在臨時 Node2D 上的腳本」：
 #   load(path) → Node2D.new() → set_script() → add_child()
@@ -20,7 +28,7 @@ extends Node2D
 # 腳本還不存在的項目會顯示 NOT BUILT YET，不會讓選單當掉。
 # ─────────────────────────────────────────────────────────
 
-enum Mode { MENU, NAME_INPUT, PLAYING, LEADERBOARD }
+enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }
 
 const GAMES := [
 	{
@@ -28,20 +36,26 @@ const GAMES := [
 		"title": "CHARMS SEEKER",
 		"blurb": "MAZE CHASE",
 		"script": "res://games/seeker/seeker.gd",
+		"title_image": preload("res://assets/title/Title_Maze.png"),
 	},
 	{
 		"id": "fishing",
 		"title": "CHARMS FISHING",
 		"blurb": "HOOK THE CHARMS",
 		"script": "res://games/fishing/fishing.gd",
+		"title_image": preload("res://assets/title/Title_Fishing.png"),
 	},
 	{
 		"id": "catch",
 		"title": "CHARMS CATCH",
 		"blurb": "CATCH AND DODGE",
 		"script": "res://games/catch/catch.gd",
+		"title_image": preload("res://assets/title/Title_Catch.png"),
 	},
 ]
+
+## 一級標題全屏圖。三張二級標題圖掛在各 GAMES 條目的 title_image。
+const TITLE_MAIN_IMAGE: Texture2D = preload("res://assets/title/Title_ChooseGames.png")
 
 const NOTICE_TIME := 1.6      # 「還沒做」提示停留幾秒
 
@@ -51,10 +65,12 @@ var game: Node2D = null       # 目前正在玩的那一款，沒在玩時為 nu
 var active_index := -1        # 目前這局是哪一款（排行榜重開要用）
 var _panel: Node2D = null
 var _name_input: Node2D = null
+var _password_modal: Node2D = null   # F3 管理員密碼彈窗；非 null 時攔下所有標題層按鍵
 var _built: Array[bool] = []  # 每一款的腳本存不存在，開場算一次就好
 var _notice := ""
 var _notice_timer := 0.0
 var _finish_data := {}        # 局終暫存：record_id / score / game_over / consts
+var _title_time := 0.0        # 二級標題的閃爍提示計時器
 
 
 func _ready() -> void:
@@ -71,6 +87,9 @@ func _process(delta: float) -> void:
 		if _notice_timer <= 0.0:
 			_notice = ""
 		queue_redraw()
+	if mode == Mode.GAME_TITLE:
+		_title_time += delta    # 閃爍提示需要逐幀重繪
+		queue_redraw()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -80,14 +99,42 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	# NAME_INPUT / LEADERBOARD 的按鍵由各自的子節點處理並吃掉事件，
 	# launcher 不需要也不應該碰。
+	#
+	# 輸入分層：
+	#   Level 1  密碼彈窗開著 → 只剩彈窗自己的按鍵，這裡整段不處理
+	#   Level 2  二級標題 → 只收 Space/Enter 進起名、F3 開彈窗。
+	#            固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有 F3 密碼一條路）
+	#   Level 3  一級標題 → 1/2/3 進二級標題
+	if _password_modal != null:
+		return                     # Level 1：彈窗開著，底層標題不響應任何鍵
+
 	match mode:
 		Mode.MENU:
 			var index := key.keycode - KEY_1
 			if index >= 0 and index < GAMES.size():
-				_launch(index)
+				_enter_game_title(index)
+		Mode.GAME_TITLE:
+			match key.keycode:
+				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
+					_launch(active_index)
+				KEY_F3:
+					_open_password_modal()
 		Mode.PLAYING:
 			if key.keycode == KEY_ESCAPE:
 				_close_game()
+
+
+## 一級標題按 1/2/3 → 二級標題。未建置的款項留在原地跳提示。
+func _enter_game_title(index: int) -> void:
+	if not _built[index]:
+		var entry: Dictionary = GAMES[index]
+		_notice = "%s NOT BUILT YET" % entry["title"]
+		_notice_timer = NOTICE_TIME
+		queue_redraw()
+		return
+	active_index = index
+	mode = Mode.GAME_TITLE
+	queue_redraw()
 
 
 func _launch(index: int) -> void:
@@ -186,10 +233,10 @@ func _on_panel_restart() -> void:
 
 
 func _on_panel_exit() -> void:
-	# 退出：清名字回選單，下次進任何一款都要重新輸入
+	# 退出：清名字回**該款的二級標題**（不回一級），下次 Space 重新起名
 	_close_panel()
 	CurrentPlayerSession.clear()
-	mode = Mode.MENU
+	mode = Mode.GAME_TITLE
 	queue_redraw()
 
 
@@ -225,8 +272,43 @@ func _on_name_confirmed(name: String) -> void:
 
 func _on_name_cancelled() -> void:
 	_close_name_input()
+	mode = Mode.GAME_TITLE      # 取消起名 → 回二級標題（不是一級）
+	queue_redraw()
+
+
+# ── F3 管理員密碼彈窗（Modal Overlay，不是主流程狀態）──
+
+func _open_password_modal() -> void:
+	if _password_modal != null:
+		return
+	var modal := Node2D.new()
+	modal.name = "AdminPassword"
+	modal.set_script(load("res://ui/admin_password.gd"))
+	modal.connect("succeeded", Callable(self, "_on_password_succeeded"))
+	modal.connect("cancelled", Callable(self, "_on_password_cancelled"))
+	_password_modal = modal
+	add_child(modal)
+
+
+## 密碼正確：關彈窗 → 回一級標題，選擇狀態清掉（active_index 會在下次
+## 按 1/2/3 時重設，這裡只管畫面與模式）。session 不動 —— 還沒開始玩。
+func _on_password_succeeded() -> void:
+	_close_password_modal()
 	mode = Mode.MENU
 	queue_redraw()
+
+
+## ESC 取消：關彈窗，留在原二級標題。
+func _on_password_cancelled() -> void:
+	_close_password_modal()
+
+
+func _close_password_modal() -> void:
+	if _password_modal == null:
+		return
+	remove_child(_password_modal)
+	_password_modal.queue_free()
+	_password_modal = null
 
 
 # ── 節點清理 ────────────────────────────────────────────
@@ -241,13 +323,13 @@ func _free_game_node() -> void:
 	game = null
 
 
-## ESC 中離 = 退出：釋放節點、清名字回選單。
+## ESC 中離 = 退出：釋放節點、清名字，回**該款的二級標題**（與局末面板 ESC 一致）。
 func _close_game() -> void:
 	_free_game_node()
 	CurrentPlayerSession.clear()
 	_notice = ""
 	_notice_timer = 0.0
-	mode = Mode.MENU
+	mode = Mode.GAME_TITLE
 	queue_redraw()
 
 
@@ -270,36 +352,26 @@ func _close_name_input() -> void:
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
-	if mode != Mode.MENU:
-		return             # 遊戲／面板／輸入屏自己會把整個畫面畫滿
+	# 標題層只畫全屏圖：一級 = Title_ChooseGames，二級 = 該款遊戲的標題圖。
+	# 不疊任何文字/按鈕（需求文件第四/六節）；將來的標題動畫、Y2K 元素
+	# 都在這兩個分支底下繼續加。
+	# 圖都是 ~16:9（1920×1080 或 1672×941），拉到 480×270 變形可忽略。
+	if mode == Mode.MENU:
+		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
+	elif mode == Mode.GAME_TITLE and active_index >= 0:
+		var image: Texture2D = GAMES[active_index]["title_image"]
+		draw_texture_rect(image, Rect2(0, 0, 480, 270), false)
+		# 開局提示：遊戲視覺下方居中、緩慢閃爍（亮 1.2 秒 / 滅 0.8 秒）。
+		# 原始需求文字是中文「按空格键开启游戏」—— 內建字型沒有中文字形
+		# （AGENTS.md 硬規則：HUD 一律英文），接入像素中文字型後改這一行字串即可。
+		if fmod(_title_time, 2.0) < 1.2:
+			_center("PRESS SPACE TO START", 236, 12, Palette.GOLD)
+	else:
+		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 
-	draw_rect(Rect2(0, 0, 480, 270), Palette.BG)
-
-	_center("CHARMS GAMES", 54, 26, Palette.GOLD)
-	_center("A PANDORA MINI ARCADE", 74, 10, Palette.TEXT_DIM)
-
-	var font := ThemeDB.fallback_font
-	for i in GAMES.size():
-		var y := 118.0 + i * 34.0
-		var entry: Dictionary = GAMES[i]
-		var built: bool = _built[i]
-		var name_col := Palette.TEXT if built else Palette.TEXT_DIM
-
-		draw_string(font, Vector2(104, y), "[%d]" % (i + 1),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Palette.MOON)
-		draw_string(font, Vector2(140, y), entry["title"],
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, name_col)
-		draw_string(font, Vector2(140, y + 12), entry["blurb"] if built else "COMING SOON",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
-
-	_center("PRESS 1-3 TO PLAY    ESC TO RETURN", 236, 10, Palette.TEXT_DIM)
-
+	# 提示（NOT BUILT / 載入失敗）直接疊在圖上，極少出現
 	if _notice != "":
 		_center(_notice, 256, 10, Palette.WARN)
-
-	# 角落放個露娜的剪影當招牌，等美術素材進來再換掉
-	draw_rect(Rect2(40, 150, 16, 28), Palette.LUNA, false, 1.0)
-	draw_rect(Rect2(43, 153, 10, 8), Palette.LUNA)
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:
