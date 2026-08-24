@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dq724utg7kdc4"
-path="res://.godot/imported/Title_Catch.png-86f0a92eb56523e5a5407ae849ee0555.ctex"
+uid="uid://b62ueyl587l4j"
+path="res://.godot/imported/Title_Maze.jpg-bfe041eaa80419e613efb93c5520b157.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/title/Title_Catch.png"
-dest_files=["res://.godot/imported/Title_Catch.png-86f0a92eb56523e5a5407ae849ee0555.ctex"]
+source_file="res://assets/title/Title_Maze.jpg"
+dest_files=["res://.godot/imported/Title_Maze.jpg-bfe041eaa80419e613efb93c5520b157.ctex"]
 
 [params]
 

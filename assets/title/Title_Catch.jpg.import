@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bchjd0ylpuavx"
-path="res://.godot/imported/Title_Fishing.png-fab2f47051f78430c85cd5a6682bfe37.ctex"
+uid="uid://btwp71orekrd4"
+path="res://.godot/imported/Title_Catch.jpg-fcf460eb566a3456947e33610c8edd2c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/title/Title_Fishing.png"
-dest_files=["res://.godot/imported/Title_Fishing.png-fab2f47051f78430c85cd5a6682bfe37.ctex"]
+source_file="res://assets/title/Title_Catch.jpg"
+dest_files=["res://.godot/imported/Title_Catch.jpg-fcf460eb566a3456947e33610c8edd2c.ctex"]
 
 [params]
 

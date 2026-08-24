@@ -36,21 +36,21 @@ const GAMES := [
 		"title": "CHARMS SEEKER",
 		"blurb": "MAZE CHASE",
 		"script": "res://games/seeker/seeker.gd",
-		"title_image": preload("res://assets/title/Title_Maze.png"),
+		"title_image": preload("res://assets/title/Title_Maze.jpg"),
 	},
 	{
 		"id": "fishing",
 		"title": "CHARMS FISHING",
 		"blurb": "HOOK THE CHARMS",
 		"script": "res://games/fishing/fishing.gd",
-		"title_image": preload("res://assets/title/Title_Fishing.png"),
+		"title_image": preload("res://assets/title/Title_Fishing.jpg"),
 	},
 	{
 		"id": "catch",
 		"title": "CHARMS CATCH",
 		"blurb": "CATCH AND DODGE",
 		"script": "res://games/catch/catch.gd",
-		"title_image": preload("res://assets/title/Title_Catch.png"),
+		"title_image": preload("res://assets/title/Title_Catch.jpg"),
 	},
 ]
 
@@ -353,7 +353,7 @@ func _draw() -> void:
 		# 原始需求文字是中文「按空格键开启游戏」—— 內建字型沒有中文字形
 		# （AGENTS.md 硬規則：HUD 一律英文），接入像素中文字型後改這一行字串即可。
 		if fmod(_title_time, 2.0) < 1.2:
-			_center("PRESS SPACE TO START", 236, 12, Palette.GOLD)
+			_center("PRESS SPACE TO START", 226, 12, Palette.BG)
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 

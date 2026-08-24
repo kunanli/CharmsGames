@@ -7,7 +7,7 @@ extends Node2D
 # 每 15 秒一跳的落速撐出來。
 #
 # 數值以 GDD 為準，只有移動速度是企劃試玩後刻意調快的（見下方常數註解）。
-# A 鍵衝刺 ×1.8 且鬆開後有 0.5 秒冷卻，6 條軌道每軌 80px，
+# 長按同方向 1 秒線性加速到 ×2.5（原 A/Shift 衝刺已移除），6 條軌道每軌 80px，
 # 同軌連續生成間隔不得低於 0.6 秒。
 #
 # 座標一律用 Vector2（像素）。
@@ -26,23 +26,25 @@ const SCREEN := Vector2(480, 270)
 # GDD 寫 60 px/s，但實際玩起來太鈍 —— 一趟落下的時間只夠橫move 1.4~2.9 軌，
 # 玩家常常眼睜睜看著珠寶掉在搆不到的地方。企劃試玩後決定調快並加上慣性。
 # 這是**刻意偏離 GDD** 的手感調整，不是筆誤。
-const MOVE_SPEED := 95.0            # 目標速度（GDD 原值 60）
-const DASH_MULT := 1.8              # 按住 A 衝刺 ×1.8
-const DASH_COOLDOWN := 0.5          # 鬆開後 0.5 秒冷卻
+# GDD 的 A 鍵衝刺 ×1.8 已於 2026-08 拍板移除（實機幾乎沒人用），
+# 改成長按同一方向 HOLD_TIME 秒，速度線性升到 HOLD_MULT 倍。
+const MOVE_SPEED := 95.0            # 基礎速度（GDD 原值 60）
+const HOLD_MULT := 2.5              # 長按同一方向到頂的速度倍率
+const HOLD_TIME := 1.0              # 從基礎速度線性升到頂的秒數
 # 慣性：加速比煞車快，所以起步跟手、放開會滑一小段（約 0.14 秒、7px）。
 # 不用物理節點，純數學 move_toward —— 跟專案其他地方的做法一致。
 const ACCEL := 900.0                # px/s²，按住方向鍵時逼近目標速度
 const FRICTION := 700.0             # px/s²，放開後減速
-const LUNA_Y := 236.0               # 站立的地面線
-const BASKET := Vector2(36, 8)      # 提籃頂面判定框 36×8
-const BASKET_DY := -14.0            # 判定框相對露娜中心的高度
+const LUNA_Y := 270.0               # 腳踩螢幕最底（貼底）
+# 人物與提籃融合成單一物件：只畫 cc_person1 一張貼圖，接取判定框就是貼圖大小
+# （腳踩 LUNA_Y、水平置中），見 _catch_rect()。
 
 # ── 掉落區 ──────────────────────────────────────────────
 const LANES := 6
 const LANE_W := 80.0                # 6 × 80 = 480
 const LANE_MIN_GAP := 0.6           # 同一軌道連續生成的最小間隔
 const SPAWN_Y := -10.0
-const KILL_Y := 262.0               # 掉到這條線以下就算漏接
+const KILL_Y := 270.0               # 掉到這條線以下就算漏接（= 判定框底邊＝螢幕最底）
 
 # ── 生命與護盾 ──────────────────────────────────────────
 const START_LIVES := 3
@@ -96,8 +98,8 @@ var _round_sent := false            # 局終信號只發一次（同幀連中兩
 
 var luna_x := 240.0
 var luna_vx := 0.0                  # 目前的水平速度，慣性用
-var dash_cd := 0.0
-var was_dashing := false
+var _hold_t := 0.0                  # 長按同一方向幾秒了（加速用）
+var _hold_dir := 0.0                # 目前按住的方向；放開或換向就把 _hold_t 歸零
 
 var shield_left := 0.0
 var moons_spawned := 0
@@ -122,11 +124,12 @@ var _fx := Fx.new()                 # 粒子（見 shared/fx.gd）
 var _at_wall := false               # 去抖：貼著邊界時只在「剛撞上」那一幀 kick
 var _last_phase := 0
 var _score_shown := 0.0             # HUD 上滾動中的分數
-# 擠壓變形（見 shared/fx.gd）：撞邊界壓露娜、接到東西壓提籃
+# 擠壓變形（見 shared/fx.gd）：撞邊界壓扁、接到東西彈跳 —— 提籃融合進人物後，
+# 兩種變形都作用在同一張貼圖上，繪製時以腳底為支點相乘疊加（見 _draw_luna）。
 const SQUASH_TIME := 0.20
 var _luna_squash := 0.0
 var _luna_axis := Vector2.ZERO
-var _basket_squash := 0.0
+var _catch_squash := 0.0
 
 var bg_texture: Texture2D = preload("res://assets/catch/CC_Bg.png")
 var cc_01: Texture2D = preload("res://assets/catch/CC_01.png")
@@ -150,7 +153,8 @@ func _start_round() -> void:
 	time_left = ROUND_TIME
 	luna_x = 240.0
 	luna_vx = 0.0
-	dash_cd = 0.0
+	_hold_t = 0.0
+	_hold_dir = 0.0
 	shield_left = 0.0
 	moons_spawned = 0
 	drops.clear()
@@ -167,7 +171,7 @@ func _start_round() -> void:
 	_last_phase = 0
 	_score_shown = 0.0
 	_luna_squash = 0.0
-	_basket_squash = 0.0
+	_catch_squash = 0.0
 	state = State.READY
 	state_timer = READY_TIME
 	_round_sent = false
@@ -203,8 +207,8 @@ func _process(delta: float) -> void:
 		_fx.update(delta)
 		if _luna_squash > 0.0:
 			_luna_squash = maxf(0.0, _luna_squash - delta / SQUASH_TIME)
-		if _basket_squash > 0.0:
-			_basket_squash = maxf(0.0, _basket_squash - delta / SQUASH_TIME)
+		if _catch_squash > 0.0:
+			_catch_squash = maxf(0.0, _catch_squash - delta / SQUASH_TIME)
 
 	# 分數滾動：珠寶（+50）幾乎瞬間，Charm ×5（+1500）會滾個 0.3 秒
 	_score_shown = move_toward(_score_shown, float(score),
@@ -262,17 +266,16 @@ func _move_luna(delta: float) -> void:
 	if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_RIGHT):
 		dir += 1.0
 
-	# 衝刺：按住 A。放開才開始算 0.5 秒冷卻，冷卻中按了也沒用。
-	var want_dash := Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_SHIFT)
-	if dash_cd > 0.0:
-		dash_cd -= delta
-	var dashing := want_dash and dash_cd <= 0.0
-	if was_dashing and not dashing:
-		dash_cd = DASH_COOLDOWN
-	was_dashing = dashing
+	# 長按加速（取代已移除的 A/Shift 衝刺）：持續按住同一個方向 HOLD_TIME 秒，
+	# 目標速度從基礎值線性升到 HOLD_MULT 倍；放開或換方向就從頭計。
+	if dir == 0.0 or dir != _hold_dir:
+		_hold_t = 0.0
+	else:
+		_hold_t = minf(_hold_t + delta, HOLD_TIME)
+	_hold_dir = dir
 
 	# 慣性：往目標速度加速，放開就用摩擦力減速
-	var top := MOVE_SPEED * (DASH_MULT if dashing else 1.0)
+	var top := MOVE_SPEED * lerpf(1.0, HOLD_MULT, _hold_t / HOLD_TIME)
 	if dir != 0.0:
 		luna_vx = move_toward(luna_vx, dir * top, ACCEL * delta)
 	else:
@@ -282,10 +285,13 @@ func _move_luna(delta: float) -> void:
 	# 力道跟著撞擊速度走 —— 用衝的撞上去比慢慢靠過去晃得兇，
 	# 這樣「撞得多用力」在畫面上是看得出來的。
 	var want_x := luna_x + luna_vx * delta
-	var clamped := clampf(want_x, 12.0, SCREEN.x - 12.0)
+	# 邊界以貼圖半寬內縮 —— 融合後判定與外觀同一張圖，貼圖半張掛在畫面外
+	# 等於判定框也掛出去，看起來像壞掉。
+	var half_w := _body_size().x * 0.5
+	var clamped := clampf(want_x, half_w, SCREEN.x - half_w)
 	if not is_equal_approx(want_x, clamped) and absf(luna_vx) > 1.0:
 		if not _at_wall:
-			var impact := clampf(absf(luna_vx) / (MOVE_SPEED * DASH_MULT), 0.0, 1.0)
+			var impact := clampf(absf(luna_vx) / (MOVE_SPEED * HOLD_MULT), 0.0, 1.0)
 			_juice.kick(lerpf(0.28, 0.60, impact), Vector2.RIGHT)
 			_juice.freeze(0.03 + impact * 0.03)
 			# 露娜貼著邊界壓扁 —— 這比震動更看得出「我撞到左邊還右邊」
@@ -330,9 +336,20 @@ func _tick_shield(delta: float) -> void:
 		shield_left = maxf(0.0, shield_left - delta)
 
 
-func _basket_rect() -> Rect2:
-	# 判定只看提籃頂面，從側邊擦過不算
-	return Rect2(luna_x - BASKET.x * 0.5, LUNA_Y + BASKET_DY, BASKET.x, BASKET.y)
+## 融合物件的貼圖尺寸。判定框、邊界內縮、生成可及性計算都從這裡出，
+## 美術換圖（尺寸改變）時不必改任何常數。
+func _body_size() -> Vector2:
+	if cc_person1 == null:
+		return Vector2(36.0, 8.0)   # 貼圖載入失敗的兜底，維持可玩
+	return cc_person1.get_size()
+
+
+## 接取判定框＝貼圖大小：腳踩 LUNA_Y、水平置中。
+# 舊版只看提籃頂面 36×8 那一條（側邊擦過不算）；融合後掉落物中心
+# 碰到人物任何高度都算接到。
+func _catch_rect() -> Rect2:
+	var size := _body_size()
+	return Rect2(luna_x - size.x * 0.5, LUNA_Y - size.y, size.x, size.y)
 
 
 # ── 掉落物 ──────────────────────────────────────────────
@@ -386,7 +403,7 @@ func _roll_kind(ph: Dictionary) -> int:
 ##
 ## 這裡只約束「有價物之間」的距離，炸彈照樣愛落哪就落哪。
 ## 這樣 Combo 變成考驗走位的真本事，而「該不該去搶那顆」的抉擇仍然存在 ——
-## 逼你繞路的是炸彈與衝刺冷卻，不是骰子。
+## 逼你繞路的是炸彈與加速暖機，不是骰子。
 func _spawn(kind: int) -> bool:
 	var candidates: Array[int] = []
 	for i in LANES:
@@ -430,22 +447,22 @@ func _most_urgent_valuable() -> Drop:
 
 
 ## 從 candidates 篩出「接完前一顆還追得上」的軌道。
-## 時間差 × 衝刺速度就是這段空檔能移動的距離，留 0.85 的安全係數，
-## 因為玩家不會每次都走最佳路線，而且衝刺還有冷卻。
+## 時間差 × 最高速度（長按 1 秒的 ×2.5）就是這段空檔能移動的距離。
+## 留 0.85 的安全係數，因為玩家不會每次都走最佳路線，加速還需要 1 秒暖機。
 func _chain_filter(candidates: Array[int]) -> Array[int]:
 	var urgent := _most_urgent_valuable()
 	if urgent == null:
 		return []
 
 	var speed := float(_phase()["speed"])
-	var catch_y := LUNA_Y + BASKET_DY
+	var catch_y := LUNA_Y - _body_size().y   # 判定框上緣：掉落物從上方進框，等效接取面
 	var t_urgent := (catch_y - urgent.pos.y) / speed
 	var t_new := (catch_y - SPAWN_Y) / speed
 	var window := t_new - t_urgent
 	if window <= 0.0:
 		return []
 
-	var reach := MOVE_SPEED * DASH_MULT * window * 0.85
+	var reach := MOVE_SPEED * HOLD_MULT * window * 0.85
 	var out: Array[int] = []
 	for i in candidates:
 		var lane_center := i * LANE_W + LANE_W * 0.5
@@ -456,15 +473,15 @@ func _chain_filter(candidates: Array[int]) -> Array[int]:
 
 func _move_drops(delta: float) -> void:
 	var speed := float(_phase()["speed"])
-	var basket := _basket_rect()
+	var catch_box := _catch_rect()
 	var survivors: Array[Drop] = []
 
 	for d in drops:
 		d.phase += delta
 		d.pos.y += speed * delta
 
-		# 接到：掉落物中心進入提籃頂面判定框
-		if basket.has_point(d.pos):
+		# 接到：掉落物中心進入融合物件的判定框（貼圖大小）
+		if catch_box.has_point(d.pos):
 			_on_caught(d)
 			continue
 		# 漏接
@@ -504,7 +521,7 @@ func _on_caught(d: Drop) -> void:
 			shield_left = SHIELD_TIME
 			_juice.kick(0.30)
 			_juice.freeze(0.05)
-			_basket_squash = 1.0
+			_catch_squash = 1.0
 			_fx.burst(d.pos, 14, Palette.MOON, 80.0, 0.6, 3.0, 0.3)
 			_pop("SHIELD 8s", Palette.MOON, d.pos)
 		_:
@@ -515,7 +532,7 @@ func _on_caught(d: Drop) -> void:
 			var gained := base * multiplier
 			score += gained
 			# 珠寶約 1.5 秒掉一顆，力道必須極小，不然會變成整局的背景震動
-			_basket_squash = 1.0        # 提籃彈跳（GDD 的「接取彈跳 2 幀」）
+			_catch_squash = 1.0         # 接取彈跳（GDD 的「接取彈跳 2 幀」），壓整個人物
 			match d.kind:
 				Kind.CHARM:
 					_juice.kick(0.45)
@@ -573,7 +590,6 @@ func _draw() -> void:
 	draw_set_transform(_juice.bg_offset())
 	_draw_bg_far()                     # 星星與屋頂剪影：視差層
 	draw_set_transform(_juice.world_offset())
-	_draw_ground()                     # 地面線跟世界同步，露娜才不會在地上滑動
 	for d in drops:
 		_draw_drop(d)
 	_draw_luna()
@@ -618,13 +634,6 @@ func _draw_bg_far() -> void:
 	draw_texture_rect(bg_texture, Rect2(0, 0, SCREEN.x, SCREEN.y), false)
 
 
-## 地面屬於 WORLD 而不是背景 —— 露娜站在這條線上，兩者必須共用同一個位移。
-func _draw_ground() -> void:
-	var m := Juice.OVERDRAW
-	draw_rect(Rect2(-m, 214, SCREEN.x + m * 2.0, SCREEN.y - 214 + m), Palette.NEAR)
-	draw_line(Vector2(-m, 214), Vector2(SCREEN.x + m, 214), Palette.WALL_DARK, 1.0)
-
-
 func _draw_drop(d: Drop) -> void:
 	match d.kind:
 		Kind.JEWEL:
@@ -632,9 +641,9 @@ func _draw_drop(d: Drop) -> void:
 		Kind.STARDUST:
 			_draw_drop_texture(cc_02, d.pos)
 		Kind.CHARM:
-			_draw_drop_texture(cc_03, d.pos)
-		Kind.BOMB:
 			_draw_drop_texture(cc_04, d.pos)
+		Kind.BOMB:
+			_draw_drop_texture(cc_03, d.pos)
 		Kind.MOON:
 			_draw_drop_texture(cc_05, d.pos)
 
@@ -648,25 +657,21 @@ func _draw_drop_texture(texture: Texture2D, center: Vector2) -> void:
 
 func _draw_luna() -> void:
 	var cx := luna_x
-	# 撞邊界時整個人貼著牆壓扁。以腳底為支點縮放，人才不會浮起來。
+	# 人物與提籃融合成單一物件：撞邊界壓扁與接取彈跳（原提籃回饋）都作用在
+	# 同一張貼圖上。以腳底為支點縮放，人才不會浮起來；
+	# 兩種變形同幀並存時直接相乘疊加。
 	var world := _juice.world_offset()
+	var sc := Vector2.ONE
 	if _luna_squash > 0.0:
-		var sc := Fx.squash(_luna_squash, _luna_axis)
+		sc = sc * Fx.squash(_luna_squash, _luna_axis)
+	if _catch_squash > 0.0:
+		sc = sc * Fx.squash(_catch_squash, Vector2.DOWN, 0.38)
+	if sc != Vector2.ONE:
 		draw_set_transform(world + Vector2(cx, LUNA_Y), 0.0, sc)
 		_draw_luna_body(0.0, 0.0)
 		draw_set_transform(world)
 	else:
 		_draw_luna_body(cx, LUNA_Y)
-
-	# 星光提籃：判定框就是頂面那條。接到東西時彈跳一下（GDD 的「接取彈跳」）。
-	var b := _basket_rect()
-	if _basket_squash > 0.0:
-		var bs := Fx.squash(_basket_squash, Vector2.DOWN, 0.38)
-		draw_set_transform(world + b.position + Vector2(b.size.x * 0.5, b.size.y), 0.0, bs)
-		_draw_basket(-b.size.x * 0.5, -b.size.y, b.size)
-		draw_set_transform(world)
-	else:
-		_draw_basket(b.position.x, b.position.y, b.size)
 
 	# Combo 光圈：倍率越高圈越亮越大。原本倍率只是 HUD 上一個數字，
 	# 在遊戲區裡完全看不到，玩家不會「感覺」到自己正在連。
@@ -688,11 +693,6 @@ func _draw_luna_body(cx: float, cy: float) -> void:
 		return
 	var size := cc_person1.get_size()
 	draw_texture(cc_person1, Vector2(cx - size.x * 0.5, cy - size.y))
-
-
-func _draw_basket(x: float, y: float, size: Vector2) -> void:
-	draw_rect(Rect2(x, y, size.x, size.y), Palette.GOLD)
-	draw_rect(Rect2(x, y, size.x, 10), Palette.GOLD, false, 1.0)
 
 
 func _draw_hud() -> void:

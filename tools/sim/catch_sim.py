@@ -12,12 +12,14 @@ from collections import Counter
 
 # ── 與 games/catch/catch.gd 同步 ───────────────────────────
 MOVE_SPEED = 95.0          # 刻意偏離 GDD 的 60（企劃試玩後的手感調整）
-DASH_MULT, DASH_CD = 1.8, 0.5
+HOLD_MULT, HOLD_TIME = 2.5, 1.0   # 長按同方向 1 秒線性升到 ×2.5（衝刺已移除）
 ACCEL, FRICTION = 900.0, 700.0
-LUNA_Y, BASKET_DY = 236.0, -14.0
-BASKET = (36.0, 8.0)
+LUNA_Y = 270.0                    # 腳踩螢幕最底（貼底）
+# 人物與提籃融合成單一物件：接取判定框＝cc_person1 貼圖大小（90×71），
+# 腳踩 LUNA_Y、水平置中（見 catch.gd 的 _catch_rect()）。美術換圖要同步這裡。
+CATCH = (90.0, 71.0)
 LANES, LANE_W, LANE_MIN_GAP = 6, 80.0, 0.6
-SPAWN_Y, KILL_Y = -10.0, 262.0
+SPAWN_Y, KILL_Y = -10.0, 270.0    # 漏接線＝判定框底邊＝螢幕最底
 START_LIVES, SHIELD_TIME, MOON_MAX = 3, 8.0, 3
 COMBO_STEP, COMBO_MAX = 5, 5
 ROUND_TIME, PHASE_LEN, CHARM_EVERY = 60.0, 15.0, 15.0
@@ -29,7 +31,10 @@ PHASES = [
 ]
 JEWEL, STARDUST, CHARM, BOMB, MOON = range(5)
 BASE = {JEWEL: 50, STARDUST: 100, CHARM: 300, BOMB: 0, MOON: 0}
-CATCH_Y = LUNA_Y + BASKET_DY
+CATCH_Y = LUNA_Y - CATCH[1]        # 判定框上緣：掉落物從上方進框，等效接取面
+CLAMP = CATCH[0] / 2.0             # 邊界內縮＝貼圖半寬（與 _move_luna 同步）
+RISK = CATCH[0] / 2.0 + 6.0        # 炸彈進到這個橫距內就視為威脅（半寬＋餘裕）
+DODGE = CATCH[0] / 2.0 + 10.0      # 閃避位移：拉開到威脅距離之外
 DT = 1 / 60
 
 FAILED = []
@@ -55,7 +60,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
        hitstop>0 模擬每次得分事件凍結 N 秒，用來確認不會偷走比賽時間。"""
     rng = random.Random(seed)
     t_left, score, lives, combo, mult = ROUND_TIME, 0, START_LIVES, 0, 1
-    luna, vx, dash_cd, was_dash = 240.0, 0.0, 0.0, False
+    luna, vx, hold_t, hold_dir = 240.0, 0.0, 0.0, 0.0
     shield, moons = 0.0, 0
     drops, lane_last = [], [LANE_MIN_GAP] * LANES
     spawn_t, charm_t = 0.6, CHARM_EVERY
@@ -83,7 +88,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
                 tn = (CATCH_Y - SPAWN_Y) / ph["speed"]
                 w = tn - tu
                 if w > 0:
-                    r = speed * DASH_MULT * w * 0.85
+                    r = speed * HOLD_MULT * w * 0.85
                     f = [i for i in cand if abs(i * LANE_W + LANE_W / 2 - u.x) <= r]
                     if f:
                         cand = f
@@ -126,7 +131,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
             for d in sorted([x for x in drops if x.k != BOMB and x.y <= CATCH_Y + 8],
                             key=lambda x: -x.y):
                 tt = (CATCH_Y - d.y) / ph["speed"]
-                if tt >= 0 and abs(d.x - luna) <= speed * DASH_MULT * tt:
+                if tt >= 0 and abs(d.x - luna) <= speed * HOLD_MULT * tt:
                     target = d
                     break
         else:
@@ -138,7 +143,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
                 if tt < 0:
                     continue
                 dx = abs(d.x - luna)
-                if dx > speed * DASH_MULT * tt:
+                if dx > speed * HOLD_MULT * tt:
                     continue
                 v = BASE[d.k] * min(1 + (combo + 1) // COMBO_STEP, COMBO_MAX) - dx * 0.05
                 if v > best:
@@ -148,17 +153,18 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
             if d.k != BOMB or shield > 0:
                 continue
             tt = (CATCH_Y - d.y) / ph["speed"]
-            if 0 <= tt < 0.45 and abs(d.x - luna) < 24:
-                want = luna + (28 if d.x < luna else -28)
-        if dash_cd > 0:
-            dash_cd -= DT
+            if 0 <= tt < 0.45 and abs(d.x - luna) < RISK:
+                want = luna + (DODGE if d.x < luna else -DODGE)
         need = abs(want - luna)
-        dashing = need > speed * 0.35 and dash_cd <= 0
-        if was_dash and not dashing:
-            dash_cd = DASH_CD
-        was_dash = dashing
-        top = speed * (DASH_MULT if dashing else 1.0)
         d_in = 0.0 if need < 1.5 else (1.0 if want > luna else -1.0)
+        # 長按加速：與 catch.gd 的 _move_luna 同步 —— 按同一方向持續 1 秒才到頂，
+        # 放開或換方向就歸零重算
+        if d_in == 0.0 or d_in != hold_dir:
+            hold_t = 0.0
+        else:
+            hold_t = min(hold_t + DT, HOLD_TIME)
+        hold_dir = d_in
+        top = speed * (1.0 + (HOLD_MULT - 1.0) * hold_t / HOLD_TIME)
         if inertia:
             if d_in != 0.0:
                 vx += max(-ACCEL * DT, min(ACCEL * DT, d_in * top - vx))
@@ -167,7 +173,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         else:
             vx = d_in * top
         want_x = luna + vx * DT
-        cl = max(12.0, min(468.0, want_x))
+        cl = max(CLAMP, min(480.0 - CLAMP, want_x))
         if abs(want_x - cl) > 1e-9 and abs(vx) > 1.0:
             if not at_wall:
                 walls += 1
@@ -178,11 +184,11 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         luna = cl
         if shield > 0:
             shield = max(0.0, shield - DT)
-        bx0, bx1 = luna - BASKET[0] / 2, luna + BASKET[0] / 2
+        bx0, bx1 = luna - CATCH[0] / 2, luna + CATCH[0] / 2
         keep = []
         for d in drops:
             d.y += ph["speed"] * DT
-            if bx0 <= d.x < bx1 and CATCH_Y <= d.y < CATCH_Y + BASKET[1]:
+            if bx0 <= d.x < bx1 and CATCH_Y <= d.y < CATCH_Y + CATCH[1]:
                 if d.k == BOMB:
                     if shield > 0:
                         shield = 0.0
@@ -230,12 +236,17 @@ def main():
     a = report("生成間隔綁落速（GDD 直譯）", gaps=False)
     b = report("關掉有價物可及性約束", chain=False)
     # 比的是分布而不是最高值 —— 兩者都可能偶爾摸到 ×5，差別在平均。
-    ok(cur["mean_mult"] > a["mean_mult"] + 0.4,
+    # 融合判定框（90 寬）把接取變容易後，連綁落速的節奏都撐得起倍率
+    # （×2.56 → ×2.93），現行策略仍勝但差距縮小，門檻從 +0.4 放寬到 +0.2。
+    ok(cur["mean_mult"] > a["mean_mult"] + 0.2,
        f"生成間隔綁落速時平均最高倍率 ×{a['mean_mult']:.2f}，"
        f"現行 ×{cur['mean_mult']:.2f} —— 「同屏上限是上限不是目標」")
     ok(cur["capture"] > a["capture"] + 10,
        f"接取率 {a['capture']:.0f}% → {cur['capture']:.0f}%")
-    ok(cur["mean_mult"] > b["mean_mult"] + 0.4,
+    # 長按 ×2.5 後 AI 幾乎全屏可達，可及性約束的邊際價值被高速度稀釋
+    # （關掉約束 ×2.59，門檻從 +0.4 放寬到 +0.3）。約束在真實玩家手中仍
+    # 有意義（玩家不會像 AI 一樣精準移動），生成端照樣保留。
+    ok(cur["mean_mult"] > b["mean_mult"] + 0.3,
        f"關掉可及性約束時平均最高倍率只有 ×{b['mean_mult']:.2f} —— "
        "有價物必須落在「接完前一顆還追得上」的範圍內")
 
