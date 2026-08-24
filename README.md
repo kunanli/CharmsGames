@@ -18,7 +18,8 @@ Pandora 品牌合作的三款 8-bit 像素小遊戲，共用世界觀、色盤�
 1. 裝 **Godot 4.7**（純 GDScript，不需要 .NET 版）
 2. Godot Project Manager → Import → 選這個 repo 的 `project.godot`
 3. 按 **Run**
-4. 選單按 **1 / 2 / 3** 進遊戲，遊戲中按 **ESC** 回選單，結算按 **Enter** 重來
+4. 選單按 **1 / 2 / 3** 進遊戲；首次進遊戲要先輸入名字（**← → 可選難度 EASY／HARD**）。
+   遊戲中按 **ESC** 回選單，結算按 **Enter** 重來
 
 ### 操作
 

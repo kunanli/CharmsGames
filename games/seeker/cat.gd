@@ -89,6 +89,8 @@ func setup(m: Maze, start_cell: Vector2i) -> void:
 	maze = m
 	cell = start_cell
 	position = maze.cell_center(cell)
+	# 貼圖縮小畫到螢幕，必須用最近鄰保持像素顆粒（線性濾波會糊）
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	dir = Vector2i.ZERO
 	target_cell = start_cell
 	_hold = release_delay
@@ -279,12 +281,18 @@ func _draw_petrified() -> void:
 	_draw_enemy_texture(Color(body, alpha))
 
 
+## 顯示尺寸：2 格（30×30，CELL_SIZE × 2）。素材是 50×50 的 8 倍大圖，
+## 不變形地塞進 30×30 的框裡 —— 比一格大才有體積感，跟露娜（16×32）同級。
+## 碰撞判定用的是格子中心距離（9px），畫多大都不影響判定，純視覺。
 func _draw_enemy_texture(modulate_color: Color) -> void:
 	var texture := s_enemy2 if kind == Kind.WANDERER else s_enemy1
 	if texture == null:
 		return
-	var size := texture.get_size()
-	draw_texture(texture, -size * 0.5, modulate_color)
+	var src := texture.get_size()
+	var show := Maze.CELL_SIZE * 2.0
+	var s := minf(show.x / src.x, show.y / src.y)
+	var dst := Rect2(-src.x * s * 0.5, -src.y * s * 0.5, src.x * s, src.y * s)
+	draw_texture_rect(texture, dst, false, modulate_color)
 
 
 ## 個性的剪影特徵。石化時要跟著換成石化色，不然會露出原本的紫色。

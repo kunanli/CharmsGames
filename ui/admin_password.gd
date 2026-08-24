@@ -81,7 +81,7 @@ func _draw() -> void:
 	# 彈窗框
 	draw_rect(Rect2(140, 96, 200, 84), Palette.NIGHT)
 	draw_rect(Rect2(140, 96, 200, 84), Palette.WALL, false, 1.0)
-	draw_string(font, Vector2(240, 118), "ADMIN PASSWORD",
+	draw_string(font, Vector2(140, 118), "ADMIN PASSWORD",
 		HORIZONTAL_ALIGNMENT_CENTER, 200, 10, Palette.GOLD)
 
 	# 遮蔽輸入（*）+ 閃爍游標
@@ -93,7 +93,7 @@ func _draw() -> void:
 	if fmod(_blink, 0.8) < 0.4:
 		draw_rect(Rect2(left + size.x + 4, 132, 6, 12), Palette.MOON)
 
-	draw_string(font, Vector2(240, 162), "ENTER OK   ESC CANCEL",
+	draw_string(font, Vector2(140, 162), "ENTER OK   ESC CANCEL",
 		HORIZONTAL_ALIGNMENT_CENTER, 200, 8, Palette.TEXT_DIM)
 	if _error != "":
 		draw_string(font, Vector2(240, 172), _error,

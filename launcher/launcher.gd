@@ -37,6 +37,7 @@ const GAMES := [
 		"blurb": "MAZE CHASE",
 		"script": "res://games/seeker/seeker.gd",
 		"title_image": preload("res://assets/title/Title_Maze.jpg"),
+		"naming_image": preload("res://assets/title/Naming/Name_Charmsseeker.png"),
 	},
 	{
 		"id": "fishing",
@@ -44,6 +45,7 @@ const GAMES := [
 		"blurb": "HOOK THE CHARMS",
 		"script": "res://games/fishing/fishing.gd",
 		"title_image": preload("res://assets/title/Title_Fishing.jpg"),
+		"naming_image": preload("res://assets/title/Naming/Name_Charmsfishing.png"),
 	},
 	{
 		"id": "catch",
@@ -51,6 +53,7 @@ const GAMES := [
 		"blurb": "CATCH AND DODGE",
 		"script": "res://games/catch/catch.gd",
 		"title_image": preload("res://assets/title/Title_Catch.jpg"),
+		"naming_image": preload("res://assets/title/Naming/Name_CharmsCatch.png"),
 	},
 ]
 
@@ -180,15 +183,15 @@ func _start_game(index: int) -> void:
 
 func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 	var entry: Dictionary = GAMES[active_index]
-	var consts: Dictionary = game.get_script().get_script_constant_map()
 
 	var record := LeaderboardRecord.new()
 	record.game_id = entry["id"]
 	record.game_name = entry["title"]
 	record.player_name = CurrentPlayerSession.player_name
 	record.score = score
-	record.difficulty_id = str(consts.get("DIFFICULTY_ID", "normal"))
-	record.difficulty_name = str(consts.get("DIFFICULTY_NAME", "NORMAL"))
+	# 難度在起名界面選（easy / hard），跟名字同生命週期
+	record.difficulty_id = CurrentPlayerSession.difficulty_id
+	record.difficulty_name = CurrentPlayerSession.difficulty_name
 	record.duration_seconds = duration
 
 	_finish_data = {
@@ -241,9 +244,11 @@ func _on_panel_exit() -> void:
 # ── 姓名輸入 ────────────────────────────────────────────
 
 func _open_name_input() -> void:
+	var entry: Dictionary = GAMES[active_index]
 	var ni := Node2D.new()
 	ni.name = "NameInput"
 	ni.set_script(load("res://ui/name_input.gd"))
+	ni.set("title_image", entry["naming_image"])
 	ni.connect("confirmed", Callable(self, "_on_name_confirmed"))
 	ni.connect("cancelled", Callable(self, "_on_name_cancelled"))
 	_name_input = ni
@@ -252,9 +257,10 @@ func _open_name_input() -> void:
 	queue_redraw()
 
 
-func _on_name_confirmed(name: String) -> void:
+func _on_name_confirmed(name: String, difficulty_id: String, difficulty_name: String) -> void:
 	_close_name_input()
 	CurrentPlayerSession.set_player(name)
+	CurrentPlayerSession.set_difficulty(difficulty_id, difficulty_name)
 	_start_game(active_index)
 
 
@@ -346,13 +352,15 @@ func _draw() -> void:
 	# 圖都是 ~16:9（1920×1080 或 1672×941），拉到 480×270 變形可忽略。
 	if mode == Mode.MENU:
 		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
-	elif mode == Mode.GAME_TITLE and active_index >= 0:
+	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
+		# 二級標題圖同時是起名 overlay 的底層：NAME_INPUT 時底下要透得出這張圖
 		var image: Texture2D = GAMES[active_index]["title_image"]
 		draw_texture_rect(image, Rect2(0, 0, 480, 270), false)
 		# 開局提示：遊戲視覺下方居中、緩慢閃爍（亮 1.2 秒 / 滅 0.8 秒）。
 		# 原始需求文字是中文「按空格键开启游戏」—— 內建字型沒有中文字形
 		# （AGENTS.md 硬規則：HUD 一律英文），接入像素中文字型後改這一行字串即可。
-		if fmod(_title_time, 2.0) < 1.2:
+		# 起名 overlay 蓋著時不畫提示，避免兩層各一個「按鍵」訊息。
+		if mode == Mode.GAME_TITLE and fmod(_title_time, 2.0) < 1.2:
 			_center("PRESS SPACE TO START", 226, 12, Palette.BG)
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿

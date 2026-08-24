@@ -15,14 +15,23 @@ extends RefCounted
 const MAX_NAME_LEN := 12
 
 static var player_name := ""
+static var difficulty_id := "easy"        # 起名界面選的難度（easy / hard）
+static var difficulty_name := "EASY"
 
 
 static func set_player(raw: String) -> void:
 	player_name = sanitize_player_name(raw)
 
 
+static func set_difficulty(id: String, name: String) -> void:
+	difficulty_id = id
+	difficulty_name = name
+
+
 static func clear() -> void:
 	player_name = ""
+	difficulty_id = "easy"
+	difficulty_name = "EASY"
 
 
 static func is_active() -> bool:

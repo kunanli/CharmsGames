@@ -143,11 +143,11 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 10, Palette.TEXT)
 
 	# 表頭（x 座標與 _draw_rows 完全一致）
-	draw_string(font, Vector2(44, 44), "RANK", HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, Palette.TEXT_DIM)
+	draw_string(font, Vector2(15, 44), "RANK", HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, Palette.TEXT_DIM)
 	draw_string(font, Vector2(48, 44), "NAME", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
-	draw_string(font, Vector2(240, 44), "SCORE", HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, Palette.TEXT_DIM)
+	draw_string(font, Vector2(140, 44), "SCORE", HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, Palette.TEXT_DIM)
 	draw_string(font, Vector2(254, 44), "DIFF", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
-	draw_string(font, Vector2(324, 44), "TIME", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
+	draw_string(font, Vector2(354, 44), "TIME", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
 
 	if _total == 0:
 		_center("NO RECORDS YET - BE THE FIRST", 120, 10, Palette.TEXT_DIM)
@@ -169,15 +169,15 @@ func _draw_rows() -> void:
 			draw_string(font, Vector2(4, y), ">", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.GOLD)
 		# 列距：RANK 右對齊（第 1000 名也不頂到 NAME）；SCORE 右對齊（七位數
 		# 也不頂到 DIFF）。行首 ">" 只畫在目前玩家的那一行。
-		draw_string(font, Vector2(44, y), "%d" % (_page * PAGE_SIZE + i + 1),
+		draw_string(font, Vector2(20, y), "%d" % (_page * PAGE_SIZE + i + 1),
 			HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, col)
 		draw_string(font, Vector2(48, y), r.player_name,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, col)
-		draw_string(font, Vector2(240, y), "%d" % r.score,
+		draw_string(font, Vector2(140, y), "%d" % r.score,
 			HORIZONTAL_ALIGNMENT_RIGHT, -1, 8, col)
 		draw_string(font, Vector2(254, y), r.difficulty_name,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
-		draw_string(font, Vector2(324, y), r.played_at.substr(5, 11),
+		draw_string(font, Vector2(345, y), r.played_at.substr(5, 11),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.TEXT_DIM)
 		y += 9
 

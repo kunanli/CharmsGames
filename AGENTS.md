@@ -39,7 +39,11 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 3. 按 Run（F5 也可以）
 4. 一級標題（Title_ChooseGames.png 全屏）按 **1 / 2 / 3** 進二級標題 →
    **Space／Enter** 起名開局（二級標題下方有緩慢閃爍的提示，字串先掛英文，
-   接中文字型後換）。二級標題是固定場所：**不響應 1/2/3 與 ESC**，
+   接中文字型後換）。起名界面是**疊在二級標題上的半透明 overlay**：50% 黑罩
+   透出二級標題圖，上面再疊各遊戲的起名彈窗圖
+   （`assets/title/Naming/Name_Charms*.png`，RGBA 只有彈窗區域不透明），
+   起名時 **← → 切換難度 EASY／HARD**（記進排行榜 DIFF 列）。
+   二級標題是固定場所：**不響應 1/2/3 與 ESC**，
    唯一回一級的路徑是 **F3 管理員密碼**（`admin`／`pandora`，正確才回一級）。
    遊戲結束（面板 **ESC**）與遊戲中 **ESC** 都回**該款的二級標題**（名字清除，
    重開用面板 **Enter** 則名字保留）
@@ -65,9 +69,10 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 
 - **檔案分工**：`shared/leaderboard_record.gd`（一條記錄的欄位與序列化）、
   `shared/leaderboard_manager.gd`（儲存／排序／分頁／清除，全部 static）、
-  `shared/player_session.gd`（名字生命週期：首次進遊戲要輸，重開保留，退出清除）、
+  `shared/player_session.gd`（玩家名字＋難度的生命週期：首次進遊戲要輸入與
+  選擇，重開保留，退出清除）、
   `ui/leaderboard_panel.gd`（通用面板，三款共用一份，取代各遊戲的結算畫面）、
-  `ui/name_input.gd`（姓名輸入屏）。
+  `ui/name_input.gd`（姓名輸入屏＋難度選擇）。
 - **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }`。
   一級/二級標題只畫 `assets/title/` 的全屏圖不疊文字；F3 密碼彈窗
   （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
@@ -206,6 +211,7 @@ python3 tools/sim/catch_sim.py
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
 - **共用外框**：一級標題 → 二級標題 → 名字（首次進遊戲）→ 遊戲 → 排行榜面板（承接分數）→ 重開／退出（回一級標題）。
+- **起名界面與難度**：起名是**疊在二級標題上的三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫二級標題圖當底層；起名層先蓋 50% 黑罩（`Color(0,0,0,0.5)`，底下的二級畫面透得出來），再疊各遊戲的起名彈窗圖（`assets/title/Naming/Name_Charms*.png`，1920×1080 RGBA，只有彈窗區域不透明），功能文字在最上。**← → 選難度 EASY／HARD**，難度隨名字進 `CurrentPlayerSession`（重開保留、退出清除），launcher 寫進排行榜記錄的 DIFF 列。目前難度**只當標籤記錄，三款玩法數值尚未分檔** —— 要做分檔時各自在遊戲內讀 session 的難度，改完跑對應 sim 對比。
 - **寶箱系統已移除**（2026-08，刻意偏離 GDD）：局終不再揭寶箱等級、不抽寶箱、沒有任何寶箱獎勵，**只計分數與排名**。原本三款各自的 `CHEST_BRONZE/SILVER/GOLD` 常數、`chest_tier()`、面板頂部的寶箱揭示行已全部拆除，launcher 也不再傳 `chest_tiers`。不要加回來；美術的寶箱圖示（art-spec 的 `ui_chest.png`）不需要出了，原 M7 的 MysteryBox 接線也一併取消。
 - **狀態機模式統一**：`READY`（開場停頓 1.5 秒）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
 

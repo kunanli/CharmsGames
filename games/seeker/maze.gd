@@ -15,10 +15,12 @@ const ORIGIN := Vector2(75.0, 46.0)           # 關卡左上角在 480x270 畫�
 
 # 障礙塊：Rect2i(x, y, 寬, 高)，單位是 tile。
 # 規則：每塊之間至少隔一格，且不要碰到外框（x 範圍 1~20、y 範圍 1~12）。
+# 中央 Logo 牆（LOGO_TOP_LEFT + LOGO_SIZE，5×2 格）也是障礙，守同一條規則：
+# 原本擋在 Logo 位置的 (8,2,2,3) 與 (11,5,3,2) 因此移到 (10,2,2,2) 與 (19,4,2,2)。
 # 只要守住這條規則，所有走道就保證連通。
 const BLOCKS: Array[Rect2i] = [
-	Rect2i(3, 2, 3, 2),   Rect2i(8, 2, 2, 3),   Rect2i(13, 2, 4, 2),
-	Rect2i(3, 6, 4, 2),   Rect2i(11, 5, 3, 2),  Rect2i(16, 6, 2, 2),
+	Rect2i(3, 2, 3, 2),   Rect2i(10, 2, 2, 2),  Rect2i(13, 2, 4, 2),
+	Rect2i(3, 6, 4, 2),   Rect2i(19, 4, 2, 2),  Rect2i(16, 6, 2, 2),
 	Rect2i(7, 9, 3, 1),   Rect2i(13, 9, 3, 1),
 ]
 
@@ -31,9 +33,12 @@ const MOON_CELLS: Array[Vector2i] = [
 # 露娜的出生格
 const PLAYER_START := Vector2i(10, 10)
 
-# 中央 Logo 的固定格：保留給品牌圖。不鋪珍珠、也不是障礙物（要一直保持走道格）。
-# Logo 圖還沒進場，seeker.gd 先在這裡畫一個佔位框。
-const LOGO_CELL := Vector2i(10, 6)
+# 中央 Logo 牆：品牌圖放在這裡，佔 5×2 格，與所有障礙塊至少保持一格空隙
+# （見 BLOCKS 規則）。LOGO_CELL 是中心錨點，LOGO_TOP_LEFT 是牆的左上角格。
+# 不鋪珍珠。
+const LOGO_CELL := Vector2i(10, 6)      # 中心格（錨點）
+const LOGO_SIZE := Vector2i(5, 2)       # 牆的尺寸（5×2 格）
+const LOGO_TOP_LEFT := LOGO_CELL - LOGO_SIZE / 2
 
 const ITEM_NONE := 0
 const ITEM_BEAN := 1
@@ -64,6 +69,10 @@ func _build_walls() -> void:
 		for x in range(b.position.x, b.position.x + b.size.x):
 			for y in range(b.position.y, b.position.y + b.size.y):
 				walls[Vector2i(x, y)] = true
+	# 中央 Logo 牆：品牌圖要一直顯示，不能讓角色踩過去
+	for x in range(LOGO_TOP_LEFT.x, LOGO_TOP_LEFT.x + LOGO_SIZE.x):
+		for y in range(LOGO_TOP_LEFT.y, LOGO_TOP_LEFT.y + LOGO_SIZE.y):
+			walls[Vector2i(x, y)] = true
 
 
 ## 把所有走道格收成一個陣列，鋪珍珠與遊蕩貓抽目標都靠它
@@ -84,9 +93,8 @@ func reset_items() -> void:
 	for c in MOON_CELLS:
 		if not walls.has(c):
 			items[c] = ITEM_MOON
-	# 出生格與中央 Logo 格不放東西，避免一開場就自動吃掉或蓋住 Logo
+	# 出生格不放東西，避免一開場就自動吃掉；Logo 格是牆，本就不在 open_cells 裡
 	items.erase(PLAYER_START)
-	items.erase(LOGO_CELL)
 
 
 ## 這一格能不能走

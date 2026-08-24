@@ -7,7 +7,7 @@ extends Node2D
 # 被抓到時分數與剩餘時間都保留，只是位置重置；三條命用完才結束。
 #
 # 三隻貓的個性寫在 cat.gd，這裡只負責生出來、擺位置、每幀餵目標。
-# 出生格排在迷宮中央同一條走道上，登場時間錯開 0 / 2.5 / 5 秒，
+# 出生格繞著中央 Logo 牆排（左、右、下），登場時間錯開 0 / 2.5 / 5 秒，
 # 不然三隻會同時撲過來，開場就沒得玩。
 #
 # 月光能量不是撿到就發動（GDD 的 Xbox 協議）：撿到存進 HUD 最多囤 2 個，
@@ -80,6 +80,8 @@ var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 
 func _ready() -> void:
 	maze = Maze.new()
+	# 貼圖縮小畫到螢幕，必須用最近鄰保持像素顆粒（線性濾波會糊）
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 	_world = Node2D.new()
 	_world.name = "World"
@@ -90,9 +92,11 @@ func _ready() -> void:
 	player.ate.connect(_on_player_ate)
 	player.bumped.connect(_on_player_bumped)
 
-	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來
-	_spawn_cat(Cat.Kind.CHASER, Vector2i(10, 5), 0.0)
-	_spawn_cat(Cat.Kind.AMBUSHER, Vector2i(9, 5), 2.5)
+	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來。
+	# 出生格繞著中央 Logo 牆排（左、右、下），登場時間錯開 0 / 2.5 / 5 秒，
+	# 不然三隻會同時撲過來，開場就沒得玩。
+	_spawn_cat(Cat.Kind.CHASER, Vector2i(7, 5), 0.0)
+	_spawn_cat(Cat.Kind.AMBUSHER, Vector2i(13, 5), 2.5)
 	_spawn_cat(Cat.Kind.WANDERER, Vector2i(11, 7), 5.0)
 
 	_start_round()
@@ -411,14 +415,14 @@ func _draw_maze() -> void:
 	_draw_logo()
 
 
-## 中央 Logo 佔位：S_Hinder_logo.png 按 5×2 格（75×30）放在固定格上。
-## 正式 Logo 圖進場後改大小或換圖都在這裡。
+## 中央 Logo 牆：5×2 格的障礙（maze.gd 的 LOGO_TOP_LEFT / LOGO_SIZE 已列入 walls）。
+## 貼圖 300×125 拉伸蓋滿整面牆，跟牆完全同尺寸，不會蓋到隔壁格。
 func _draw_logo() -> void:
 	if s_logo == null:
 		return
-	var c := maze.cell_center(Maze.LOGO_CELL)
-	var size := Vector2(75.0, 30.0)      # 5×2 格
-	draw_texture_rect(s_logo, Rect2(c - size * 0.5, size), false)
+	var top_left := Maze.ORIGIN + Vector2(Maze.LOGO_TOP_LEFT) * Maze.CELL_SIZE
+	var size := Vector2(Maze.LOGO_SIZE) * Maze.CELL_SIZE
+	draw_texture_rect(s_logo, Rect2(top_left, size), false)
 
 
 func _draw_centered_texture(texture: Texture2D, center: Vector2) -> void:

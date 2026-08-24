@@ -15,12 +15,16 @@ COLS, ROWS = 22, 14
 CELL_SIZE = (LEVEL_SIZE[0] / COLS, LEVEL_SIZE[1] / ROWS)
 ORIGIN = (75.0, 46.0)
 BLOCKS = [
-    (3, 2, 3, 2), (8, 2, 2, 3), (13, 2, 4, 2),
-    (3, 6, 4, 2), (11, 5, 3, 2), (16, 6, 2, 2),
+    (3, 2, 3, 2), (10, 2, 2, 2), (13, 2, 4, 2),
+    (3, 6, 4, 2), (19, 4, 2, 2), (16, 6, 2, 2),
     (7, 9, 3, 1), (13, 9, 3, 1),
 ]
 PLAYER_START = (10, 10)
 LOGO_CELL = (10, 6)
+LOGO_SIZE = (5, 2)
+LOGO_TOP_LEFT = (LOGO_CELL[0] - LOGO_SIZE[0] // 2, LOGO_CELL[1] - LOGO_SIZE[1] // 2)
+LOGO_WALL = [(x, y) for x in range(LOGO_TOP_LEFT[0], LOGO_TOP_LEFT[0] + LOGO_SIZE[0])
+             for y in range(LOGO_TOP_LEFT[1], LOGO_TOP_LEFT[1] + LOGO_SIZE[1])]
 MOON_CELLS = [(1, 1), (COLS - 2, 1), (1, ROWS - 2), (COLS - 2, ROWS - 2)]
 
 # ── 與 games/seeker/player.gd / cat.gd / seeker.gd 同步 ────
@@ -29,7 +33,7 @@ CATCH_DIST = 9.0
 AMBUSH_LEAD, WANDER_RETARGET, WANDER_POUNCE = 4, 2.5, 6
 CHASER, AMBUSHER, WANDERER = 0, 1, 2
 CAT_SPEED = {CHASER: 60.0, AMBUSHER: 66.0, WANDERER: 54.0}
-CAT_HOME = {CHASER: (10, 5), AMBUSHER: (9, 5), WANDERER: (11, 7)}
+CAT_HOME = {CHASER: (7, 5), AMBUSHER: (13, 5), WANDERER: (11, 7)}
 CAT_DELAY = {CHASER: 0.0, AMBUSHER: 2.5, WANDERER: 5.0}
 SCORE_BREAK = [50, 100, 200, 400]
 PETRIFY_TIME, PETRIFY_WARN, REVIVE_TIME, REVIVE_GRACE = 8.0, 2.0, 5.0, 1.0
@@ -48,6 +52,8 @@ for bx, by, bw, bh in BLOCKS:
     for x in range(bx, bx + bw):
         for y in range(by, by + bh):
             walls.add((x, y))
+for c in LOGO_WALL:
+    walls.add(c)   # 中央 Logo 牆 5×2 格（maze.gd 的 _build_walls）
 
 OPEN = [(x, y) for x in range(1, COLS - 1) for y in range(1, ROWS - 1)
         if (x, y) not in walls]
@@ -186,13 +192,26 @@ class Cat:
 
 def structural():
     print("== 1. 迷宮結構 ==")
-    # 減 1 顆玩家出生格、1 顆中央 Logo 格（與 maze.gd 的 reset_items 同步）
-    beans = len(OPEN) - len([c for c in MOON_CELLS if is_open(c)]) - 2
+    # 減 1 顆玩家出生格；中央 Logo 牆是障礙，不在走道格裡（與 maze.gd 同步）
+    beans = len(OPEN) - len([c for c in MOON_CELLS if is_open(c)]) - 1
     print(f"  走道格 {len(OPEN)}，鋪完後珍珠 {beans} 顆")
-    for name, c in [("PLAYER_START", PLAYER_START), ("LOGO_CELL", LOGO_CELL)] + \
+    for name, c in [("PLAYER_START", PLAYER_START)] + \
                    [(f"CAT {k}", CAT_HOME[k]) for k in (CHASER, AMBUSHER, WANDERER)]:
         ok(is_open(c), f"{name} {c} 是通路")
+    ok(all(not is_open(c) for c in LOGO_WALL),
+       f"中央 Logo 牆 {LOGO_SIZE[0]}×{LOGO_SIZE[1]} 格（{LOGO_TOP_LEFT} 起）全是障礙")
     ok(all(is_open(c) for c in MOON_CELLS), "四角月光能量都在通路上")
+    # LOGO 牆與所有障礙塊至少隔一格（Chebyshev ≥ 2），守 BLOCKS 的生成規則
+    sets = [[(x, y) for x in range(bx, bx + bw) for y in range(by, by + bh)]
+            for bx, by, bw, bh in BLOCKS] + [LOGO_WALL]
+    gap_ok = True
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            d = min(max(abs(x1 - x2), abs(y1 - y2)) for x1, y1 in sets[i] for x2, y2 in sets[j])
+            if d < 2:
+                gap_ok = False
+                print(f"    間距不足：{sets[i]} 與 {sets[j]} 只隔 {d} 格")
+    ok(gap_ok, "所有障礙塊（含中央 Logo 牆）之間至少隔 1 格")
     seen, stack = {OPEN[0]}, [OPEN[0]]
     while stack:
         x, y = stack.pop()
