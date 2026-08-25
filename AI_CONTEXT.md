@@ -32,7 +32,7 @@ Pandora 品牌合作的三款 8-bit 像素小游戏，共用世界观、色盘�
 |---|---|---|
 | 流程状态机 | `launcher/launcher.gd` | `enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }`。相当于总管：标题、名字、游戏、排行榜面板的切换全在这。**没有独立的 GameManager** |
 | 场景管理 | 无独立 SceneManager | **刻意单场景架构**：全项目只有 `Launcher.tscn`（一个 Node2D）。游戏用 `load()` → `Node2D.new()` → `set_script()` → `add_child()` 挂到临时节点，退出 `queue_free()` 整个节点即自动清理。新增游戏只需在 `launcher.gd` 的 `GAMES` 数组加一笔 |
-| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）按 1/2/3 进二级标题（各款的全屏图，不叠文字）。二级标题是固定场所：不响应 1/2/3 与 ESC，唯一回一级的路径是 F3 管理员密码（`admin` / `pandora`） |
+| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）按 1/2/3 进二级标题（各款的全屏图，不叠文字）。二级标题是固定场所：不响应 1/2/3 与 ESC，唯一回一级的路径是 F3 管理员密码（`admin` / `pandora`）；按 **R** 开当前款排行榜**只读预览**（同 `leaderboard_panel.gd` 的 `read_only` 模式，仅展示、不显示自己排名，ESC 关闭） |
 | 玩家名字（PlayerName） | `ui/name_input.gd` + `shared/player_session.gd` | 首次进游戏输入名字，**同屏用 ← → 选难度（EASY/HARD）**；面板 Enter 重开保留（名字+难度）、ESC 退出清除。**起名是叠在二级标题上的三层 overlay**：launcher 在 NAME_INPUT 模式仍画二级标题图当底层，起名层盖 50% 黑罩再叠各游戏的起名弹窗图（RGBA） |
 | 排行榜（Leaderboard） | `shared/leaderboard_record.gd` / `leaderboard_manager.gd` / `date_utils.gd` + `ui/leaderboard_panel.gd` | 本地存储 `user://leaderboard.json`（version:1，每款最多 1000 条，按 game_id 分榜）。三款共用一个面板。游戏只发 `round_finished(score, duration, game_over)` 信号，不知道排行榜存在，组装与提交在 launcher |
 | 管理员弹窗 | `ui/admin_password.gd` | F3 弹出的 Modal Overlay，开着时 launcher 不处理任何按键 |
@@ -81,6 +81,7 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 |---|---|---|
 | 一级标题 | **1 / 2 / 3** | 进对应款二级标题 |
 | 二级标题 | **Space / Enter** | 起名开局（下方有缓慢闪烁的英文提示）；起名界面是**二级标题上的 50% 黑罩 overlay**（透出二级画面），**← → 切换难度 EASY / HARD** |
+| 二级标题 | **R** | 打开该款排行榜**只读预览**（仅展示、不显示自己排名，ESC 关闭） |
 | 二级标题 | **F3** | 管理员密码弹窗（`admin` / `pandora`），正确才回一级 |
 | 游戏中 / 结算面板 | **ESC** | 回该款的二级标题（名字清除） |
 | 排行榜面板 | **← →** | 翻页（每页 20 条） |

@@ -10,6 +10,8 @@ extends Node2D
 # 二級標題是「固定場所」：不響應 1/2/3 與 ESC，**唯一回一級的路徑是
 # F3 管理員密碼**（ui/admin_password.gd，Modal Overlay）：正確 → 回一級，
 # ESC → 留在二級。遊戲結束（面板 ESC）與遊戲中 ESC 都回**該款的二級標題**。
+# 二級標題按 R 開**當前款的只讀排行榜**（同一個 leaderboard_panel.gd，
+# read_only=true：不翻頁／不清除／不重開、不顯示自己的排名，ESC 關閉回二級標題）。
 # 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_key_input 註解）。
 #
 # 遊戲不是場景，是「掛在臨時 Node2D 上的腳本」：
@@ -105,7 +107,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	#
 	# 輸入分層：
 	#   Level 1  密碼彈窗開著 → 只剩彈窗自己的按鍵，這裡整段不處理
-	#   Level 2  二級標題 → 只收 Space/Enter 進起名、F3 開彈窗。
+	#   Level 2  二級標題 → 只收 Space/Enter 進起名、R 開只讀排行榜、
+	#            F3 開彈窗。
 	#            固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有 F3 密碼一條路）
 	#   Level 3  一級標題 → 1/2/3 進二級標題
 	if _password_modal != null:
@@ -120,6 +123,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			match key.keycode:
 				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
 					_launch(active_index)
+				KEY_R:
+					_open_leaderboard_view()
 				KEY_F3:
 					_open_password_modal()
 		Mode.PLAYING:
@@ -237,6 +242,33 @@ func _on_panel_exit() -> void:
 	# 退出：清名字回**該款的二級標題**（不回一級），下次 Space 重新起名
 	_close_panel()
 	CurrentPlayerSession.clear()
+	mode = Mode.GAME_TITLE
+	queue_redraw()
+
+
+# ── 二級標題的只讀排行榜預覽 ───────────────────────────
+
+## 二級標題按 R：開當前款的排行榜，僅供查看。不提交記錄、不顯示自己的
+## 排名（沒有 current_record_id），翻頁／清除／重開全部停用，ESC 關閉。
+func _open_leaderboard_view() -> void:
+	var entry: Dictionary = GAMES[active_index]
+	var panel := Node2D.new()
+	panel.name = "LeaderboardPanel"
+	panel.set_script(load("res://ui/leaderboard_panel.gd"))
+	# 面板的欄位要用 set() 設定：panel 是 Node2D 型別，編譯器看不到腳本屬性
+	panel.set("game_id", entry["id"])
+	panel.set("game_name", entry["title"])
+	panel.set("read_only", true)
+	panel.connect("exit_requested", Callable(self, "_on_view_closed"))
+	_panel = panel
+	add_child(panel)
+	mode = Mode.LEADERBOARD
+	queue_redraw()
+
+
+## 只讀排行榜關閉：回該款二級標題。不動 session —— 還沒起名，沒有要清的。
+func _on_view_closed() -> void:
+	_close_panel()
 	mode = Mode.GAME_TITLE
 	queue_redraw()
 
@@ -362,6 +394,7 @@ func _draw() -> void:
 		# 起名 overlay 蓋著時不畫提示，避免兩層各一個「按鍵」訊息。
 		if mode == Mode.GAME_TITLE and fmod(_title_time, 2.0) < 1.2:
 			_center("PRESS SPACE TO START", 226, 12, Palette.BG)
+			_center("PRESS R FOR LEADERBOARD", 240, 10, Palette.TEXT_DIM)
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 
