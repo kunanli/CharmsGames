@@ -76,6 +76,8 @@ var _notice := ""
 var _notice_timer := 0.0
 var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _title_time := 0.0        # 二級標題的閃爍提示計時器
+var _difficulty_id := "easy"  # 一級標題由管理員選的難度（← → 切換），寫進排行榜 DIFF
+var _difficulty_name := "EASY"
 
 
 func _ready() -> void:
@@ -116,9 +118,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	match mode:
 		Mode.MENU:
-			var index := key.keycode - KEY_1
-			if index >= 0 and index < GAMES.size():
-				_enter_game_title(index)
+			match key.keycode:
+				KEY_1, KEY_2, KEY_3:
+					var index := key.keycode - KEY_1
+					if index >= 0 and index < GAMES.size():
+						_enter_game_title(index)
+				KEY_LEFT, KEY_RIGHT:
+					_toggle_difficulty()
 		Mode.GAME_TITLE:
 			match key.keycode:
 				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
@@ -142,6 +148,17 @@ func _enter_game_title(index: int) -> void:
 		return
 	active_index = index
 	mode = Mode.GAME_TITLE
+	queue_redraw()
+
+
+## 一級標題 ← → 切換難度 EASY / HARD。進二級標題後玩家只能起名，不能再改。
+func _toggle_difficulty() -> void:
+	if _difficulty_id == "easy":
+		_difficulty_id = "hard"
+		_difficulty_name = "HARD"
+	else:
+		_difficulty_id = "easy"
+		_difficulty_name = "EASY"
 	queue_redraw()
 
 
@@ -194,9 +211,9 @@ func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 	record.game_name = entry["title"]
 	record.player_name = CurrentPlayerSession.player_name
 	record.score = score
-	# 難度在起名界面選（easy / hard），跟名字同生命週期
-	record.difficulty_id = CurrentPlayerSession.difficulty_id
-	record.difficulty_name = CurrentPlayerSession.difficulty_name
+	# 難度由管理員在一級標題選（← → 切換），進二級後玩家只能起名、不能再改
+	record.difficulty_id = _difficulty_id
+	record.difficulty_name = _difficulty_name
 	record.duration_seconds = duration
 
 	_finish_data = {
@@ -281,6 +298,7 @@ func _open_name_input() -> void:
 	ni.name = "NameInput"
 	ni.set_script(load("res://ui/name_input.gd"))
 	ni.set("title_image", entry["naming_image"])
+	ni.set("game_id", entry["id"])
 	ni.connect("confirmed", Callable(self, "_on_name_confirmed"))
 	ni.connect("cancelled", Callable(self, "_on_name_cancelled"))
 	_name_input = ni
@@ -289,10 +307,9 @@ func _open_name_input() -> void:
 	queue_redraw()
 
 
-func _on_name_confirmed(name: String, difficulty_id: String, difficulty_name: String) -> void:
+func _on_name_confirmed(name: String) -> void:
 	_close_name_input()
 	CurrentPlayerSession.set_player(name)
-	CurrentPlayerSession.set_difficulty(difficulty_id, difficulty_name)
 	_start_game(active_index)
 
 
@@ -384,6 +401,8 @@ func _draw() -> void:
 	# 圖都是 ~16:9（1920×1080 或 1672×941），拉到 480×270 變形可忽略。
 	if mode == Mode.MENU:
 		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
+		# 一級標題的難度選擇（管理員在選遊戲前先定）：← → 切換 EASY / HARD
+		_center("DIFFICULTY [%s]  ← →" % _difficulty_name, 250, 12, Palette.BG)
 	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
 		# 二級標題圖同時是起名 overlay 的底層：NAME_INPUT 時底下要透得出這張圖
 		var image: Texture2D = GAMES[active_index]["title_image"]
