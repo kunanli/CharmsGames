@@ -2,10 +2,15 @@ extends Node2D
 
 # ─────────────────────────────────────────────────────────
 # 啟動標題 + 遊戲流程狀態機：
-#   MENU（一級標題＝管理員的遊戲選擇畫面：↑ ↓ 循環選遊戲、← → 切當前
-#     遊戲難度、B 開當前選中遊戲的排行榜清除選單、A 確認）
-#   → GAME_TITLE（二級標題圖）→ NAME_INPUT → PLAYING
+#   MENU（一級標題＝管理員的遊戲選擇畫面：↑ ↓ 循環選遊戲／SETTING、
+#     ← → 切當前遊戲難度、B 開當前選中遊戲的排行榜清除選單、A 確認）
+#   → GAME_TITLE（二級標題圖＋START／RANKING 兩個大按鈕，↑ ↓ ← → 切換、
+#     A 執行）→ NAME_INPUT → PLAYING
 #   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
+#   一級標題選中 SETTING 按 A → SETTING（二級：CLEAR LEADERBOARD /
+#     UNLIMITED COINS，A 執行、B 回一級）
+#   → SETTING_CLEAR（三級：CLEAR TODAY / LAST 24 HOURS / ALL DATA，
+#     跨三款一起清、A 執行、B 回 SETTING）
 #
 # 標題層只畫全屏圖（assets/title/）＋一級標題的遊戲選擇清單（名字與難度用
 # draw_string 疊在圖上）＋二級標題下方一條緩慢閃爍的開局提示
@@ -13,8 +18,10 @@ extends Node2D
 # 二級標題是「固定場所」：不響應 1/2/3 與 ESC，**唯一回一級的路徑是
 # F3 管理員密碼**（ui/admin_password.gd，Modal Overlay）：正確 → 回一級，
 # ESC → 留在二級。遊戲結束與遊戲中 ESC 都回**該款的二級標題**。
-# 二級標題按 R 開**當前款的排行榜**（ui/leaderboard_panel.gd，一律只讀：
-# 只顯示前 10 名、沒有清除入口，B/ESC 關閉回二級標題）。
+# 二級標題下方有 START／RANKING 兩個大按鈕（需求區域 (60,590)+720×390 設計
+# 座標，程式自繪、不讀美術內容）：↑ ↓ ← → 切換選擇、A 執行 —— START＝起名
+# 開局、RANKING＝開**當前款的排行榜**（ui/leaderboard_panel.gd，一律只讀：
+# 只顯示前 10 名、沒有清除入口，B/ESC 關閉回二級標題）；Space／R 是同義捷徑。
 # 一級標題按 B 開**當前選中遊戲的排行榜清除選單**（ui/admin_clear_menu.gd，
 # Modal Overlay，見「清除功能」段落）。
 # 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_key_input 註解）。
@@ -41,7 +48,7 @@ extends Node2D
 # 腳本還不存在的項目會顯示 NOT BUILT YET，不會讓選單當掉。
 # ─────────────────────────────────────────────────────────
 
-enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD }
+enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }
 
 const GAMES := [
 	{
@@ -82,13 +89,41 @@ const NOTICE_TIME := 1.6      # 「還沒做」提示停留幾秒
 const MENU_SELECTED := Color("FFC4FF")
 const MENU_IDLE := Color("FF44FF")
 
-## 遊戲名稱區域：1920×1080 設計座標 (734, 392) 起、651×291（邏輯畫面 ÷4）
-const MENU_REGION_POS := Vector2(774.0, 452.0) / 4.0
-const MENU_REGION_SIZE := Vector2(651.0, 291.0) / 4.0
+## 管理員選單區域：1920×1080 設計座標 (734, 392) 起、651×291（邏輯畫面 ÷4）。
+## 一級遊戲清單（三款遊戲＋SETTING）、SETTING 二級、清除三級都畫在這一塊內。
+## 註：需求原文就是 (734,392)；舊常量 (774,452) 與自身註解不符，2026-08 修正。
+const MENU_REGION_POS := Vector2(734.0, 425.0) / 4.0
+const MENU_REGION_SIZE := Vector2(651.0, 330.0) / 4.0
 const MENU_NAME_SIZE := 16
+const MENU_SUB_SIZE := 11      # SETTING 二級／三級選單的字體（選項名字比一級長）
 const MENU_DIFF_SIZE := 12
 const MENU_DIFF_X := 88.0      # EASY/HARD 畫在名字右側的固定距離（比最長的名字寬）
-const MENU_LINE_H := 22.0
+const MENU_LINE_H := 18.0      # 4 行（三款遊戲＋SETTING）塞進 291 高的區域
+
+## SETTING 二級選單的兩個選項（索引即 setting_index）。
+const SETTING_OPTIONS := ["CLEAR RANKING DATA", "UNLIMITED COINS"]
+const SETTING_CLEAR_IDX := 0
+const SETTING_COINS_IDX := 1
+
+## 三級排行榜清除選單：顯示名與對應的 ClearRule（TODAY／LAST_24_HOURS／ALL，
+## 索引順序一致）。執行時跨三款遊戲一起清，見 _draw_clear_menu 與
+## LeaderboardManager.clear_all_games_records。
+const CLEAR_OPTIONS := ["CLEAR TODAY", "CLEAR LAST 24 HOURS", "CLEAR ALL DATA"]
+const CLEAR_RULES := [
+	LeaderboardManager.ClearRule.TODAY,
+	LeaderboardManager.ClearRule.LAST_24_HOURS,
+	LeaderboardManager.ClearRule.ALL,
+]
+
+
+## 二級標題的兩個大按鈕（START / RANKING）：需求指定 1920×1080 設計座標
+## (60,590) 起、720×390 的區域（÷4 → 邏輯 (15,147.5) 起、180×97.5）。
+## 兩個按鈕左右並排、填滿整個區域（各 84×97.5、中間 12px 縫）。
+## 按鈕完全由程式自繪（半透明深底＋邊框＋標籤），不讀美術圖內容 ——
+## 美術換圖時按這兩個矩形對位即可。
+const TITLE_BTN_AREA := Rect2(15.0, 147.5, 180.0, 97.5)
+const TITLE_START_BTN := Rect2(15.0, 147.5, 84.0, 97.5)
+const TITLE_RANKING_BTN := Rect2(111.0, 147.5, 84.0, 97.5)
 
 
 enum Difficulty { EASY, HARD }
@@ -106,7 +141,10 @@ var _notice_col := Palette.WARN   # 提示文字顏色（清除成功用 GOLD）
 var _notice_timer := 0.0
 var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _title_time := 0.0        # 二級標題的閃爍提示計時器
-var selected_game := 0        # 一級標題當前選中的遊戲（GAMES 索引，↑ ↓ 循環）
+var title_btn_index := 0      # 二級標題按鈕選擇：0 = START、1 = RANKING（↑↓←→ 切換、A 執行）
+var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
+var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = UNLIMITED COINS
+var clear_index := 0          # 三級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
 var game_difficulties: Array[int] = [   # 各遊戲獨立的難度，預設全 EASY；
 	Difficulty.EASY,                    # ← → 只改「當前選中」那一格，切換選擇不重置
 	Difficulty.EASY,
@@ -143,11 +181,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	#
 	# 輸入分層：
 	#   Level 1  密碼彈窗／清除選單開著 → 只剩彈窗自己的按鍵，這裡整段不處理
-	#   Level 2  二級標題 → 只收 Space/Enter 進起名、R 開排行榜、
-	#            F3 開彈窗。
+	#   Level 2  二級標題 → ↑ ↓ ← → 在 START／RANKING 兩個大按鈕間切換、
+	#            A 執行游標所在的按鈕（START＝起名開局、RANKING＝排行榜）；
+	#            Space/Enter 起名、R 開排行榜照舊是捷徑、F3 開彈窗。
 	#            固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有 F3 密碼一條路）
-	#   Level 3  一級標題 → ↑ ↓ 選遊戲（循環）、← → 切「當前選中」遊戲的難度、
-	#            B 開當前遊戲的排行榜清除選單、A 確認進二級標題
+	#   Level 3  一級標題 → ↑ ↓ 選遊戲／SETTING（循環）、← → 切「當前選中」
+	#            遊戲的難度（SETTING 不響應）、B 開當前遊戲的排行榜清除選單、
+	#            A 確認進二級標題（SETTING 則進 SETTING 二級選單）
+	#   Level 4  SETTING 二級 → ↑ ↓ 選項、A 執行（CLEAR LEADERBOARD＝進三級、
+	#            UNLIMITED COINS＝切換 ON/OFF）、B/ESC 回一級
+	#   Level 5  SETTING_CLEAR 三級 → ↑ ↓ 選清除規則、A 執行（跨三款一起清）、
+	#            B/ESC 回 SETTING 二級
 	if _password_modal != null or _clear_modal != null:
 		return                     # Level 1：彈窗開著，底層標題不響應任何鍵
 
@@ -156,16 +200,59 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			match key.keycode:
 				KEY_UP, KEY_DOWN:
 					var dir := 1 if key.keycode == KEY_DOWN else -1
-					selected_game = (selected_game + dir + GAMES.size()) % GAMES.size()
+					selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
 					queue_redraw()
 				KEY_LEFT, KEY_RIGHT:
-					_toggle_difficulty()
+					if selected_game < GAMES.size():
+						_toggle_difficulty()   # SETTING 行不切難度
 				KEY_B:
-					_open_clear_menu()
+					if selected_game < GAMES.size():
+						_open_clear_menu()     # SETTING 行 B 無操作
 				KEY_A:
-					_enter_game_title(selected_game)
+					if selected_game >= GAMES.size():
+						mode = Mode.SETTING     # SETTING → 二級選單
+					else:
+						_enter_game_title(selected_game)
+					queue_redraw()
+		Mode.SETTING:
+			match key.keycode:
+				KEY_UP, KEY_DOWN:
+					setting_index = 1 - setting_index    # 兩個選項直接互換
+					queue_redraw()
+				KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					if setting_index == SETTING_CLEAR_IDX:
+						mode = Mode.SETTING_CLEAR        # 進三級清除選單
+					else:
+						Settings.set_unlimited_coins(not Settings.is_unlimited_coins())
+					queue_redraw()
+				KEY_B, KEY_ESCAPE:
+					mode = Mode.MENU                     # 回一級，選擇狀態保留
+					queue_redraw()
+		Mode.SETTING_CLEAR:
+			match key.keycode:
+				KEY_UP, KEY_DOWN:
+					var dir := 1 if key.keycode == KEY_DOWN else -1
+					clear_index = (clear_index + dir + CLEAR_OPTIONS.size()) % CLEAR_OPTIONS.size()
+					queue_redraw()
+				KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					LeaderboardManager.clear_all_games_records(CLEAR_RULES[clear_index])
+					_show_notice("SCORE DATA CLEARED", Palette.GOLD)
+					mode = Mode.SETTING                   # 執行完回二級，選項狀態保留
+					queue_redraw()
+				KEY_B, KEY_ESCAPE:
+					mode = Mode.SETTING
+					queue_redraw()
 		Mode.GAME_TITLE:
 			match key.keycode:
+				KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT:
+					title_btn_index = 1 - title_btn_index    # 兩個按鈕間切換
+					queue_redraw()
+				KEY_A:
+					# A 執行游標所在的大按鈕（與下方 Space／R 捷徑同義）
+					if title_btn_index == 0:
+						_launch(active_index)                # START：起名開局
+					else:
+						_open_leaderboard_view()             # RANKING：排行榜
 				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
 					_launch(active_index)
 				KEY_R:
@@ -183,6 +270,7 @@ func _enter_game_title(index: int) -> void:
 		_show_notice("%s NOT BUILT YET" % GAMES[index]["title"], Palette.WARN)
 		return
 	active_index = index
+	title_btn_index = 0        # 進二級標題一律從 START 開始選
 	mode = Mode.GAME_TITLE
 	queue_redraw()
 
@@ -322,6 +410,7 @@ func _on_panel_restart() -> void:
 func _on_panel_exit() -> void:
 	_close_panel()
 	CurrentPlayerSession.clear()
+	title_btn_index = 0
 	mode = Mode.GAME_TITLE
 	queue_redraw()
 
@@ -415,6 +504,7 @@ func _on_name_confirmed(name: String) -> void:
 
 func _on_name_cancelled() -> void:
 	_close_name_input()
+	title_btn_index = 0
 	mode = Mode.GAME_TITLE      # 取消起名 → 回二級標題（不是一級）
 	queue_redraw()
 
@@ -472,6 +562,7 @@ func _close_game() -> void:
 	CurrentPlayerSession.clear()
 	_notice = ""
 	_notice_timer = 0.0
+	title_btn_index = 0
 	mode = Mode.GAME_TITLE
 	queue_redraw()
 
@@ -504,17 +595,26 @@ func _draw() -> void:
 		# 一級標題的遊戲選擇清單（管理員用）：名字＋選中那行右側的難度
 		_draw_game_menu()
 		_center("↑ ↓ SELECT    ← → DIFFICULTY    A START    B CLEAR", 250, 12, Palette.BG)
+	elif mode == Mode.SETTING or mode == Mode.SETTING_CLEAR:
+		# SETTING 二級／清除三級：同一張一級圖墊底，一級清單文字整個不畫
+		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
+		if mode == Mode.SETTING:
+			_draw_setting_menu()
+		else:
+			_draw_clear_menu()
 	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
 		# 二級標題圖同時是起名 overlay 的底層：NAME_INPUT 時底下要透得出這張圖
 		var image: Texture2D = GAMES[active_index]["title_image"]
 		draw_texture_rect(image, Rect2(0, 0, 480, 270), false)
-		# 開局提示：遊戲視覺下方居中、緩慢閃爍（亮 1.2 秒 / 滅 0.8 秒）。
+		# 開局提示：按鈕下方居中、緩慢閃爍（亮 1.2 秒 / 滅 0.8 秒）。
 		# 原始需求文字是中文「按空格键开启游戏」—— 內建字型沒有中文字形
 		# （AGENTS.md 硬規則：HUD 一律英文），接入像素中文字型後改這一行字串即可。
-		# 起名 overlay 蓋著時不畫提示，避免兩層各一個「按鍵」訊息。
-		if mode == Mode.GAME_TITLE and fmod(_title_time, 2.0) < 1.2:
-			_center("PRESS SPACE TO START", 226, 12, Palette.BG)
-			_center("PRESS R FOR LEADERBOARD", 240, 10, Palette.TEXT_DIM)
+		# 起名 overlay 蓋著時不畫提示與按鈕，避免兩層各一個「按鍵」訊息。
+		if mode == Mode.GAME_TITLE:
+			_draw_title_buttons()
+			if fmod(_title_time, 2.0) < 1.2:
+				_center("PRESS SPACE TO START", 252, 12, Palette.BG)
+				_center("PRESS R FOR LEADERBOARD", 264, 10, Palette.TEXT_DIM)
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 
@@ -523,13 +623,14 @@ func _draw() -> void:
 		_center(_notice, 256, 10, _notice_col)
 
 
-## 一級標題的遊戲選擇清單：區域內垂直排列三款遊戲名（MAZE / FISHING / CATCH），
-## 選中那行畫 MENU_SELECTED（#FFC4FF）、其餘畫 MENU_IDLE（#FF44FF）；
-## EASY/HARD 只畫在選中那行的名字右側（固定 x，換行不會左右跳）。
+## 一級標題的遊戲選擇清單：區域內垂直排列三款遊戲名（MAZE / FISHING / CATCH）
+## ＋最下方一行 SETTING。選中那行畫 MENU_SELECTED（#FFC4FF）、其餘畫
+## MENU_IDLE（#FF44FF）；EASY/HARD 只畫在**選中的遊戲**那行的名字右側
+## （固定 x，換行不會左右跳）；SETTING 行是管理員入口，不畫難度。
 func _draw_game_menu() -> void:
 	var font := ThemeDB.fallback_font
 	var name_x := MENU_REGION_POS.x + 8.0
-	var y := MENU_REGION_POS.y + (MENU_REGION_SIZE.y - MENU_LINE_H * GAMES.size()) / 2.0
+	var y := MENU_REGION_POS.y + (MENU_REGION_SIZE.y - MENU_LINE_H * (GAMES.size() + 1)) / 2.0
 	for i in GAMES.size():
 		var selected := i == selected_game
 		var col := MENU_SELECTED if selected else MENU_IDLE
@@ -540,8 +641,81 @@ func _draw_game_menu() -> void:
 			draw_string(font, Vector2(name_x + MENU_DIFF_X, y), _difficulty_name(i),
 				HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_DIFF_SIZE, col)
 		y += MENU_LINE_H
+	var sel_setting := selected_game >= GAMES.size()
+	draw_string(font, Vector2(name_x, y), "SETTING",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_NAME_SIZE,
+		MENU_SELECTED if sel_setting else MENU_IDLE)
+
+
+## SETTING 二級選單（CLEAR LEADERBOARD / UNLIMITED COINS）：同一塊管理員
+## 區域內垂直排列，選中／未選中顏色與一級清單相同。UNLIMITED COINS 行右側
+## 緊接名字顯示 ON/OFF 狀態（名字比一級長，不能沿用 MENU_DIFF_X 的固定距離，
+## 用量到的名字寬度推過去）。底部一行操作提示在區域內。
+func _draw_setting_menu() -> void:
+	var font := ThemeDB.fallback_font
+	var name_x := MENU_REGION_POS.x + 8.0
+	var y := MENU_REGION_POS.y + (MENU_REGION_SIZE.y - MENU_LINE_H * SETTING_OPTIONS.size()) / 2.0
+	for i in SETTING_OPTIONS.size():
+		var selected := i == setting_index
+		var col := MENU_SELECTED if selected else MENU_IDLE
+		var name: String = SETTING_OPTIONS[i]
+		draw_string(font, Vector2(name_x, y), name,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE, col)
+		if i == SETTING_COINS_IDX:
+			var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE).x
+			draw_string(font, Vector2(name_x + w + 8.0, y),
+				"ON" if Settings.is_unlimited_coins() else "OFF",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE, col)
+		y += MENU_LINE_H
+	_center_in_region("A CONFIRM    B BACK",
+		MENU_REGION_POS.y + MENU_REGION_SIZE.y - 20.0, 8, Palette.TEXT_DIM)
+
+
+## 三級排行榜清除選單（CLEAR TODAY / CLEAR LAST 24 HOURS / CLEAR ALL DATA）：
+## 執行時**跨三款遊戲一起清**（LeaderboardManager.clear_all_games_records），
+## 不需要也不能選遊戲。選中／未選中顏色與上層相同。
+func _draw_clear_menu() -> void:
+	var font := ThemeDB.fallback_font
+	var name_x := MENU_REGION_POS.x + 8.0
+	var y := MENU_REGION_POS.y + (MENU_REGION_SIZE.y - MENU_LINE_H * CLEAR_OPTIONS.size()) / 2.0
+	for i in CLEAR_OPTIONS.size():
+		var selected := i == clear_index
+		draw_string(font, Vector2(name_x, y), CLEAR_OPTIONS[i],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE,
+			MENU_SELECTED if selected else MENU_IDLE)
+		y += MENU_LINE_H
+	_center_in_region("A CLEAR    B BACK",
+		MENU_REGION_POS.y + MENU_REGION_SIZE.y - 20.0, 8, Palette.TEXT_DIM)
+
+
+## 在管理員選單區域內水平置中的一行文字（區域寬度為置中基準）。
+func _center_in_region(text: String, y: float, size: int, col: Color) -> void:
+	draw_string(ThemeDB.fallback_font, Vector2(MENU_REGION_POS.x, y), text,
+		HORIZONTAL_ALIGNMENT_CENTER, MENU_REGION_SIZE.x, size, col)
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(0, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, 480, size, col)
+
+
+## 二級標題的兩個大按鈕（START／RANKING，title_btn_index 0／1）的選中／
+## 未選中狀態：底 = 半透明 NIGHT（不管底下美術圖畫什麼，標籤都讀得出來）；
+## 選中 = 亮粉（MENU_SELECTED）2px 框＋整顆按鈕泛光＋亮色標籤；
+## 未選中 = 深粉（MENU_IDLE）1px 框＋深色標籤。標籤水平置中、垂直在中線。
+func _draw_title_buttons() -> void:
+	var font := ThemeDB.fallback_font
+	for i in 2:
+		var selected := title_btn_index == i
+		var rect: Rect2 = TITLE_START_BTN if i == 0 else TITLE_RANKING_BTN
+		draw_rect(rect, Color(Palette.NIGHT, 0.55))
+		if selected:
+			draw_rect(rect, Color(MENU_SELECTED, 0.14))
+			draw_rect(rect, MENU_SELECTED, false, 2.0)
+		else:
+			draw_rect(rect, MENU_IDLE, false, 1.0)
+		draw_string(font,
+			Vector2(rect.position.x, rect.position.y + 52.0),
+			"START" if i == 0 else "RANKING",
+			HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 16,
+			MENU_SELECTED if selected else MENU_IDLE)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LeaderboardManager 邏輯鏡像驗證：排序、分頁、同名、同分、目前玩家定位、
-日期清除、管理員清除規則（單遊戲、五種規則）、MAX_RECORDS 裁剪（新記錄
-永不丟）、JSON 重載、損壞恢復、名字清洗。
+日期清除、管理員清除規則（單遊戲、五種規則＋跨遊戲的 clear_all_games_records）、
+MAX_RECORDS 裁剪（新記錄永不丟）、JSON 重載、損壞恢復、名字清洗。
 
 執行： python3 tools/sim/leaderboard_sim.py
 
@@ -29,7 +29,7 @@ GAME_IDS = ("seeker", "fishing", "catch")
 GAME_NAMES = {"seeker": "CHARMS SEEKER", "fishing": "CHARMS FISHING", "catch": "CHARMS CATCH"}
 
 # ClearRule 枚舉（與 .gd 的 enum ClearRule 同步，索引順序一致）
-CLEAR_RULES = {"LAST_HOUR": 0, "LAST_4_HOURS": 1, "TODAY": 2, "BEFORE_TODAY": 3, "ALL": 4}
+CLEAR_RULES = {"LAST_HOUR": 0, "LAST_4_HOURS": 1, "TODAY": 2, "BEFORE_TODAY": 3, "ALL": 4, "LAST_24_HOURS": 5}
 
 FAILED = []
 
@@ -185,15 +185,16 @@ class Manager:
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
         cutoff = None
-        if rule in (CLEAR_RULES["LAST_HOUR"], CLEAR_RULES["LAST_4_HOURS"]):
-            span = 3600 if rule == CLEAR_RULES["LAST_HOUR"] else 14400
+        if rule in (CLEAR_RULES["LAST_HOUR"], CLEAR_RULES["LAST_4_HOURS"], CLEAR_RULES["LAST_24_HOURS"]):
+            span = {CLEAR_RULES["LAST_HOUR"]: 3600, CLEAR_RULES["LAST_4_HOURS"]: 14400,
+                    CLEAR_RULES["LAST_24_HOURS"]: 86400}[rule]
             cutoff = (now - timedelta(seconds=span)).strftime("%Y-%m-%d %H:%M:%S")
         before = len(self.records)
         kept = []
         for r in self.records:
             if r["game_id"] != game_id:
                 kept.append(r)
-            elif rule in (CLEAR_RULES["LAST_HOUR"], CLEAR_RULES["LAST_4_HOURS"]):
+            elif rule in (CLEAR_RULES["LAST_HOUR"], CLEAR_RULES["LAST_4_HOURS"], CLEAR_RULES["LAST_24_HOURS"]):
                 if r["played_at"] < cutoff:
                     kept.append(r)
             elif rule == CLEAR_RULES["TODAY"]:
@@ -203,6 +204,35 @@ class Manager:
                 if r["played_date"] >= today:
                     kept.append(r)
             # ALL：此遊戲的記錄全部刪除
+        self.records = kept
+        removed = before - len(self.records)
+        if removed:
+            self.save()
+        return removed
+
+    def clear_all_games_records(self, rule):
+        """統一清除接口（鏡像 .gd 的 clear_all_games_records，SETTING 三級
+        選單用）：跨全部遊戲一起清。只接受 TODAY／LAST_24_HOURS／ALL，
+        其他規則視為無操作。"""
+        if rule == CLEAR_RULES["ALL"]:
+            before = len(self.records)
+            self.records = []
+            self.save()
+            return before
+        now = datetime.now()
+        cutoff = None
+        if rule == CLEAR_RULES["LAST_24_HOURS"]:
+            cutoff = (now - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+        today = now.strftime("%Y-%m-%d")
+        before = len(self.records)
+        kept = []
+        for r in self.records:
+            if rule == CLEAR_RULES["LAST_24_HOURS"]:
+                if r["played_at"] < cutoff:
+                    kept.append(r)
+            elif rule == CLEAR_RULES["TODAY"]:
+                if r["played_date"] != today:
+                    kept.append(r)
         self.records = kept
         removed = before - len(self.records)
         if removed:
@@ -574,6 +604,40 @@ def main():
        all(r["game_id"] != "catch" for r in m12e.records) and
        len([r for r in m12e.records if r["game_id"] == "seeker"]) == 3,
        "ALL：catch 的 3 筆全刪，seeker／fishing 各 3 筆不動")
+
+    print("\n== 13. clear_all_games_records（SETTING 三級選單：跨三款一起清）==")
+    # 13a. TODAY：三款遊戲今天的記錄一起刪，昨天的全留下
+    m13 = Manager(path)
+    for g in GAME_IDS:
+        m13.submit_score(make_record(g, "T", 100, date_str(0)))
+        m13.submit_score(make_record(g, "Y", 100, date_str(1)))
+    ok(m13.clear_all_games_records(CLEAR_RULES["TODAY"]) == 3 and
+       len(m13.records) == 3,
+       "TODAY：三款各刪今天 1 筆（共 3），昨天的 3 筆全留下")
+    ok(all(r["played_date"] != date_str(0) for r in m13.records),
+       "TODAY 之後沒有任何今天的記錄（跨三款）")
+
+    # 13b. LAST 24 HOURS：30 分鐘前的記錄（跨三款）一起刪，2 天前的留下
+    now13 = datetime.now()
+    recent13 = (now13 - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+    old13 = (now13 - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    m13b = Manager(path)
+    for g in GAME_IDS:
+        m13b.submit_score(make_record(g, "RECENT", 100, date_str(0), played_at=recent13))
+        m13b.submit_score(make_record(g, "OLD", 100, date_str(2), played_at=old13))
+    ok(m13b.clear_all_games_records(CLEAR_RULES["LAST_24_HOURS"]) == 3 and
+       len(m13b.records) == 3,
+       "LAST 24 HOURS：三款各刪 30 分鐘前那 1 筆（共 3），2 天前的留下")
+    ok([r["player_name"] for r in m13b.records] == ["OLD"] * 3,
+       "LAST 24 HOURS 之後三款都只剩 2 天前的記錄")
+
+    # 13c. ALL：三款全部記錄一次清空
+    m13c = Manager(path)
+    for g in GAME_IDS:
+        for i in range(3):
+            m13c.submit_score(make_record(g, "X", 100, today_str()))
+    ok(m13c.clear_all_games_records(CLEAR_RULES["ALL"]) == 9 and m13c.records == [],
+       "ALL：三款共 9 筆全部刪除，回傳數正確")
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

@@ -38,15 +38,27 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 2. Godot Project Manager → Import → 選這個 repo 的 `project.godot`
 3. 按 Run（F5 也可以）
 4. 一級標題（Title_ChooseGames.png 全屏）是**管理員的遊戲選擇畫面**：
-   **↑ ↓** 循環選遊戲（MAZE → FISHING → CATCH → MAZE）、**← →** 切換
-   **當前選中遊戲**的難度 EASY／HARD（各遊戲獨立記憶，EASY/HARD 只畫在選中
-   那行名字右側，畫面始終只有一個）、**B** 進當前選中遊戲的**排行榜清除
-   選單**（見「排行榜」段的清除功能）、**A** 確認進該款二級標題 →
-   **Space／Enter** 起名開局（二級標題下方有緩慢閃爍的提示，字串先掛英文，
-   接中文字型後換）。進二級後玩家只能起名、不能再改。
-   二級標題按 **R** 開**當前款的排行榜**（`ui/leaderboard_panel.gd`：
-   只顯示前 10 名、不顯示本局成績、**一律只讀** —— 清除功能已搬到一級
-   標題的管理員清除選單，玩家端沒有任何清除入口，B／ESC 關閉回二級標題）。
+   **↑ ↓** 循環選項目（MAZE → FISHING → CATCH → SETTING → MAZE）、
+   **← →** 切換**當前選中遊戲**的難度 EASY／HARD（各遊戲獨立記憶，
+   EASY/HARD 只畫在選中那行名字右側，畫面始終只有一個；SETTING 行
+   不畫難度、← → 不響應）、**B** 進當前選中遊戲的**排行榜清除選單**
+   （見「排行榜」段的清除功能；SETTING 行 B 無操作）、**A** 確認進該款
+   二級標題 —— 選中 SETTING 時 A 進 **SETTING 二級選單**（見「SETTING
+   管理員設定」段）。所有選單文字都在 1920×1080 設計座標 (734,392) 起、
+   651×291 的區域內。
+   二級標題（各款的全屏圖）下方有 **START／RANKING 兩個大按鈕**（需求指定
+   1920×1080 設計座標 (60,590) 起、720×390 區域 → 邏輯 (15,147.5) 起、
+   180×97.5；兩個按鈕左右並排填滿、各 84×97.5、中間 12px 縫；**完全由程式
+   自繪** —— 半透明 NIGHT 底＋邊框＋標籤，不讀美術圖內容，美術換圖時按
+   `TITLE_START_BTN`／`TITLE_RANKING_BTN` 兩個矩形對位即可）：**↑ ↓ ← →**
+   切換選擇（選中＝亮粉 MENU_SELECTED 2px 框＋泛光、未選中＝深粉 MENU_IDLE
+   1px 框）、**A** 執行 —— **START**＝起名開局（等同 Space）、**RANKING**＝
+   開當前款的排行榜（等同 R，B／ESC 關閉回二級標題）；**Space／R 捷徑照舊**。
+   進二級後玩家只能起名、不能再改；按鈕下方有緩慢閃爍的開局提示（字串先掛
+   英文，接中文字型後換）。二級標題按 **R** 開**當前款的排行榜**
+   （`ui/leaderboard_panel.gd`：只顯示前 10 名、不顯示本局成績、**一律只讀**
+   —— 清除功能已搬到一級標題的管理員清除選單，玩家端沒有任何清除入口，
+   B／ESC 關閉回二級標題）。
    起名界面是**疊在二級標題上的半透明 overlay**：50% 黑罩
    透出二級標題圖，上面再疊各遊戲的起名彈窗圖
    （`assets/title/Naming/Name_Charms*.png`，RGBA 只有彈窗區域不透明），
@@ -87,7 +99,8 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
 
 - **檔案分工**：`shared/leaderboard_record.gd`（一條記錄的欄位與序列化）、
   `shared/leaderboard_manager.gd`（儲存／排序／分頁／清除，全部 static；
-  清除統一走 `clear_records(game_id, ClearRule)`，見下）、
+  單遊戲清除走 `clear_records(game_id, ClearRule)`、跨遊戲清除走
+  `clear_all_games_records(ClearRule)`，見下）、
   `shared/player_session.gd`（玩家名字的生命週期：首次進遊戲要輸入，
   重開保留，回二級清除；難度不在這裡，見下）、
   `ui/game_over.gd`（局終 Game Over 界面：分數／排名／名字 ＋ RESTART／
@@ -95,7 +108,7 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
   `ui/leaderboard_panel.gd`（通用排行榜面板，三款共用一份，一律只讀）、
   `ui/admin_clear_menu.gd`（管理員的排行榜清除選單：一級標題按 B 進入）、
   `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「難度與起名」）。
-- **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD }`。
+- **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }`。
   標題層只畫 `assets/title/` 的全屏圖，一級標題另外把遊戲選擇清單（名字＋
   難度）用 draw_string 疊在圖上；F3 密碼彈窗
   （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
@@ -120,6 +133,22 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
   不需要另加 timestamp。面板時代的跨遊戲日期清除
   （`clear_records_by_date` 與今天／昨天／前天三個 wrapper）已無 UI 入口，
   保留作為通用工具（sim 第 6 節仍驗證）。
+- **SETTING 管理員設定**（2026-08 新增，一級標題選中 SETTING 按 A 進入，
+  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級兩個選項
+  **CLEAR LEADERBOARD／UNLIMITED COINS**，↑ ↓ 選擇、A 執行、B/ESC 回一級
+  （選擇狀態保留）。**UNLIMITED COINS** 按 A 切換 ON/OFF（ON/OFF 畫在名字
+  右側），狀態跨執行保存 —— `shared/settings.gd`（class_name Settings，
+  `user://settings.cfg`）；專案目前沒有投幣系統，未來投幣／開始遊戲邏輯
+  用 `Settings.is_unlimited_coins()` 讀取。**CLEAR LEADERBOARD** 按 A 進三級
+  清除選單：**CLEAR TODAY／CLEAR LAST 24 HOURS／CLEAR ALL DATA**，↑ ↓ 選擇、
+  A **執行**（無二次確認）、B/ESC 回二級，執行完顯示 SCORE DATA CLEARED
+  提示並留在二級。**清除統一走 `LeaderboardManager.clear_all_games_records(
+  ClearRule)`，執行時跨 Maze／Fishing／Catch 三款一起清**，不接受 game_id；
+  規則只吃 TODAY（今天 00:00 之後）／LAST_24_HOURS（現在往前 24 小時）／
+  ALL（全部）。時間判定沿用 played_at／played_date 字串字典序，
+  LAST_24_HOURS 是 ClearRule 新追加的末位值（不影響舊的五種規則索引）。
+  一級標題按 B 的舊單遊戲清除選單（`ui/admin_clear_menu.gd`）原樣保留，
+  兩條清除路徑並存。
 - **排序**：score 降冪 → played_at 升冪 → record_id 升冪（同分先玩的高，
   第三鍵兜底排序確定性）。記錄 ID 由時間戳＋引擎毫秒＋**序號**＋隨機尾碼組成
   —— 序號在同一次執行內嚴格遞增，同毫秒連續提交也不撞（300 筆連發的
@@ -128,8 +157,8 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
   位置各不同：Fishing 在時間到的分支、Seeker 在唯一的 `_enter_result()`、
   Catch 在兩處入口共用 `_finish_round()`（有只發一次的保險，防同幀連中兩顆炸彈）。
   launcher 對沒有 `round_finished` 的遊戲仍會自動跳過接線（兜底，目前沒用到）。
-- 驗證：`python tools/sim/leaderboard_sim.py`（12 節：排序／同名／同分／分頁／
-  玩家定位／日期清除／管理員清除規則／裁剪／重載／損壞恢復／名字清洗／清空）。
+- 驗證：`python tools/sim/leaderboard_sim.py`（13 節：排序／同名／同分／分頁／
+  玩家定位／日期清除／管理員清除規則／跨遊戲清除／裁剪／重載／損壞恢復／名字清洗／清空）。
 
 第一次用 Godot 開啟專案會多出一批 `*.gd.uid`（Godot 自動生成的資源 ID），
 那是正常的，**請一起 commit**。目前只有 `games/seeker/` 下的幾支有 —— 其餘是在
@@ -167,7 +196,8 @@ res://
 ├── shared/
 │   ├── palette.gd          20 色共用色盤（class_name Palette）
 │   ├── juice.gd            全畫面：震動／鏡頭偏移／視差／頓格（class_name Juice）
-│   └── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
+│   ├── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
+│   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS，user://settings.cfg）
 ├── ui/
 │   ├── game_over.gd        局終 Game Over 界面（分數／排名／名字＋RESTART／LEADERBOARD）
 │   ├── leaderboard_panel.gd 排行榜面板（只顯示前 10 名，三款共用，一律只讀）
@@ -255,11 +285,12 @@ python3 tools/sim/catch_sim.py
 ## 三款共通的設計規格
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
-- **共用外框**：一級標題 → 二級標題 → 名字（首次進遊戲）→ 遊戲 → **Game Over 界面**（分數／排名／名字＋RESTART／LEADERBOARD 兩鈕）→ 重開（名字保留）／排行榜（只顯示前 10 名）／回二級（名字清除）。
-- **難度與起名**：難度是**管理員在一級標題選的**：**↑ ↓ 選遊戲**（MAZE／
-  FISHING／CATCH 循環）、**← → 切換當前選中遊戲的難度 EASY／HARD**（各遊戲
-  獨立記憶，切換選擇不會重置其他遊戲；EASY/HARD 只畫在選中那行名字右側，
-  畫面始終只有一個）；進二級後玩家不能再改。launcher 持有並寫進排行榜記錄的
+- **共用外框**：一級標題 → 二級標題（**START／RANKING 兩鈕**，↑↓←→ 切換、A 執行）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 界面**（分數／排名／名字＋RESTART／LEADERBOARD 兩鈕）→ 重開（名字保留）／排行榜（只顯示前 10 名）／回二級（名字清除）。
+- **難度與起名**：難度是**管理員在一級標題選的**：**↑ ↓ 選項目**（MAZE／
+  FISHING／CATCH／SETTING 循環）、**← → 切換當前選中遊戲的難度 EASY／HARD**
+  （各遊戲獨立記憶，切換選擇不會重置其他遊戲；EASY/HARD 只畫在選中那行
+  名字右側，畫面始終只有一個；SETTING 行不畫不響應）；進二級後玩家不能再
+  改。launcher 持有並寫進排行榜記錄的
   DIFF 列，跨局跨款保留（這是管理員設定，不是玩家 session 的一部分）。
   起名是**疊在二級標題上的三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫
   二級標題圖當底層；起名層先蓋 50% 黑罩（`Color(0,0,0,0.5)`，底下的二級畫面
