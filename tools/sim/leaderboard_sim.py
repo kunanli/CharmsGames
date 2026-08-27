@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """LeaderboardManager 邏輯鏡像驗證：排序、分頁、同名、同分、目前玩家定位、
-日期清除、MAX_RECORDS 裁剪（新記錄永不丟）、JSON 重載、損壞恢復、名字清洗。
+日期清除、管理員清除規則（單遊戲、五種規則）、MAX_RECORDS 裁剪（新記錄
+永不丟）、JSON 重載、損壞恢復、名字清洗。
 
 執行： python3 tools/sim/leaderboard_sim.py
 
@@ -26,6 +27,9 @@ PAGE_SIZE = 20
 MAX_NAME_LEN = 12
 GAME_IDS = ("seeker", "fishing", "catch")
 GAME_NAMES = {"seeker": "CHARMS SEEKER", "fishing": "CHARMS FISHING", "catch": "CHARMS CATCH"}
+
+# ClearRule 枚舉（與 .gd 的 enum ClearRule 同步，索引順序一致）
+CLEAR_RULES = {"LAST_HOUR": 0, "LAST_4_HOURS": 1, "TODAY": 2, "BEFORE_TODAY": 3, "ALL": 4}
 
 FAILED = []
 
@@ -168,6 +172,38 @@ class Manager:
     def clear_records_by_game(self, game_id):
         before = len(self.records)
         self.records = [r for r in self.records if r["game_id"] != game_id]
+        removed = before - len(self.records)
+        if removed:
+            self.save()
+        return removed
+
+    def clear_records(self, game_id, rule):
+        """統一清除接口（鏡像 .gd 的 clear_records）：
+        只刪指定 game_id 的記錄；時間規則用字串字典序比較。"""
+        if rule == CLEAR_RULES["ALL"]:
+            return self.clear_records_by_game(game_id)
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        cutoff = None
+        if rule in (CLEAR_RULES["LAST_HOUR"], CLEAR_RULES["LAST_4_HOURS"]):
+            span = 3600 if rule == CLEAR_RULES["LAST_HOUR"] else 14400
+            cutoff = (now - timedelta(seconds=span)).strftime("%Y-%m-%d %H:%M:%S")
+        before = len(self.records)
+        kept = []
+        for r in self.records:
+            if r["game_id"] != game_id:
+                kept.append(r)
+            elif rule in (CLEAR_RULES["LAST_HOUR"], CLEAR_RULES["LAST_4_HOURS"]):
+                if r["played_at"] < cutoff:
+                    kept.append(r)
+            elif rule == CLEAR_RULES["TODAY"]:
+                if r["played_date"] != today:
+                    kept.append(r)
+            elif rule == CLEAR_RULES["BEFORE_TODAY"]:
+                if r["played_date"] >= today:
+                    kept.append(r)
+            # ALL：此遊戲的記錄全部刪除
+        self.records = kept
         removed = before - len(self.records)
         if removed:
             self.save()
@@ -479,6 +515,65 @@ def main():
        "clear_records_by_game 只刪 fishing 的 10 筆")
     m11.clear_all_records()
     ok(m11.records == [], "clear_all 清空全部")
+
+    print("\n== 12. clear_records（管理員清除選單：單遊戲、五種規則）==")
+    # 12a. LAST 1 HOUR：只刪 1 小時內的，且不碰其他遊戲
+    now = datetime.now()
+    recent_at = (now - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+    recent_date = (now - timedelta(minutes=30)).strftime("%Y-%m-%d")
+    old_at = (now - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
+    old_date = (now - timedelta(hours=2)).strftime("%Y-%m-%d")
+    m12 = Manager(path)
+    for g in GAME_IDS:
+        m12.submit_score(make_record(g, "RECENT", 100, recent_date, played_at=recent_at))
+        m12.submit_score(make_record(g, "OLD", 100, old_date, played_at=old_at))
+    ok(m12.clear_records("seeker", CLEAR_RULES["LAST_HOUR"]) == 1,
+       "LAST 1 HOUR：seeker 只刪 30 分鐘前那 1 筆")
+    ok([r["player_name"] for r in m12.get_records("seeker")] == ["OLD"],
+       "LAST 1 HOUR 後 seeker 只剩 2 小時前那筆")
+    ok(len([r for r in m12.records if r["game_id"] != "seeker"]) == 4,
+       "LAST 1 HOUR 不影響 fishing／catch（單遊戲清除）")
+
+    # 12b. LAST 4 HOURS：30 分鐘前與 2 小時前都在 4 小時內，一起刪
+    m12b = Manager(path)
+    for g in GAME_IDS:
+        m12b.submit_score(make_record(g, "RECENT", 100, recent_date, played_at=recent_at))
+        m12b.submit_score(make_record(g, "OLD", 100, old_date, played_at=old_at))
+    ok(m12b.clear_records("catch", CLEAR_RULES["LAST_4_HOURS"]) == 2,
+       "LAST 4 HOURS：catch 的 2 筆都在範圍內，全刪")
+
+    # 12c. TODAY：只刪今天（以本地 00:00 為界），昨天與其他遊戲不動
+    m12c = Manager(path)
+    for g in GAME_IDS:
+        m12c.submit_score(make_record(g, "T", 100, date_str(0)))
+        m12c.submit_score(make_record(g, "Y", 100, date_str(1)))
+    ok(m12c.clear_records("fishing", CLEAR_RULES["TODAY"]) == 1 and
+       len(m12c.records) == 5,
+       "TODAY：fishing 只刪今天 1 筆，共 5 筆留下")
+    ok(all(r["game_id"] != "fishing" or r["played_date"] != date_str(0)
+           for r in m12c.records), "TODAY 後 fishing 沒有今天的記錄")
+
+    # 12d. BEFORE TODAY：刪今天之前，只留今天
+    m12d = Manager(path)
+    for g in GAME_IDS:
+        m12d.submit_score(make_record(g, "T", 100, date_str(0)))
+        m12d.submit_score(make_record(g, "Y", 100, date_str(1)))
+        m12d.submit_score(make_record(g, "D", 100, date_str(2)))
+    ok(m12d.clear_records("seeker", CLEAR_RULES["BEFORE_TODAY"]) == 2 and
+       len(m12d.records) == 7,
+       "BEFORE TODAY：seeker 刪昨天與前天共 2 筆，今天與其他遊戲留下")
+    ok([r["played_date"] for r in m12d.get_records("seeker")] == [date_str(0)],
+       "BEFORE TODAY 後 seeker 只剩今天的記錄")
+
+    # 12e. ALL：只清這一款，其他款不動
+    m12e = Manager(path)
+    for g in GAME_IDS:
+        for i in range(3):
+            m12e.submit_score(make_record(g, "X", 100, today_str()))
+    ok(m12e.clear_records("catch", CLEAR_RULES["ALL"]) == 3 and
+       all(r["game_id"] != "catch" for r in m12e.records) and
+       len([r for r in m12e.records if r["game_id"] == "seeker"]) == 3,
+       "ALL：catch 的 3 筆全刪，seeker／fishing 各 3 筆不動")
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

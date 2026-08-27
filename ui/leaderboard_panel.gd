@@ -4,7 +4,7 @@ extends Node2D
 # 通用排行榜面板（三款遊戲共用一份，不要各寫一套）。
 #
 # launcher 負責在 add_child 前設定欄位：
-#   game_id / game_name / read_only
+#   game_id / game_name
 # 之後面板自己跟 LeaderboardManager 要資料，排行榜邏輯完全不進遊戲腳本。
 #
 # 版面（2026-08 美術進場後改版，2026-08 底改為「只看前 10」）：
@@ -18,23 +18,18 @@ extends Node2D
 #   - 不顯示本局成績：沒有 YOUR SCORE 行、不高亮自己的記錄
 #     （自己的排名與分數只在局終的 Game Over 界面顯示）。
 #
-# 按鍵：
-#   C         清除選單（TODAY / YESTERDAY / DAY BEFORE）
-#   1/2/3 直選或 ←→ 循環選日子，ENTER 進二次確認
-#   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱）
+# 一律只讀（2026-08 底：清除功能搬到管理員一級標題的清除選單
+# ui/admin_clear_menu.gd，面板不再有任何清除入口）。
 #
-# 只讀模式（launcher 設 read_only=true，二級標題按 R 進入）：
-#   清除停用（[C] CLEAR 提示不畫），B / ESC 一樣回二級標題。
+# 按鍵：
+#   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱）
 # ─────────────────────────────────────────────────────────
-
-enum ClearState { NONE, SELECT, CONFIRM }
 
 signal exit_requested
 
 # ── launcher 在 add_child 前設定 ─────────────────────────
 var game_id := ""
 var game_name := ""           # catch/fishing 的底圖沒畫標題，程式補畫
-var read_only := false        # 二級標題按 R 開的「只看」模式：清除停用
 
 const SCREEN := Vector2(480, 270)
 const TOP_N := 10             # 只顯示前 10 名，不翻頁
@@ -95,10 +90,6 @@ var _bg: Texture2D
 var _records: Array = []        # Array[LeaderboardRecord]，前 10 名
 var _total := 0
 
-var _clear_state := ClearState.NONE
-var _clear_day := 0             # 0=今天 1=昨天 2=前天
-var _clear_labels := ["TODAY", "YESTERDAY", "DAY BEFORE"]
-
 
 func _ready() -> void:
 	_layout = LAYOUT.get(game_id, LAYOUT["catch"])
@@ -112,43 +103,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key == null or not key.pressed or key.echo:
 		return
 	get_viewport().set_input_as_handled()
-
-	# 只讀模式（二級標題按 R 進入）：清除停用，B / ESC 都關閉回二級標題
-	if read_only:
-		if key.keycode == KEY_B or key.keycode == KEY_ESCAPE:
-			exit_requested.emit()
-		return
-
-	match _clear_state:
-		ClearState.NONE:
-			match key.keycode:
-				KEY_C:
-					_clear_state = ClearState.SELECT
-					_clear_day = 0
-				KEY_B, KEY_ESCAPE:
-					exit_requested.emit()
-		ClearState.SELECT:
-			match key.keycode:
-				KEY_1:
-					_clear_day = 0
-				KEY_2:
-					_clear_day = 1
-				KEY_3:
-					_clear_day = 2
-				KEY_LEFT:
-					_clear_day = (_clear_day + 2) % 3   # ← 上一個日子（循環）
-				KEY_RIGHT:
-					_clear_day = (_clear_day + 1) % 3   # → 下一個日子（循環）
-				KEY_ENTER, KEY_KP_ENTER:
-					_clear_state = ClearState.CONFIRM
-				KEY_B, KEY_ESCAPE:
-					_clear_state = ClearState.NONE
-		ClearState.CONFIRM:
-			match key.keycode:
-				KEY_ENTER, KEY_KP_ENTER:
-					_do_clear()
-				KEY_B, KEY_ESCAPE:
-					_clear_state = ClearState.SELECT
+	if key.keycode == KEY_B or key.keycode == KEY_ESCAPE:
+		exit_requested.emit()
 
 
 ## 重新向 Manager 要資料（永遠第一頁、前 TOP_N 條）。
@@ -157,15 +113,6 @@ func _refresh() -> void:
 	_total = data["total"]
 	_records = data["records"]
 	queue_redraw()
-
-
-func _do_clear() -> void:
-	match _clear_day:
-		0: LeaderboardManager.clear_today_records()
-		1: LeaderboardManager.clear_yesterday_records()
-		2: LeaderboardManager.clear_day_before_yesterday_records()
-	_clear_state = ClearState.NONE
-	_refresh()
 
 
 # ── 繪製 ─────────────────────────────────────────────────
@@ -188,7 +135,8 @@ func _draw() -> void:
 	else:
 		_draw_rows()
 
-	_draw_bottom()
+	var f: Dictionary = _layout["footer"]
+	_draw_footer_line(f, f["size"], text_col, dim_col)
 
 
 ## 前 10 名：左欄 1~5、右欄 6~10，各 5 列。列距 = 2×pitch，
@@ -224,63 +172,11 @@ func _fit_name(font: Font, name: String, max_w: float) -> String:
 	return text
 
 
-func _draw_bottom() -> void:
-	var font := ThemeDB.fallback_font
-	var f: Dictionary = _layout["footer"]
-	var ya: float = f["a"]
-	var yb: float = f["b"]
-	var size: int = f["size"]
-	var text_col: Color = Palette.TEXT if _layout["light"] else Palette.NIGHT
-	var dim_col: Color = Palette.TEXT_DIM if _layout["light"] else Palette.WALL_DARK
-	var sel_col: Color = Palette.GOLD if _layout["light"] else Palette.WARN
-
-	# 清除流程的提示優先（暫時蓋掉底部那行分頁資訊）
-	if _clear_state == ClearState.SELECT:
-		if f["mode"] == "center":
-			# 置中模式整組居中（寬度算出來再分開畫，才能逐個上色）
-			var labels := []
-			var total := 0.0
-			for i in 3:
-				var t := "[%d] %s" % [i + 1, _clear_labels[i]]
-				labels.append(t)
-				total += font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + 24
-			var x := 240.0 - total / 2.0
-			for i in 3:
-				var col: Color = sel_col if i == _clear_day else dim_col
-				draw_string(font, Vector2(x, ya), labels[i],
-					HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
-				x += font.get_string_size(labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + 24
-			_center("B / ESC BACK", yb, size, dim_col)
-		else:
-			var x := 12
-			for i in 3:
-				var col: Color = sel_col if i == _clear_day else dim_col
-				var label := "[%d] %s" % [i + 1, _clear_labels[i]]
-				draw_string(font, Vector2(x, ya), label,
-					HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
-				x += 96
-			draw_string(font, Vector2(0, ya), "B / ESC BACK",
-				HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, size, dim_col)
-			_draw_footer_line(f, size, text_col, dim_col)
-		return
-	if _clear_state == ClearState.CONFIRM:
-		_center("CLEAR %s? [ENTER] CONFIRM  [B] CANCEL" % _clear_labels[_clear_day],
-			ya, size, Palette.WARN)
-		if f["mode"] == "wide":
-			_draw_footer_line(f, size, text_col, dim_col)
-		return
-
-	_draw_footer_line(f, size, text_col, dim_col)
-
-
 func _draw_footer_line(f: Dictionary, size: int, text_col: Color, dim_col: Color) -> void:
 	var font := ThemeDB.fallback_font
 	var first := 1
 	var last := mini(TOP_N, _total)
 	var page_text := "%d-%d / %d" % [first, last, _total]
-	# 只讀模式沒有清除功能，[C] CLEAR 提示不畫
-	if not read_only:
-		page_text += "  [C] CLEAR"
 	if f["mode"] == "center":
 		_center(page_text, f["b"], size, dim_col)
 		_center("B BACK", f["c"], size, text_col)

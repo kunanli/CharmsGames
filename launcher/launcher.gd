@@ -2,9 +2,10 @@ extends Node2D
 
 # ─────────────────────────────────────────────────────────
 # 啟動標題 + 遊戲流程狀態機：
-#   MENU（一級標題＝遊戲選擇畫面：↑ ↓ 循環選遊戲、← → 切當前遊戲難度、
-#     A 確認）→ GAME_TITLE（二級標題圖）→ NAME_INPUT → PLAYING
-#     → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
+#   MENU（一級標題＝管理員的遊戲選擇畫面：↑ ↓ 循環選遊戲、← → 切當前
+#     遊戲難度、B 開當前選中遊戲的排行榜清除選單、A 確認）
+#   → GAME_TITLE（二級標題圖）→ NAME_INPUT → PLAYING
+#   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #
 # 標題層只畫全屏圖（assets/title/）＋一級標題的遊戲選擇清單（名字與難度用
 # draw_string 疊在圖上）＋二級標題下方一條緩慢閃爍的開局提示
@@ -12,8 +13,10 @@ extends Node2D
 # 二級標題是「固定場所」：不響應 1/2/3 與 ESC，**唯一回一級的路徑是
 # F3 管理員密碼**（ui/admin_password.gd，Modal Overlay）：正確 → 回一級，
 # ESC → 留在二級。遊戲結束與遊戲中 ESC 都回**該款的二級標題**。
-# 二級標題按 R 開**當前款的只讀排行榜**（同一個 leaderboard_panel.gd，
-# read_only=true：清除停用，只顯示前 10 名，B/ESC 關閉回二級標題）。
+# 二級標題按 R 開**當前款的排行榜**（ui/leaderboard_panel.gd，一律只讀：
+# 只顯示前 10 名、沒有清除入口，B/ESC 關閉回二級標題）。
+# 一級標題按 B 開**當前選中遊戲的排行榜清除選單**（ui/admin_clear_menu.gd，
+# Modal Overlay，見「清除功能」段落）。
 # 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_key_input 註解）。
 #
 # 遊戲不是場景，是「掛在臨時 Node2D 上的腳本」：
@@ -96,8 +99,10 @@ var active_index := -1        # 目前這局是哪一款（排行榜重開要用
 var _panel: Node2D = null
 var _name_input: Node2D = null
 var _password_modal: Node2D = null   # F3 管理員密碼彈窗；非 null 時攔下所有標題層按鍵
+var _clear_modal: Node2D = null      # 排行榜清除選單；同上，開著時標題層不響應
 var _built: Array[bool] = []  # 每一款的腳本存不存在，開場算一次就好
 var _notice := ""
+var _notice_col := Palette.WARN   # 提示文字顏色（清除成功用 GOLD）
 var _notice_timer := 0.0
 var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _title_time := 0.0        # 二級標題的閃爍提示計時器
@@ -137,13 +142,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# launcher 不需要也不應該碰。
 	#
 	# 輸入分層：
-	#   Level 1  密碼彈窗開著 → 只剩彈窗自己的按鍵，這裡整段不處理
-	#   Level 2  二級標題 → 只收 Space/Enter 進起名、R 開只讀排行榜、
+	#   Level 1  密碼彈窗／清除選單開著 → 只剩彈窗自己的按鍵，這裡整段不處理
+	#   Level 2  二級標題 → 只收 Space/Enter 進起名、R 開排行榜、
 	#            F3 開彈窗。
 	#            固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有 F3 密碼一條路）
 	#   Level 3  一級標題 → ↑ ↓ 選遊戲（循環）、← → 切「當前選中」遊戲的難度、
-	#            A 確認進二級標題
-	if _password_modal != null:
+	#            B 開當前遊戲的排行榜清除選單、A 確認進二級標題
+	if _password_modal != null or _clear_modal != null:
 		return                     # Level 1：彈窗開著，底層標題不響應任何鍵
 
 	match mode:
@@ -155,6 +160,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					queue_redraw()
 				KEY_LEFT, KEY_RIGHT:
 					_toggle_difficulty()
+				KEY_B:
+					_open_clear_menu()
 				KEY_A:
 					_enter_game_title(selected_game)
 		Mode.GAME_TITLE:
@@ -173,10 +180,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 ## 一級標題按 A 確認 → 二級標題。未建置的款項留在原地跳提示。
 func _enter_game_title(index: int) -> void:
 	if not _built[index]:
-		var entry: Dictionary = GAMES[index]
-		_notice = "%s NOT BUILT YET" % entry["title"]
-		_notice_timer = NOTICE_TIME
-		queue_redraw()
+		_show_notice("%s NOT BUILT YET" % GAMES[index]["title"], Palette.WARN)
 		return
 	active_index = index
 	mode = Mode.GAME_TITLE
@@ -205,9 +209,7 @@ func _launch(index: int) -> void:
 	var entry: Dictionary = GAMES[index]
 
 	if not _built[index]:
-		_notice = "%s NOT BUILT YET" % entry["title"]
-		_notice_timer = NOTICE_TIME
-		queue_redraw()
+		_show_notice("%s NOT BUILT YET" % entry["title"], Palette.WARN)
 		return
 
 	if not CurrentPlayerSession.is_active():
@@ -218,12 +220,19 @@ func _launch(index: int) -> void:
 	_start_game(index)
 
 
+## 標題層的短提示（NOT BUILT／載入失敗／清除成功），停留 NOTICE_TIME 秒。
+func _show_notice(text: String, col: Color) -> void:
+	_notice = text
+	_notice_col = col
+	_notice_timer = NOTICE_TIME
+	queue_redraw()
+
+
 func _start_game(index: int) -> void:
 	var entry: Dictionary = GAMES[index]
 	var script: Script = load(entry["script"])
 	if script == null:
-		_notice = "%s FAILED TO LOAD" % entry["title"]
-		_notice_timer = NOTICE_TIME
+		_show_notice("%s FAILED TO LOAD" % entry["title"], Palette.WARN)
 		mode = Mode.MENU
 		queue_redraw()
 		return
@@ -298,7 +307,7 @@ func _open_game_over() -> void:
 ## Game Over 界面選 LEADERBOARD：關界面、開排行榜面板。
 func _on_game_over_leaderboard() -> void:
 	_close_panel()
-	_open_leaderboard(false)
+	_open_leaderboard()
 
 
 func _on_panel_restart() -> void:
@@ -319,10 +328,10 @@ func _on_panel_exit() -> void:
 
 # ── 排行榜面板（Game Over 進入／二級標題按 R 進入共用）────
 
-## 開排行榜面板：read_only=true 是二級標題按 R 的預覽（清除停用），
-## false 是 Game Over 界面選 LEADERBOARD 進入。兩種都只顯示前 10 名、
-## 不顯示本局成績，B/ESC 回該款二級標題。
-func _open_leaderboard(read_only: bool) -> void:
+## 開排行榜面板（二級標題按 R 或 Game Over 界面選 LEADERBOARD 進入，
+## 兩者行為一致）：只顯示前 10 名、不顯示本局成績，B/ESC 回該款二級標題。
+## 清除功能已移到一級標題的清除選單（見 _open_clear_menu），面板一律只讀。
+func _open_leaderboard() -> void:
 	var entry: Dictionary = GAMES[active_index]
 	var panel := Node2D.new()
 	panel.name = "LeaderboardPanel"
@@ -330,7 +339,6 @@ func _open_leaderboard(read_only: bool) -> void:
 	# 面板的欄位要用 set() 設定：panel 是 Node2D 型別，編譯器看不到腳本屬性
 	panel.set("game_id", entry["id"])
 	panel.set("game_name", entry["title"])
-	panel.set("read_only", read_only)
 	panel.connect("exit_requested", Callable(self, "_on_panel_exit"))
 	_panel = panel
 	add_child(panel)
@@ -338,9 +346,48 @@ func _open_leaderboard(read_only: bool) -> void:
 	queue_redraw()
 
 
-## 二級標題按 R：開當前款的排行榜，僅供查看（清除停用）。不提交記錄。
+## 二級標題按 R：開當前款的排行榜，僅供查看（清除入口在一級標題）。
 func _open_leaderboard_view() -> void:
-	_open_leaderboard(true)
+	_open_leaderboard()
+
+
+# ── 管理員排行榜清除選單（一級標題按 B，Modal Overlay）────
+
+## 一級標題按 B：開「當前選中遊戲」的排行榜清除選單。選單自己跟
+## LeaderboardManager 要資料與執行刪除，launcher 只負責開關與提示。
+func _open_clear_menu() -> void:
+	if _clear_modal != null:
+		return
+	var modal := Node2D.new()
+	modal.name = "AdminClearMenu"
+	modal.set_script(load("res://ui/admin_clear_menu.gd"))
+	modal.set("game_id", GAMES[selected_game]["id"])
+	modal.set("game_name", GAMES[selected_game]["menu_name"])
+	modal.connect("cleared", Callable(self, "_on_clear_done"))
+	modal.connect("cancelled", Callable(self, "_on_clear_cancelled"))
+	_clear_modal = modal
+	add_child(modal)
+
+
+## 清除完成：關選單、留在一級標題，顯示成功提示。
+## （選單開著時標題層不收任何鍵，selected_game 不會被切動 ——
+## 清的一定是開選單時選中的那一款。）
+func _on_clear_done() -> void:
+	_close_clear_modal()
+	_show_notice("%s SCORE DATA CLEARED" % GAMES[selected_game]["menu_name"], Palette.GOLD)
+
+
+## B/ESC 取消：關選單，留在一級標題，什麼都不做。
+func _on_clear_cancelled() -> void:
+	_close_clear_modal()
+
+
+func _close_clear_modal() -> void:
+	if _clear_modal == null:
+		return
+	remove_child(_clear_modal)
+	_clear_modal.queue_free()
+	_clear_modal = null
 
 
 # ── 姓名輸入 ────────────────────────────────────────────
@@ -456,7 +503,7 @@ func _draw() -> void:
 		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
 		# 一級標題的遊戲選擇清單（管理員用）：名字＋選中那行右側的難度
 		_draw_game_menu()
-		_center("↑ ↓ SELECT    ← → DIFFICULTY    A START", 250, 12, Palette.BG)
+		_center("↑ ↓ SELECT    ← → DIFFICULTY    A START    B CLEAR", 250, 12, Palette.BG)
 	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
 		# 二級標題圖同時是起名 overlay 的底層：NAME_INPUT 時底下要透得出這張圖
 		var image: Texture2D = GAMES[active_index]["title_image"]
@@ -471,9 +518,9 @@ func _draw() -> void:
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 
-	# 提示（NOT BUILT / 載入失敗）直接疊在圖上，極少出現
+	# 提示（NOT BUILT / 載入失敗 / 清除成功）直接疊在圖上，極少出現
 	if _notice != "":
-		_center(_notice, 256, 10, Palette.WARN)
+		_center(_notice, 256, 10, _notice_col)
 
 
 ## 一級標題的遊戲選擇清單：區域內垂直排列三款遊戲名（MAZE / FISHING / CATCH），

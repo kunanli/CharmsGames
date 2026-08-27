@@ -22,6 +22,10 @@ const SCORE_VERSION := 1       # 計分規則版本，每筆記錄統一蓋成�
 const MAX_RECORDS := 1000      # 每個 game_id 最多保存幾條
 const PAGE_SIZE := 20
 
+## 清除規則（管理員一級界面的排行榜清除選單用）。索引順序與
+## ui/admin_clear_menu.gd 的 RULES 一致，兩邊要一起改。
+enum ClearRule { LAST_HOUR, LAST_4_HOURS, TODAY, BEFORE_TODAY, ALL }
+
 static var _records: Array = []    # Array[LeaderboardRecord]，跨 game_id 存
 static var _loaded := false
 
@@ -115,6 +119,54 @@ static func clear_yesterday_records() -> int:
 
 static func clear_day_before_yesterday_records() -> int:
 	return clear_records_by_date(DateUtils.day_before_yesterday())
+
+
+## 統一清除接口（管理員清除選單用）：只刪指定 game_id 的記錄，其它遊戲
+## 完全不受影響。rule 見 ClearRule，回傳刪了幾條。ALL 直接走
+## clear_records_by_game；時間規則的判定見 _keep_after_clear。
+static func clear_records(game_id: String, rule: int) -> int:
+	_ensure_loaded()
+	if rule == ClearRule.ALL:
+		return clear_records_by_game(game_id)
+	var cutoffs := _clear_cutoffs(rule)
+	var before := _records.size()
+	_records = _records.filter(func(r): return _keep_after_clear(r, game_id, rule, cutoffs))
+	var removed := before - _records.size()
+	if removed > 0:
+		save()
+	return removed
+
+
+## 時間清除規則的刪除邊界（本地系統時間，與 submit_score 記錄生成同源）。
+## cutoff =「這個時刻之前的記錄保留」的 played_at 字串；today = 今天的
+## 日期字串（played_date 比較用）。
+static func _clear_cutoffs(rule: int) -> Dictionary:
+	var now := Time.get_unix_time_from_system()
+	var out := {"today": DateUtils.today()}
+	match rule:
+		ClearRule.LAST_HOUR:
+			out["cutoff"] = DateUtils.format_datetime(
+				Time.get_datetime_dict_from_unix_time(now - 3600.0))
+		ClearRule.LAST_4_HOURS:
+			out["cutoff"] = DateUtils.format_datetime(
+				Time.get_datetime_dict_from_unix_time(now - 14400.0))
+	return out
+
+
+## 清除規則的保留判定：回 true 表示這筆留下、false 表示刪掉。
+## 時間用字串字典序比較 —— played_at／played_date 是定寬零填充的
+## YYYY-MM-DD[ HH:MM:SS]，字典序即時間序。
+static func _keep_after_clear(r: LeaderboardRecord, game_id: String, rule: int, cutoffs: Dictionary) -> bool:
+	if r.game_id != game_id:
+		return true
+	match rule:
+		ClearRule.LAST_HOUR, ClearRule.LAST_4_HOURS:
+			return r.played_at < cutoffs["cutoff"]
+		ClearRule.TODAY:
+			return r.played_date != cutoffs["today"]
+		ClearRule.BEFORE_TODAY:
+			return r.played_date >= cutoffs["today"]
+	return true
 
 
 ## 刪掉某款遊戲的全部記錄（開發／測試用）。
