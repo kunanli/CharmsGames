@@ -2,10 +2,11 @@ extends Node2D
 
 # ─────────────────────────────────────────────────────────
 # 啟動標題 + 遊戲流程狀態機：
-#   MENU（一級標題圖）→ GAME_TITLE（二級標題圖）
-#     → NAME_INPUT → PLAYING → LEADERBOARD（重開 / 退出）
+#   MENU（一級標題＝遊戲選擇畫面：↑ ↓ 循環選遊戲、← → 切當前遊戲難度、
+#     A 確認）→ GAME_TITLE（二級標題圖）→ NAME_INPUT → PLAYING → LEADERBOARD
 #
-# 標題層只畫全屏圖（assets/title/）＋二級標題下方一條緩慢閃爍的開局提示
+# 標題層只畫全屏圖（assets/title/）＋一級標題的遊戲選擇清單（名字與難度用
+# draw_string 疊在圖上）＋二級標題下方一條緩慢閃爍的開局提示
 # （中文「按空格键开启游戏」內建字型顯示不了，先掛英文，接中文字型後換字串）。
 # 二級標題是「固定場所」：不響應 1/2/3 與 ESC，**唯一回一級的路徑是
 # F3 管理員密碼**（ui/admin_password.gd，Modal Overlay）：正確 → 回一級，
@@ -36,6 +37,7 @@ const GAMES := [
 	{
 		"id": "seeker",
 		"title": "CHARMS SEEKER",
+		"menu_name": "MAZE",             # 一級標題遊戲選擇清單顯示的短名
 		"blurb": "MAZE CHASE",
 		"script": "res://games/seeker/seeker.gd",
 		"title_image": preload("res://assets/title/Title_Maze.jpg"),
@@ -44,6 +46,7 @@ const GAMES := [
 	{
 		"id": "fishing",
 		"title": "CHARMS FISHING",
+		"menu_name": "FISHING",
 		"blurb": "HOOK THE CHARMS",
 		"script": "res://games/fishing/fishing.gd",
 		"title_image": preload("res://assets/title/Title_Fishing.jpg"),
@@ -52,6 +55,7 @@ const GAMES := [
 	{
 		"id": "catch",
 		"title": "CHARMS CATCH",
+		"menu_name": "CATCH",
 		"blurb": "CATCH AND DODGE",
 		"script": "res://games/catch/catch.gd",
 		"title_image": preload("res://assets/title/Title_Catch.jpg"),
@@ -64,6 +68,20 @@ const TITLE_MAIN_IMAGE: Texture2D = preload("res://assets/title/Title_ChooseGame
 
 const NOTICE_TIME := 1.6      # 「還沒做」提示停留幾秒
 
+## 一級標題遊戲選擇清單的兩色（需求指定）：選中 / 未選中
+const MENU_SELECTED := Color("FFC4FF")
+const MENU_IDLE := Color("FF44FF")
+
+## 遊戲名稱區域：1920×1080 設計座標 (734, 392) 起、651×291（邏輯畫面 ÷4）
+const MENU_REGION_POS := Vector2(774.0, 452.0) / 4.0
+const MENU_REGION_SIZE := Vector2(651.0, 291.0) / 4.0
+const MENU_NAME_SIZE := 16
+const MENU_DIFF_SIZE := 12
+const MENU_DIFF_X := 88.0      # EASY/HARD 畫在名字右側的固定距離（比最長的名字寬）
+const MENU_LINE_H := 22.0
+
+
+enum Difficulty { EASY, HARD }
 
 var mode := Mode.MENU
 var game: Node2D = null       # 目前正在玩的那一款，沒在玩時為 null
@@ -76,8 +94,12 @@ var _notice := ""
 var _notice_timer := 0.0
 var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _title_time := 0.0        # 二級標題的閃爍提示計時器
-var _difficulty_id := "easy"  # 一級標題由管理員選的難度（← → 切換），寫進排行榜 DIFF
-var _difficulty_name := "EASY"
+var selected_game := 0        # 一級標題當前選中的遊戲（GAMES 索引，↑ ↓ 循環）
+var game_difficulties: Array[int] = [   # 各遊戲獨立的難度，預設全 EASY；
+	Difficulty.EASY,                    # ← → 只改「當前選中」那一格，切換選擇不重置
+	Difficulty.EASY,
+	Difficulty.EASY,
+]
 
 
 func _ready() -> void:
@@ -112,19 +134,22 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	#   Level 2  二級標題 → 只收 Space/Enter 進起名、R 開只讀排行榜、
 	#            F3 開彈窗。
 	#            固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有 F3 密碼一條路）
-	#   Level 3  一級標題 → 1/2/3 進二級標題
+	#   Level 3  一級標題 → ↑ ↓ 選遊戲（循環）、← → 切「當前選中」遊戲的難度、
+	#            A 確認進二級標題
 	if _password_modal != null:
 		return                     # Level 1：彈窗開著，底層標題不響應任何鍵
 
 	match mode:
 		Mode.MENU:
 			match key.keycode:
-				KEY_1, KEY_2, KEY_3:
-					var index := key.keycode - KEY_1
-					if index >= 0 and index < GAMES.size():
-						_enter_game_title(index)
+				KEY_UP, KEY_DOWN:
+					var dir := 1 if key.keycode == KEY_DOWN else -1
+					selected_game = (selected_game + dir + GAMES.size()) % GAMES.size()
+					queue_redraw()
 				KEY_LEFT, KEY_RIGHT:
 					_toggle_difficulty()
+				KEY_A:
+					_enter_game_title(selected_game)
 		Mode.GAME_TITLE:
 			match key.keycode:
 				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
@@ -138,7 +163,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				_close_game()
 
 
-## 一級標題按 1/2/3 → 二級標題。未建置的款項留在原地跳提示。
+## 一級標題按 A 確認 → 二級標題。未建置的款項留在原地跳提示。
 func _enter_game_title(index: int) -> void:
 	if not _built[index]:
 		var entry: Dictionary = GAMES[index]
@@ -151,15 +176,22 @@ func _enter_game_title(index: int) -> void:
 	queue_redraw()
 
 
-## 一級標題 ← → 切換難度 EASY / HARD。進二級標題後玩家只能起名，不能再改。
+## 一級標題 ← → 切換「當前選中遊戲」的難度 EASY / HARD。各遊戲獨立記憶，
+## 切換選擇不會重置其他遊戲的難度。進二級標題後玩家只能起名，不能再改。
 func _toggle_difficulty() -> void:
-	if _difficulty_id == "easy":
-		_difficulty_id = "hard"
-		_difficulty_name = "HARD"
-	else:
-		_difficulty_id = "easy"
-		_difficulty_name = "EASY"
+	var d: int = game_difficulties[selected_game]
+	game_difficulties[selected_game] = Difficulty.HARD if d == Difficulty.EASY else Difficulty.EASY
 	queue_redraw()
+
+
+## 排行榜記錄用的 difficulty_id（easy / hard）。
+func _difficulty_id(index: int) -> String:
+	return "hard" if game_difficulties[index] == Difficulty.HARD else "easy"
+
+
+## 排行榜記錄用的 difficulty_name（EASY / HARD），也是一級標題畫在名字右側的文字。
+func _difficulty_name(index: int) -> String:
+	return "HARD" if game_difficulties[index] == Difficulty.HARD else "EASY"
 
 
 func _launch(index: int) -> void:
@@ -193,6 +225,10 @@ func _start_game(index: int) -> void:
 	var node := Node2D.new()
 	node.name = "Game"
 	node.set_script(script)
+	# 把一級標題選定的難度傳給遊戲（目前各款只當標籤記錄、玩法未分檔；
+	# 分檔時在遊戲內讀這兩個欄位）。遊戲腳本沒有這兩個屬性時 set() 靜默無效。
+	node.set("difficulty_id", _difficulty_id(index))
+	node.set("difficulty_name", _difficulty_name(index))
 	game = node
 	add_child(node)        # 這一行才會觸發遊戲的 _ready()
 	if node.has_signal("round_finished"):
@@ -211,9 +247,9 @@ func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 	record.game_name = entry["title"]
 	record.player_name = CurrentPlayerSession.player_name
 	record.score = score
-	# 難度由管理員在一級標題選（← → 切換），進二級後玩家只能起名、不能再改
-	record.difficulty_id = _difficulty_id
-	record.difficulty_name = _difficulty_name
+	# 難度由管理員在一級標題選（各遊戲獨立），進二級後玩家只能起名、不能再改
+	record.difficulty_id = _difficulty_id(active_index)
+	record.difficulty_name = _difficulty_name(active_index)
 	record.duration_seconds = duration
 
 	_finish_data = {
@@ -401,8 +437,9 @@ func _draw() -> void:
 	# 圖都是 ~16:9（1920×1080 或 1672×941），拉到 480×270 變形可忽略。
 	if mode == Mode.MENU:
 		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
-		# 一級標題的難度選擇（管理員在選遊戲前先定）：← → 切換 EASY / HARD
-		_center("DIFFICULTY [%s]  ← →" % _difficulty_name, 250, 12, Palette.BG)
+		# 一級標題的遊戲選擇清單（管理員用）：名字＋選中那行右側的難度
+		_draw_game_menu()
+		_center("↑ ↓ SELECT    ← → DIFFICULTY    A START", 250, 12, Palette.BG)
 	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
 		# 二級標題圖同時是起名 overlay 的底層：NAME_INPUT 時底下要透得出這張圖
 		var image: Texture2D = GAMES[active_index]["title_image"]
@@ -420,6 +457,25 @@ func _draw() -> void:
 	# 提示（NOT BUILT / 載入失敗）直接疊在圖上，極少出現
 	if _notice != "":
 		_center(_notice, 256, 10, Palette.WARN)
+
+
+## 一級標題的遊戲選擇清單：區域內垂直排列三款遊戲名（MAZE / FISHING / CATCH），
+## 選中那行畫 MENU_SELECTED（#FFC4FF）、其餘畫 MENU_IDLE（#FF44FF）；
+## EASY/HARD 只畫在選中那行的名字右側（固定 x，換行不會左右跳）。
+func _draw_game_menu() -> void:
+	var font := ThemeDB.fallback_font
+	var name_x := MENU_REGION_POS.x + 8.0
+	var y := MENU_REGION_POS.y + (MENU_REGION_SIZE.y - MENU_LINE_H * GAMES.size()) / 2.0
+	for i in GAMES.size():
+		var selected := i == selected_game
+		var col := MENU_SELECTED if selected else MENU_IDLE
+		var name: String = GAMES[i]["menu_name"]
+		draw_string(font, Vector2(name_x, y), name,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_NAME_SIZE, col)
+		if selected:
+			draw_string(font, Vector2(name_x + MENU_DIFF_X, y), _difficulty_name(i),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_DIFF_SIZE, col)
+		y += MENU_LINE_H
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:

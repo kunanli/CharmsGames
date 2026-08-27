@@ -37,10 +37,12 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 1. 裝 **Godot 4.7**（純 GDScript，不需要 .NET 版）
 2. Godot Project Manager → Import → 選這個 repo 的 `project.godot`
 3. 按 Run（F5 也可以）
-4. 一級標題（Title_ChooseGames.png 全屏）按 **1 / 2 / 3** 進二級標題 →
+4. 一級標題（Title_ChooseGames.png 全屏）是**管理員的遊戲選擇畫面**：
+   **↑ ↓** 循環選遊戲（MAZE → FISHING → CATCH → MAZE）、**← →** 切換
+   **當前選中遊戲**的難度 EASY／HARD（各遊戲獨立記憶，EASY/HARD 只畫在選中
+   那行名字右側，畫面始終只有一個）、**A** 確認進該款二級標題 →
    **Space／Enter** 起名開局（二級標題下方有緩慢閃爍的提示，字串先掛英文，
-   接中文字型後換）。**難度由管理員在一級標題先選**：**← → 切換 EASY／HARD**
-   （畫面底部顯示，記進排行榜 DIFF 列），進二級後玩家只能起名、不能再改。
+   接中文字型後換）。進二級後玩家只能起名、不能再改。
    二級標題按 **R** 開**當前款的只讀排行榜預覽**
    （同一個 `leaderboard_panel.gd` 的 `read_only` 模式：不翻頁／不清除／
    不重開、不顯示自己的排名，ESC 關閉回二級標題）。起名界面是**疊在二級標題上的半透明 overlay**：50% 黑罩
@@ -82,7 +84,8 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
   `ui/leaderboard_panel.gd`（通用面板，三款共用一份，取代各遊戲的結算畫面）、
   `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「難度與起名」）。
 - **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }`。
-  一級/二級標題只畫 `assets/title/` 的全屏圖不疊文字；F3 密碼彈窗
+  標題層只畫 `assets/title/` 的全屏圖，一級標題另外把遊戲選擇清單（名字＋
+  難度）用 draw_string 疊在圖上；F3 密碼彈窗
   （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
   遊戲**只**發 `round_finished(score, duration, game_over)` 信號，不知道排行榜存在；
   launcher 組裝 LeaderboardRecord、提交、開面板。面板 Enter = 重開、ESC = 退出。
@@ -219,8 +222,10 @@ python3 tools/sim/catch_sim.py
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
 - **共用外框**：一級標題 → 二級標題 → 名字（首次進遊戲）→ 遊戲 → 排行榜面板（承接分數）→ 重開／退出（回一級標題）。
-- **難度與起名**：難度是**管理員在一級標題選的**（**← → 切換 EASY／HARD**，
-  一級畫面底部顯示；進二級後玩家不能再改），launcher 持有並寫進排行榜記錄的
+- **難度與起名**：難度是**管理員在一級標題選的**：**↑ ↓ 選遊戲**（MAZE／
+  FISHING／CATCH 循環）、**← → 切換當前選中遊戲的難度 EASY／HARD**（各遊戲
+  獨立記憶，切換選擇不會重置其他遊戲；EASY/HARD 只畫在選中那行名字右側，
+  畫面始終只有一個）；進二級後玩家不能再改。launcher 持有並寫進排行榜記錄的
   DIFF 列，跨局跨款保留（這是管理員設定，不是玩家 session 的一部分）。
   起名是**疊在二級標題上的三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫
   二級標題圖當底層；起名層先蓋 50% 黑罩（`Color(0,0,0,0.5)`，底下的二級畫面
