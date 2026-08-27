@@ -30,11 +30,11 @@ Pandora 品牌合作的三款 8-bit 像素小游戏，共用世界观、色盘�
 
 | 系统 | 实现位置 | 说明 |
 |---|---|---|
-| 流程状态机 | `launcher/launcher.gd` | `enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }`。相当于总管：标题、名字、游戏、排行榜面板的切换全在这。**没有独立的 GameManager** |
+| 流程状态机 | `launcher/launcher.gd` | `enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD }`。相当于总管：标题、名字、游戏、局终 Game Over 界面、排行榜面板的切换全在这。**没有独立的 GameManager** |
 | 场景管理 | 无独立 SceneManager | **刻意单场景架构**：全项目只有 `Launcher.tscn`（一个 Node2D）。游戏用 `load()` → `Node2D.new()` → `set_script()` → `add_child()` 挂到临时节点，退出 `queue_free()` 整个节点即自动清理。新增游戏只需在 `launcher.gd` 的 `GAMES` 数组加一笔 |
-| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）按 1/2/3 进二级标题（各款的全屏图，不叠文字；一级标题底部叠一条难度行）；一级标题 **← → 切换难度 EASY / HARD**（管理员选择，进二级后玩家不能再改）。二级标题是固定场所：不响应 1/2/3 与 ESC，唯一回一级的路径是 F3 管理员密码（`admin` / `pandora`）；按 **R** 开当前款排行榜**只读预览**（同 `leaderboard_panel.gd` 的 `read_only` 模式，仅展示、不显示自己排名，ESC 关闭） |
+| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）按 1/2/3 进二级标题（各款的全屏图，不叠文字；一级标题底部叠一条难度行）；一级标题 **← → 切换难度 EASY / HARD**（管理员选择，进二级后玩家不能再改）。二级标题是固定场所：不响应 1/2/3 与 ESC，唯一回一级的路径是 F3 管理员密码（`admin` / `pandora`）；按 **R** 开当前款排行榜**只读预览**（同 `leaderboard_panel.gd` 的 `read_only` 模式：只显示前 10 名、清除停用、不显示本局成绩，B/ESC 关闭） |
 | 玩家名字（PlayerName） | `ui/name_input.gd` + `shared/player_session.gd` | 首次进游戏在**街机虚拟键盘**上输入名字（↑↓←→ 移动、A 确认、B 删除、X 清空、Y 预留、ESC 取消；0-9/A-Z + 右下 OK 钮，最多 9 字，空名按 OK 只有闪+抖回馈）；面板 Enter 重开保留名字、ESC 退出清除。难度不在这里选（一级标题由管理员选）。**起名是叠在二级标题上的三层 overlay**：launcher 在 NAME_INPUT 模式仍画二级标题图当底层，起名层盖 50% 黑罩再叠各游戏的起名弹窗图（RGBA），键盘钮素材按 game_id 取 `assets/title/Naming/NamingKeyboard/` 的 btn/btn_chosen |
-| 排行榜（Leaderboard） | `shared/leaderboard_record.gd` / `leaderboard_manager.gd` / `date_utils.gd` + `ui/leaderboard_panel.gd` | 本地存储 `user://leaderboard.json`（version:1，每款最多 1000 条，按 game_id 分榜）。三款共用一个面板。游戏只发 `round_finished(score, duration, game_over)` 信号，不知道排行榜存在，组装与提交在 launcher |
+| 排行榜（Leaderboard） | `shared/leaderboard_record.gd` / `leaderboard_manager.gd` / `date_utils.gd` + `ui/game_over.gd`（局终界面）+ `ui/leaderboard_panel.gd`（面板） | 本地存储 `user://leaderboard.json`（version:1，每款最多 1000 条，按 game_id 分榜）。三款共用同一套。游戏只发 `round_finished(score, duration, game_over)` 信号，不知道排行榜存在；组装与提交在 launcher，局终先进 **Game Over 界面**（GAME OVER/TIME UP、分数、**本局排名**、玩家名字 + RESTART/LEADERBOARD 两钮，↑↓ 切换、A 执行），选 LEADERBOARD 才进面板。**面板只显示前 10 名**（左右两栏各 5 列、不翻页），**不显示本局成绩与排名**（无 YOUR SCORE 行、不高亮自己）；B/ESC 回该款二级标题并清名字 |
 | 管理员弹窗 | `ui/admin_password.gd` | F3 弹出的 Modal Overlay，开着时 launcher 不处理任何按键 |
 | 视觉反馈 | `shared/juice.gd`（全画面）+ `shared/fx.gd`（单物件） | 震动/镜头偏移/顿格/粒子/挤压变形。预设 SUBTLE / ARCADE 两档，目前三款都挂 ARCADE，未实机定案 |
 
@@ -70,7 +70,8 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 | `shared/leaderboard_manager.gd` | 存储/排序/分页/清除，全部 static |
 | `shared/player_session.gd` | 玩家名字生命周期（首次进游戏输入、重开保留、退出清除；难度由 launcher 管，不在这里） |
 | `shared/date_utils.gd` | 排行榜日期工具（今天/昨天/前天），所有日期运算必须走这里，禁止字符串截断算日期 |
-| `ui/leaderboard_panel.gd` | 三款共用的排行榜面板（DIFF 列显示难度） |
+| `ui/leaderboard_panel.gd` | 三款共用的排行榜面板（只显示前 10 名、不显示本局成绩，DIFF 列显示难度） |
+| `ui/game_over.gd` | 局终 Game Over 界面：GAME OVER/TIME UP、分数（滚动）、本局排名、玩家名字 + RESTART/LEADERBOARD 两钮（↑↓ 切换、A 执行、B/ESC 回二级） |
 | `ui/name_input.gd` | 姓名输入屏：街机虚拟键盘（摇杆 + A/B/X/Y 操作，数据驱动 `KEY_ROWS` 布局，OK 钮右下角） |
 | `ui/admin_password.gd` | F3 管理员密码弹窗 |
 | `tools/sim/*.py` | 平衡模拟脚本（Python 移植 GDScript 逻辑，跑几百局用统计验证数值），常量是 `.gd` 的副本，改了 `.gd` 要同步 |
@@ -82,12 +83,14 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 | 一级标题 | **1 / 2 / 3** | 进对应款二级标题（底部显示当前难度） |
 | 一级标题 | **← →** | 切换难度 EASY / HARD（管理员选择） |
 | 二级标题 | **Space / Enter** | 起名开局（下方有缓慢闪烁的英文提示）；起名界面是**二级标题上的 50% 黑罩 overlay**（透出二级画面），起名页是**街机虚拟键盘**：↑↓←→ 移动、A 确认（字元/OK）、B 删除、X 清空、Y 预留、ESC 取消 |
-| 二级标题 | **R** | 打开该款排行榜**只读预览**（仅展示、不显示自己排名，ESC 关闭） |
+| 二级标题 | **R** | 打开该款排行榜**只读预览**（只显示前 10 名、清除停用，B/ESC 关闭） |
 | 二级标题 | **F3** | 管理员密码弹窗（`admin` / `pandora`），正确才回一级 |
-| 游戏中 / 结算面板 | **ESC** | 回该款的二级标题（名字清除） |
-| 排行榜面板 | **← →** | 翻页（每页 20 条） |
-| 排行榜面板 | **C** | 清除记录（选 TODAY/YESTERDAY/DAY BEFORE，Enter 二次确认） |
-| 排行榜面板 | **Enter / ESC** | 重开同款（名字保留）/ 退出 |
+| 游戏中 | **ESC** | 回该款的二级标题（名字清除） |
+| 局终 Game Over 界面 | **↑ ↓** | 切换 RESTART / LEADERBOARD 按钮的选择状态 |
+| 局终 Game Over 界面 | **A**（或 Enter/空格） | 执行选中的按钮：RESTART 重开同款（名字保留）、LEADERBOARD 进排行榜面板 |
+| 局终 Game Over 界面 | **B / ESC** | 回该款的二级标题（名字清除） |
+| 排行榜面板 | **B / ESC** | 回该款的二级标题（名字清除） |
+| 排行榜面板 | **C** | 清除记录（选 TODAY/YESTERDAY/DAY BEFORE，Enter 二次确认，B/ESC 逐层取消） |
 
 三款操作（GDD 协议，A/B/X 为主动技能键）：
 
@@ -122,7 +125,7 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 - **格子移动用纯数学判断**（`move_toward` 等），不用物理节点 —— 物理碰撞会卡墙角、抖动。
 - **画布位移（震动、镜头偏移）只走绘制层 `draw_set_transform()`，绝不写进 `position`** —— `position` 每帧参与移动与碰撞判定。
 - **镜头移动只有 Fishing 有**（玩家主动按键探看）；Seeker/Catch 禁止自动跟随镜头，实测会晕。
-- **排行榜**：score 降序 → played_at 升序 → record_id 升序；新提交的记录永不因裁剪丢失；记录 ID 由时间戳 + 引擎毫秒 + 同次执行递增序号 + 随机尾码组成（防同毫秒撞号）；档损坏自动改名 `.bak` 重来。
+- **排行榜**：score 降序 → played_at 升序 → record_id 升序；新提交的记录永不因裁剪丢失；记录 ID 由时间戳 + 引擎毫秒 + 同次执行递增序号 + 随机尾码组成（防同毫秒撞号）；档损坏自动改名 `.bak` 重来。**面板只显示前 10 名、不显示本局成绩与排名**（自己的排名/分数只在局终 Game Over 界面显示一次）；B/ESC 回该款二级标题并清名字。
 - **难度由管理员在一级标题选**：一级标题 ← → 切换 EASY/HARD（默认 EASY，底部显示），launcher 持有并写入排行榜记录的 DIFF 列，跨局跨款保留；进二级标题后玩家只能起名、不能再选难度。**起名页是街机虚拟键盘**（2026-08 改版：摇杆 + A/B/X/Y 操作，不依赖系统键盘/软键盘；0-9/A-Z 36 个字符键 + 右下 OK 钮，最多 9 字，空名按 OK 拒绝只给回馈；边界夹住不绕行、输入后自动前进到下一格）。**目前难度只当标签记录，三款玩法数值尚未分档** —— 要做分档时在游戏内读难度（由 launcher 传入）并跑 sim 对比。起名界面是二级标题上的三层 overlay（二级标题图 → 50% 黑罩 → 各游戏的 Name 弹窗图 → 文字），`assets/title/Naming/` 的三张 Name 图（RGBA 弹窗样式）在使用中。
 - **Catch 移动速度 95 px/s 是刻意偏离 GDD 的 60**（企划试玩后拍板），配套加惯性（ACCEL 900 / FRICTION 700）。人物与提篮已融合为单一物件（cc_person1），接取判定框＝贴图大小（90×71），脚踩屏幕最底（LUNA_Y=270），漏接线同步为 270。A/Shift 冲刺于 2026-08 移除（实机几乎没人用），改长按同方向 1 秒线性加速：×1.5 时难度回升（中位 4450→3350、接取率 85%→79%），调至 ×2.5 后升回 4150/87%，Combo 优势回复；回调难度杠杆是生成间隔、炸弹比例或加速暖机时长。
 - **Fishing 族群补充机制**（GDD 没写，自补）：杂鱼/珍珠/大鱼/石头/猫鱼捞走后补新进的；没有它盘面总值上限只有约 3070，手速再快也撞天花板。

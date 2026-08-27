@@ -3,16 +3,17 @@ extends Node2D
 # ─────────────────────────────────────────────────────────
 # 啟動標題 + 遊戲流程狀態機：
 #   MENU（一級標題＝遊戲選擇畫面：↑ ↓ 循環選遊戲、← → 切當前遊戲難度、
-#     A 確認）→ GAME_TITLE（二級標題圖）→ NAME_INPUT → PLAYING → LEADERBOARD
+#     A 確認）→ GAME_TITLE（二級標題圖）→ NAME_INPUT → PLAYING
+#     → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #
 # 標題層只畫全屏圖（assets/title/）＋一級標題的遊戲選擇清單（名字與難度用
 # draw_string 疊在圖上）＋二級標題下方一條緩慢閃爍的開局提示
 # （中文「按空格键开启游戏」內建字型顯示不了，先掛英文，接中文字型後換字串）。
 # 二級標題是「固定場所」：不響應 1/2/3 與 ESC，**唯一回一級的路徑是
 # F3 管理員密碼**（ui/admin_password.gd，Modal Overlay）：正確 → 回一級，
-# ESC → 留在二級。遊戲結束（面板 ESC）與遊戲中 ESC 都回**該款的二級標題**。
+# ESC → 留在二級。遊戲結束與遊戲中 ESC 都回**該款的二級標題**。
 # 二級標題按 R 開**當前款的只讀排行榜**（同一個 leaderboard_panel.gd，
-# read_only=true：不翻頁／不清除／不重開、不顯示自己的排名，ESC 關閉回二級標題）。
+# read_only=true：清除停用，只顯示前 10 名，B/ESC 關閉回二級標題）。
 # 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_key_input 註解）。
 #
 # 遊戲不是場景，是「掛在臨時 Node2D 上的腳本」：
@@ -21,17 +22,23 @@ extends Node2D
 # 回選單時直接 queue_free() 整個節點，遊戲自己生的子節點跟著一起消失，
 # 不需要每款遊戲各寫一套清理邏輯。
 #
-# 排行榜流程（LeaderboardRecord / LeaderboardManager / 面板，見 shared/ 與 ui/）：
+# 局終流程（LeaderboardRecord / LeaderboardManager / Game Over 界面 /
+# 排行榜面板，見 shared/ 與 ui/）：
 #   遊戲進 RESULT 時發 round_finished(score, duration, game_over)
-#   → launcher 組裝記錄、submit_score()、打開通用排行榜面板
-#   面板 Enter = 重開同一款（名字保留）；ESC = 退出回選單（清名字）
-#   名字由 CurrentPlayerSession 管理：第一次進遊戲先輸入，退出即清。
+#   → launcher 組裝記錄、submit_score()、開 Game Over 界面
+#   （ui/game_over.gd：GAME OVER ／分數／排名／玩家名字 ＋ RESTART／
+#   LEADERBOARD 兩個按鈕，↑ ↓ 切換、A 執行）
+#   Game Over 選 RESTART = 重開同一款（名字保留）；
+#   選 LEADERBOARD = 開排行榜面板（只顯示前 10 名）；
+#   B/ESC = 回該款二級標題（清名字）。
+#   排行榜面板 B/ESC = 回該款二級標題（清名字，不保留玩家名稱）。
+#   名字由 CurrentPlayerSession 管理：第一次進遊戲先輸入，回二級即清。
 #
 # 新增一款遊戲＝在 GAMES 加一筆（含 id），不用新增場景、不用改這支以外的檔案。
 # 腳本還不存在的項目會顯示 NOT BUILT YET，不會讓選單當掉。
 # ─────────────────────────────────────────────────────────
 
-enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, LEADERBOARD }
+enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD }
 
 const GAMES := [
 	{
@@ -237,7 +244,7 @@ func _start_game(index: int) -> void:
 	queue_redraw()
 
 
-# ── 局終：提交成績 → 排行榜面板 ─────────────────────────
+# ── 局終：提交成績 → Game Over 界面 ─────────────────────
 
 func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 	var entry: Dictionary = GAMES[active_index]
@@ -258,31 +265,40 @@ func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 		"game_over": game_over,
 	}
 	# 推遲到這幀結束再切換：不能在發射者的 signal 回呼裡把它移出場景樹
-	_open_leaderboard.call_deferred()
+	_open_game_over.call_deferred()
 
 
-func _open_leaderboard() -> void:
+## 局終開 Game Over 界面（取代舊的「局終直接進排行榜面板」）。
+## 界面顯示 GAME OVER／TIME UP、分數、排名、玩家名字，並提供
+## RESTART／LEADERBOARD 兩個按鈕（↑ ↓ 切換、A 執行，見 ui/game_over.gd）。
+func _open_game_over() -> void:
 	if mode != Mode.PLAYING:
 		return                # 保險：局終後緊接著的 ESC 之類的路徑，避免重複開
-	_free_game_node()        # 只釋放節點，不動 session —— 面板還要顯示名字
+	_free_game_node()        # 只釋放節點，不動 session —— 界面還要顯示名字
 
 	var entry: Dictionary = GAMES[active_index]
 	var panel := Node2D.new()
-	panel.name = "LeaderboardPanel"
-	panel.set_script(load("res://ui/leaderboard_panel.gd"))
+	panel.name = "GameOver"
+	panel.set_script(load("res://ui/game_over.gd"))
 	# 面板的欄位要用 set() 設定：panel 是 Node2D 型別，編譯器看不到腳本屬性
-	panel.set("game_id", entry["id"])
-	panel.set("game_name", entry["title"])
+	panel.set("title_image", entry["title_image"])
 	panel.set("player_name", CurrentPlayerSession.player_name)
-	panel.set("current_record_id", _finish_data["record_id"])
 	panel.set("score", _finish_data["score"])
 	panel.set("game_over", _finish_data["game_over"])
+	panel.set("record_id", _finish_data["record_id"])
 	panel.connect("restart_requested", Callable(self, "_on_panel_restart"))
+	panel.connect("leaderboard_requested", Callable(self, "_on_game_over_leaderboard"))
 	panel.connect("exit_requested", Callable(self, "_on_panel_exit"))
 	_panel = panel
 	add_child(panel)
-	mode = Mode.LEADERBOARD
+	mode = Mode.GAME_OVER
 	queue_redraw()
+
+
+## Game Over 界面選 LEADERBOARD：關界面、開排行榜面板。
+func _on_game_over_leaderboard() -> void:
+	_close_panel()
+	_open_leaderboard(false)
 
 
 func _on_panel_restart() -> void:
@@ -291,19 +307,22 @@ func _on_panel_restart() -> void:
 	_start_game(active_index)
 
 
+## 排行榜面板／Game Over 界面的 B/ESC：清名字回**該款的二級標題**
+## （不回一級），下次 Space 重新起名。排行歷史由 LeaderboardManager 保管，
+## 與玩家名字生命週期無關。
 func _on_panel_exit() -> void:
-	# 退出：清名字回**該款的二級標題**（不回一級），下次 Space 重新起名
 	_close_panel()
 	CurrentPlayerSession.clear()
 	mode = Mode.GAME_TITLE
 	queue_redraw()
 
 
-# ── 二級標題的只讀排行榜預覽 ───────────────────────────
+# ── 排行榜面板（Game Over 進入／二級標題按 R 進入共用）────
 
-## 二級標題按 R：開當前款的排行榜，僅供查看。不提交記錄、不顯示自己的
-## 排名（沒有 current_record_id），翻頁／清除／重開全部停用，ESC 關閉。
-func _open_leaderboard_view() -> void:
+## 開排行榜面板：read_only=true 是二級標題按 R 的預覽（清除停用），
+## false 是 Game Over 界面選 LEADERBOARD 進入。兩種都只顯示前 10 名、
+## 不顯示本局成績，B/ESC 回該款二級標題。
+func _open_leaderboard(read_only: bool) -> void:
 	var entry: Dictionary = GAMES[active_index]
 	var panel := Node2D.new()
 	panel.name = "LeaderboardPanel"
@@ -311,19 +330,17 @@ func _open_leaderboard_view() -> void:
 	# 面板的欄位要用 set() 設定：panel 是 Node2D 型別，編譯器看不到腳本屬性
 	panel.set("game_id", entry["id"])
 	panel.set("game_name", entry["title"])
-	panel.set("read_only", true)
-	panel.connect("exit_requested", Callable(self, "_on_view_closed"))
+	panel.set("read_only", read_only)
+	panel.connect("exit_requested", Callable(self, "_on_panel_exit"))
 	_panel = panel
 	add_child(panel)
 	mode = Mode.LEADERBOARD
 	queue_redraw()
 
 
-## 只讀排行榜關閉：回該款二級標題。不動 session —— 還沒起名，沒有要清的。
-func _on_view_closed() -> void:
-	_close_panel()
-	mode = Mode.GAME_TITLE
-	queue_redraw()
+## 二級標題按 R：開當前款的排行榜，僅供查看（清除停用）。不提交記錄。
+func _open_leaderboard_view() -> void:
+	_open_leaderboard(true)
 
 
 # ── 姓名輸入 ────────────────────────────────────────────
