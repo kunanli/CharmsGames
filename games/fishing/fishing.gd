@@ -120,6 +120,7 @@ var _score_shown := 0.0             # HUD 上滾動中的分數
 
 var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
+var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
 var _textures := {
 	Kind.JUNK_FISH: preload("res://assets/catch/CC_04.png"),
 	Kind.SMALL_PEARL: preload("res://assets/fishing/F_Perl1.png"),
@@ -649,15 +650,19 @@ func _draw_boat() -> void:
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
 	var secs := int(ceil(time_left))
-	var time_col: Color = Palette.WARN if secs <= 10 else Palette.TEXT
+	var time_col: Color = Palette.WARN if secs <= 10 else Palette.LUNA
 	# 最後 10 秒每秒脈動一次，像心跳
-	var tsize := 12
+	var tsize := 20
 	if secs <= 10 and state == State.PLAYING:
 		tsize = int(12.0 + (1.0 - fmod(time_left, 1.0)) * 4.0)
-	draw_string(font, Vector2(12, 18), "TIME %d:%02d" % [secs / 60, secs % 60],
+	draw_string(font, Vector2(25, 37), "%d:%02d" % [secs / 60, secs % 60],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
-	draw_string(font, Vector2(0, 18), "SCORE %06d" % int(round(_score_shown)),
-		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 12, Palette.TEXT)
+	# 中：分數（滾動中的值）。背景框在 1920×1080 設計座標 (768,70)、
+	# 文字 baseline (990,92)，除以 4 到邏輯畫面（同 launcher 慣例）。
+	var fsize := s_score_frame.get_size() / 4.0
+	draw_texture_rect(s_score_frame, Rect2(192.0, 17.5, fsize.x, fsize.y), false)
+	draw_string(font, Vector2(215.0, 34.0), "%06d" % int(round(_score_shown)),
+		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.LUNA)
 	# 鉤子深度（水面下幾 px）
 	var depth := int(maxf(0.0, _hook_pos().y - SURFACE_Y))
 	draw_string(font, Vector2(0, 18), "DEPTH %03d" % depth,

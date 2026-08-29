@@ -8,9 +8,9 @@ extends Node2D
 #
 # 數值以 GDD 為準，只有移動速度是企劃試玩後刻意調快的（見下方常數註解）。
 # 長按同方向 1 秒線性加速到 ×2.5（原 A/Shift 衝刺已移除），6 條軌道每軌 80px，
-# 同軌連續生成間隔不得低於 0.6 秒。
+# 同軌連續生成間隔不得低於 0.6 秒。像
 #
-# 座標一律用 Vector2（像素）。
+# 座標一律用 Vector2（素）。
 # ─────────────────────────────────────────────────────────
 
 signal round_finished(score: int, duration: float, game_over: bool)
@@ -125,6 +125,8 @@ var _fx := Fx.new()                 # 粒子（見 shared/fx.gd）
 var _at_wall := false               # 去抖：貼著邊界時只在「剛撞上」那一幀 kick
 var _last_phase := 0
 var _score_shown := 0.0             # HUD 上滾動中的分數
+var _heart_fade := 0.0              # 剛失去的愛心淡出動畫剩餘秒數（0 = 沒在播）
+var _heart_fade_slot := -1          # 正在播動畫的愛心格位
 # 擠壓變形（見 shared/fx.gd）：撞邊界壓扁、接到東西彈跳 —— 提籃融合進人物後，
 # 兩種變形都作用在同一張貼圖上，繪製時以腳底為支點相乘疊加（見 _draw_luna）。
 const SQUASH_TIME := 0.20
@@ -140,6 +142,8 @@ var cc_04: Texture2D = preload("res://assets/catch/CC_04.png")
 var cc_05: Texture2D = preload("res://assets/catch/CC_05.png")
 var cc_person1: Texture2D = preload("res://assets/catch/CC_Person1.png")
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
+var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
+var s_heart_ui: Texture2D = preload("res://assets/UI/HEART.png")
 
 func _ready() -> void:
 	_rng.randomize()
@@ -171,6 +175,8 @@ func _start_round() -> void:
 	_at_wall = false
 	_last_phase = 0
 	_score_shown = 0.0
+	_heart_fade = 0.0
+	_heart_fade_slot = -1
 	_luna_squash = 0.0
 	_catch_squash = 0.0
 	state = State.READY
@@ -215,6 +221,10 @@ func _process(delta: float) -> void:
 	# 分數滾動：珠寶（+50）幾乎瞬間，Charm ×5（+1500）會滾個 0.3 秒
 	_score_shown = move_toward(_score_shown, float(score),
 		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
+
+	# 愛心淡出動畫：純表現，命中頓格期間也繼續走
+	if _heart_fade > 0.0:
+		_heart_fade = maxf(0.0, _heart_fade - delta)
 
 	if _pop_timer > 0.0:
 		_pop_timer -= delta
@@ -506,6 +516,9 @@ func _on_caught(d: Drop) -> void:
 				_pop("BLOCKED", Palette.MOON, d.pos)
 			else:
 				lives -= 1
+				# 剛失去的那顆愛心播「1 秒放大 1.5 倍＋淡出」（格位 = 少掉後的 lives）
+				_heart_fade = 1.0
+				_heart_fade_slot = lives
 				combo = 0
 				multiplier = 1
 				_flash = 0.28
@@ -698,35 +711,51 @@ func _draw_luna_body(cx: float, cy: float) -> void:
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
 	var secs := int(ceil(time_left))
-	var time_col: Color = Palette.WARN if secs <= 10 else Palette.TEXT
-	var tsize := 12
+	var time_col: Color = Palette.WARN if secs <= 10 else Palette.LUNA
+	var tsize := 20
 	if secs <= 10 and state == State.PLAYING:
 		tsize = int(12.0 + (1.0 - fmod(time_left, 1.0)) * 4.0)   # 每秒脈動一次
-	draw_string(font, Vector2(12, 18), "TIME %d:%02d" % [secs / 60, secs % 60],
+	draw_string(font, Vector2(25, 37), "%d:%02d" % [secs / 60, secs % 60],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
-	draw_string(font, Vector2(0, 18), "SCORE %06d" % int(round(_score_shown)),
-		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, 12, Palette.TEXT)
+	# 中：分數（滾動中的值）。背景框在 1920×1080 設計座標 (768,70)、
+	# 文字 baseline (990,92)，除以 4 到邏輯畫面（同 launcher 慣例）。
+	var fsize := s_score_frame.get_size() / 4.0
+	draw_texture_rect(s_score_frame, Rect2(192.0, 17.5, fsize.x, fsize.y), false)
+	draw_string(font, Vector2(213.0, 34.0), "%06d" % int(round(_score_shown)),
+		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.LUNA)
 
-	# 生命愛心
+	# 生命愛心：HEART.png（80×68 設計稿 ÷4 = 20×17）。剛失去的那顆播
+	# 1 秒「放大 1.5 倍＋淡出」，播完後與其他空位一樣畫成暗色愛心。
+	var heart_size := s_heart_ui.get_size() / 4.0
 	for i in START_LIVES:
-		var c := Vector2(404 + i * 14, 14)
+		var c := Vector2(404 + i * 24, 37)
 		if i < lives:
-			draw_circle(c, 4.0, Palette.LUNA)
+			_draw_heart(c, heart_size, 1.0)
+		elif i == _heart_fade_slot and _heart_fade > 0.0:
+			var k := 1.0 - _heart_fade          # 0 → 1
+			_draw_heart(c, heart_size * (1.0 + 0.5 * k), 1.0 - k)
 		else:
-			draw_circle(c, 4.0, Palette.FAR)
+			_draw_heart(c, heart_size, 0.22)
 
 	# Combo 倍率：提升時放大跳動一次
 	if multiplier > 1:
 		var grow := 1.0 + maxf(0.0, _pop_timer - 0.5) * 1.4
-		draw_string(font, Vector2(12, 34), "COMBO x%d" % multiplier,
+		draw_string(font, Vector2(18, 55), "COMBO x%d" % multiplier,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, int(11 * grow), Palette.GOLD)
 	elif combo > 0:
-		draw_string(font, Vector2(12, 34), "COMBO %d/%d" % [combo, COMBO_STEP],
+		draw_string(font, Vector2(18, 55), "COMBO %d/%d" % [combo, COMBO_STEP],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Palette.TEXT_DIM)
 
 
 
 ## 分數飄字用的是世界座標，所以畫在 world pass，不能留在 HUD
+func _draw_heart(center: Vector2, size: Vector2, alpha: float) -> void:
+	if s_heart_ui == null:
+		return
+	draw_texture_rect(s_heart_ui, Rect2(center - size * 0.5, size), false,
+		Color(1, 1, 1, alpha))
+
+
 func _draw_pop() -> void:
 	if _pop_timer <= 0.0:
 		return
