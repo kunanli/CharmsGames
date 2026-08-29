@@ -20,6 +20,7 @@ extends Node2D
 #
 # 名字規則：只收 A-Z / 0-9，最多 MAX_NAME_LEN（9）字；名字為空時
 # 按 OK 只給回饋（輸入框閃＋OK 抖）不進下一階段。
+# 開啟時預設選中 OK：配合預設名 pandora，直接按 A 即可確認開局。
 # 鍵盤是資料驅動的：KEY_ROWS 就是全部按鍵，未來要加 DELETE／SPACE／
 # RANDOM 等按鍵，在對應列加一格字串即可，移動與繪製自動適用。
 # ─────────────────────────────────────────────────────────
@@ -38,6 +39,10 @@ const KEY_ROWS: Array = [
 ]
 const OK_CELL := "OK"
 const MAX_NAME_LEN := 9
+
+## 起名屏開啟時輸入框預設的初始名字：玩家可直接按 OK 使用，或改掉再確認。
+## 只收 A-Z／0-9，長度不得超過 MAX_NAME_LEN。
+const DEFAULT_NAME := "pandora"
 
 ## 鍵盤區：1920×1080 美術座標 (830, 519) 590×275 ÷ 4 → 邏輯座標。
 ## 這塊粉紅色區域畫在起名彈窗圖上，所有按鍵必須落在裡面。
@@ -75,9 +80,9 @@ const HEART := [
 var title_image: Texture2D       # 各遊戲的起名彈窗圖（RGBA，彈窗區域不透明）
 var game_id := ""                # launcher 傳入，決定用哪組按鍵素材
 
-var _name := ""                  # 目前輸入的名字（current_name）
-var _sel_row := 0                # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
-var _sel_col := 0
+var _name := DEFAULT_NAME       # 目前輸入的名字，初始為預設名 pandora
+var _sel_row := KEY_ROWS.size() - 1   # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
+var _sel_col := KEY_ROWS[_sel_row].size() - 1   # 預設選中最後一列最後一格（OK）
 var _dir_held := {               # 搖杆／按鍵的按住狀態（只在上升緣動作）
 	"up": false, "down": false, "left": false, "right": false,
 }
@@ -292,8 +297,8 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 	_draw_name(font)
 	_draw_keyboard(font)
-	_center("ARROWS MOVE   A CONFIRM   B DELETE   X CLEAR   ESC CANCEL",
-		226, 8, Palette.TEXT)
+	#_center("ARROWS MOVE   A CONFIRM   B DELETE   X CLEAR   ESC CANCEL",
+	#	226, 8, Palette.TEXT)
 
 
 ## 名字欄：沿用既有版面（NAME: 標籤畫在彈窗圖上），文字＋底線＋閃爍游標。
