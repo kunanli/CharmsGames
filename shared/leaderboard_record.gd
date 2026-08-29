@@ -13,8 +13,6 @@ var game_id := ""            # "seeker" / "fishing" / "catch"
 var game_name := ""          # UI 顯示用（英文標題，專案 HUD 一律英文）
 var player_name := ""        # 允許重複，同名多條記錄是合法資料
 var score := 0
-var difficulty_id := "easy"       # 一級標題由管理員選的難度（easy / hard），排行榜 DIFF 列顯示
-var difficulty_name := "EASY"
 var played_at := ""          # "2026-08-21 10:32:15"，同分時較早者排名高
 var played_date := ""        # "2026-08-21"，清除「今天／昨天／前天」用
 var duration_seconds := 0.0
@@ -28,8 +26,6 @@ func to_dict() -> Dictionary:
 		"game_name": game_name,
 		"player_name": player_name,
 		"score": score,
-		"difficulty_id": difficulty_id,
-		"difficulty_name": difficulty_name,
 		"played_at": played_at,
 		"played_date": played_date,
 		"duration_seconds": duration_seconds,
@@ -46,8 +42,6 @@ static func from_dict(d: Dictionary) -> LeaderboardRecord:
 	r.game_name = str(d.get("game_name", ""))
 	r.player_name = str(d.get("player_name", ""))
 	r.score = int(d.get("score", 0))
-	r.difficulty_id = str(d.get("difficulty_id", ""))
-	r.difficulty_name = str(d.get("difficulty_name", ""))
 	r.played_at = str(d.get("played_at", ""))
 	r.played_date = str(d.get("played_date", ""))
 	r.duration_seconds = float(d.get("duration_seconds", 0.0))

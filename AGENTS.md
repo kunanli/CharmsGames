@@ -39,26 +39,18 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 3. 按 Run（F5 也可以）
 4. 一級標題（Title_ChooseGames.png 全屏）是**管理員的遊戲選擇畫面**：
    **↑ ↓** 循環選項目（MAZE → FISHING → CATCH → SETTING → MAZE）、
-   **← →** 切換**當前選中遊戲**的難度 EASY／HARD（各遊戲獨立記憶，
-   EASY/HARD 只畫在選中那行名字右側，畫面始終只有一個；SETTING 行
-   不畫難度、← → 不響應）、**B** 進當前選中遊戲的**排行榜清除選單**
+   **B** 進當前選中遊戲的**排行榜清除選單**
    （見「排行榜」段的清除功能；SETTING 行 B 無操作）、**A** 確認進該款
    二級標題 —— 選中 SETTING 時 A 進 **SETTING 二級選單**（見「SETTING
    管理員設定」段）。所有選單文字都在 1920×1080 設計座標 (734,392) 起、
    651×291 的區域內。
-   二級標題（各款的全屏圖）下方有 **START／RANKING 兩個大按鈕**（需求指定
-   1920×1080 設計座標 (60,590) 起、720×390 區域 → 邏輯 (15,147.5) 起、
-   180×97.5；兩個按鈕左右並排填滿、各 84×97.5、中間 12px 縫；**完全由程式
-   自繪** —— 半透明 NIGHT 底＋邊框＋標籤，不讀美術圖內容，美術換圖時按
-   `TITLE_START_BTN`／`TITLE_RANKING_BTN` 兩個矩形對位即可）：**↑ ↓ ← →**
-   切換選擇（選中＝亮粉 MENU_SELECTED 2px 框＋泛光、未選中＝深粉 MENU_IDLE
-   1px 框）、**A** 執行 —— **START**＝起名開局（等同 Space）、**RANKING**＝
-   開當前款的排行榜（等同 R，B／ESC 關閉回二級標題）；**Space／R 捷徑照舊**。
-   進二級後玩家只能起名、不能再改；按鈕下方有緩慢閃爍的開局提示（字串先掛
-   英文，接中文字型後換）。二級標題按 **R** 開**當前款的排行榜**
-   （`ui/leaderboard_panel.gd`：只顯示前 10 名、不顯示本局成績、**一律只讀**
-   —— 清除功能已搬到一級標題的管理員清除選單，玩家端沒有任何清除入口，
-   B／ESC 關閉回二級標題）。
+   二級標題（各款的全屏圖）**沒有按鈕、沒有提示文字**，只有全屏圖：
+   按**任意鍵**（方向鍵／A／B／空格／字母鍵……都可以）→ 起名開局；
+   唯二的例外是 **A＋B 同時按住 3 秒** → 進入**管理員密碼界面**
+   （見下，2026-08 取代舊的 START／RANKING 大按鈕與 R／F3 入口 ——
+   舊按鈕矩形需求 (60,590)+720×390、`TITLE_START_BTN`／`TITLE_RANKING_BTN`
+   常量與自繪按鈕已全部拆除，美術對位不需要了）。
+   玩家從二級標題起名開局（難度已取消，見「三款共通的設計規格」）。
    起名界面是**疊在二級標題上的半透明 overlay**：50% 黑罩
    透出二級標題圖，上面再疊各遊戲的起名彈窗圖
    （`assets/title/Naming/Name_Charms*.png`，RGBA 只有彈窗區域不透明），
@@ -68,7 +60,10 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    鍵盤是 0-9／A-Z 共 36 個字元鍵＋右下角 **OK** 鈕；名字只收 A-Z／0-9、
    最多 9 字，OK 時名字不能為空（空名按 OK 只有輸入框閃＋OK 抖的回饋）。
    二級標題是固定場所：**不響應 1/2/3 與 ESC**，
-   唯一回一級的路徑是 **F3 管理員密碼**（`admin`／`pandora`，正確才回一級）。
+   唯一回一級的路徑是 **管理員密碼界面**（二級標題 **A＋B 同時按住 3 秒**
+   進入）：密碼是**方向指令序列「上上下下左右左右」**（↑ ↑ ↓ ↓ ← → ← →
+   共 8 位），玩家每按一個**方向鍵**就輸入一位，輸滿 8 位後按 **A** 確認 ——
+   正確 → 回一級標題；錯誤 → 清空重填（B 刪除最後一位、ESC 取消回二級）。
    遊戲中 **ESC** 與局終 Game Over 界面的 **B／ESC** 都回**該款的二級標題**
    （名字清除；Game Over 界面選 RESTART 則名字保留）
 
@@ -102,15 +97,15 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
   單遊戲清除走 `clear_records(game_id, ClearRule)`、跨遊戲清除走
   `clear_all_games_records(ClearRule)`，見下）、
   `shared/player_session.gd`（玩家名字的生命週期：首次進遊戲要輸入，
-  重開保留，回二級清除；難度不在這裡，見下）、
+  重開保留，回二級清除；見下）、
   `ui/game_over.gd`（局終 Game Over 界面：分數／排名／名字 ＋ RESTART／
   LEADERBOARD 兩鈕，三款共用一份，取代舊的「局終直接進排行榜」）、
   `ui/leaderboard_panel.gd`（通用排行榜面板，三款共用一份，一律只讀）、
   `ui/admin_clear_menu.gd`（管理員的排行榜清除選單：一級標題按 B 進入）、
-  `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「難度與起名」）。
+  `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「起名」）。
 - **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }`。
-  標題層只畫 `assets/title/` 的全屏圖，一級標題另外把遊戲選擇清單（名字＋
-  難度）用 draw_string 疊在圖上；F3 密碼彈窗
+  標題層只畫 `assets/title/` 的全屏圖，一級標題另外把遊戲選擇清單（名字）
+  用 draw_string 疊在圖上；二級標題 A＋B 長按進入的管理員密碼界面
   （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
   遊戲**只**發 `round_finished(score, duration, game_over)` 信號，不知道排行榜存在；
   launcher 組裝 LeaderboardRecord、提交、開 Game Over 界面。
@@ -184,7 +179,7 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
 ```
 res://
 ├── Launcher.tscn           唯一的場景（Node2D + launcher.gd）
-├── launcher/launcher.gd    標題選單與流程狀態機（一級/二級標題、F3 密碼）
+├── launcher/launcher.gd    標題選單與流程狀態機（一級/二級標題、A＋B 長按密碼入口）
 ├── games/
 │   ├── seeker/             CharmsSeeker：迷宮追逐（小精靈）
 │   │   ├── seeker.gd       主程式與狀態機
@@ -203,7 +198,7 @@ res://
 │   ├── leaderboard_panel.gd 排行榜面板（只顯示前 10 名，三款共用，一律只讀）
 │   ├── admin_clear_menu.gd 管理員排行榜清除選單（一級標題按 B 進入）
 │   ├── name_input.gd       起名：街機虛擬鍵盤
-│   └── admin_password.gd   F3 管理員密碼彈窗
+│   └── admin_password.gd   管理員密碼界面（二級標題 A＋B 長按進入，方向指令密碼）
 ├── tools/sim/              平衡模擬腳本（見該目錄 README）
 ├── assets/                 美術素材（尚未進場，目前都是空資料夾）
 └── Guides/                 GDD、美術規格書、色盤
@@ -285,14 +280,10 @@ python3 tools/sim/catch_sim.py
 ## 三款共通的設計規格
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
-- **共用外框**：一級標題 → 二級標題（**START／RANKING 兩鈕**，↑↓←→ 切換、A 執行）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 界面**（分數／排名／名字＋RESTART／LEADERBOARD 兩鈕）→ 重開（名字保留）／排行榜（只顯示前 10 名）／回二級（名字清除）。
-- **難度與起名**：難度是**管理員在一級標題選的**：**↑ ↓ 選項目**（MAZE／
-  FISHING／CATCH／SETTING 循環）、**← → 切換當前選中遊戲的難度 EASY／HARD**
-  （各遊戲獨立記憶，切換選擇不會重置其他遊戲；EASY/HARD 只畫在選中那行
-  名字右側，畫面始終只有一個；SETTING 行不畫不響應）；進二級後玩家不能再
-  改。launcher 持有並寫進排行榜記錄的
-  DIFF 列，跨局跨款保留（這是管理員設定，不是玩家 session 的一部分）。
-  起名是**疊在二級標題上的三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫
+- **共用外框**：一級標題 → 二級標題（**無按鈕無提示，按任意鍵起名開局**；A＋B 長按 3 秒進管理員密碼界面）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 界面**（分數／排名／名字＋RESTART／LEADERBOARD 兩鈕）→ 重開（名字保留）／排行榜（只顯示前 10 名）／回二級（名字清除）。
+- **起名**：一級標題沒有難度設定（EASY/HARD 已於 2026-08 移除，← → 不再
+  響應）。玩家在二級標題按任意鍵後先起名再開局。起名是**疊在二級標題上的
+  三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫
   二級標題圖當底層；起名層先蓋 50% 黑罩（`Color(0,0,0,0.5)`，底下的二級畫面
   透得出來），再疊各遊戲的起名彈窗圖（`assets/title/Naming/Name_Charms*.png`，
   1920×1080 RGBA，只有彈窗區域不透明），功能文字在最上。**起名是街機虛擬
@@ -307,8 +298,7 @@ python3 tools/sim/catch_sim.py
   `<game>_btn_chosen.png` 選中金色，launcher 依 `game_id` 傳入）。移動是
   **邊界夾住不繞行**：第一列再上、最左列再左都停在原位，上下換列直行對齊、
   目標列較短就夾到最後一格；輸入一碼後自動前進到下一個可輸入位置（跳過 OK，
-  到底繞回第一格）。目前難度**只當標籤記錄，三款玩法數值尚未分檔** —— 要做
-  分檔時各自在遊戲內讀 launcher 傳進來的難度，改完跑對應 sim 對比。
+  到底繞回第一格）。
 - **寶箱系統已移除**（2026-08，刻意偏離 GDD）：局終不再揭寶箱等級、不抽寶箱、沒有任何寶箱獎勵，**只計分數與排名**。原本三款各自的 `CHEST_BRONZE/SILVER/GOLD` 常數、`chest_tier()`、面板頂部的寶箱揭示行已全部拆除，launcher 也不再傳 `chest_tiers`。不要加回來；美術的寶箱圖示（art-spec 的 `ui_chest.png`）不需要出了，原 M7 的 MysteryBox 接線也一併取消。
 - **狀態機模式統一**：`READY`（開場停頓 1.5 秒）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
 

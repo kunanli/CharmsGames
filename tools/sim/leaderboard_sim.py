@@ -59,8 +59,6 @@ def from_dict(d):
         "game_name": str(d.get("game_name", "")),
         "player_name": str(d.get("player_name", "")),
         "score": int(d.get("score", 0)),
-        "difficulty_id": str(d.get("difficulty_id", "")),
-        "difficulty_name": str(d.get("difficulty_name", "")),
         "played_at": str(d.get("played_at", "")),
         "played_date": str(d.get("played_date", "")),
         "duration_seconds": float(d.get("duration_seconds", 0.0)),
@@ -308,8 +306,6 @@ def make_record(game_id, name, score, date_str, played_at=None, rid=None):
         "game_name": GAME_NAMES[game_id],
         "player_name": name,
         "score": score,
-        "difficulty_id": "normal",
-        "difficulty_name": "NORMAL",
         "played_at": played_at or f"{date_str} {random.randrange(24):02d}:{random.randrange(60):02d}:{random.randrange(60):02d}",
         "played_date": date_str,
         "duration_seconds": round(random.uniform(30.0, 60.0), 2),
@@ -489,9 +485,8 @@ def main():
     ok(r0["score"] == 777 and r0["record_id"] == "" and r0["player_name"] == "" and
        r0["score_version"] == 1 and r0["duration_seconds"] == 0.0 and
        r0["played_at"] == "" and r0["played_date"] == "" and
-       r0["difficulty_id"] == "" and r0["difficulty_name"] == "" and
        r0["game_name"] == "" and r0["game_id"] == "seeker",
-       "缺欄位記錄填上預設值（record_id/名字/時間/難度空字串、版本 1、時長 0）")
+       "缺欄位記錄填上預設值（record_id/名字/時間空字串、版本 1、時長 0）")
     # 新版檔案（version 更高）不崩
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"version": 99, "records": [

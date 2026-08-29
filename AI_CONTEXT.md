@@ -32,10 +32,10 @@ Pandora 品牌合作的三款 8-bit 像素小游戏，共用世界观、色盘�
 |---|---|---|
 | 流程状态机 | `launcher/launcher.gd` | `enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD }`。相当于总管：标题、名字、游戏、局终 Game Over 界面、排行榜面板的切换全在这。**没有独立的 GameManager** |
 | 场景管理 | 无独立 SceneManager | **刻意单场景架构**：全项目只有 `Launcher.tscn`（一个 Node2D）。游戏用 `load()` → `Node2D.new()` → `set_script()` → `add_child()` 挂到临时节点，退出 `queue_free()` 整个节点即自动清理。新增游戏只需在 `launcher.gd` 的 `GAMES` 数组加一笔 |
-| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）是管理员选择画面：↑↓ 循环选游戏（MAZE/FISHING/CATCH）、←→ 切当前选中游戏的难度 EASY/HARD（画在选中那行名字右侧）、B 开清除选单、A 确认进二级标题。二级标题（各款的全屏图）下方有 **START / RANKING 两个大按钮**（需求指定设计坐标 (60,590)+720×390 → 逻辑 (15,147.5)+180×97.5，左右并排各 84×97.5、中间 12px 缝；**代码自绘不读美术内容**：半透明 NIGHT 底＋边框＋标签，选中 = MENU_SELECTED 2px 框泛光、未选中 = MENU_IDLE 1px 框）：**↑↓←→ 切换选择、A 执行**（START＝起名开局、RANKING＝开当前款排行榜），Space/R 同义捷径照旧。二级标题是固定场所：不响应 1/2/3 与 ESC，唯一回一级的路径是 F3 管理员密码（`admin` / `pandora`） |
+| 标题（Title） | `launcher/launcher.gd` | 一级标题（`assets/title/Title_ChooseGames.png` 全屏）是管理员选择画面：↑↓ 循环选游戏（MAZE/FISHING/CATCH）、B 开清除选单、A 确认进二级标题。**二级标题（各款全屏图）没有任何按钮与提示文字**：按**任意键**→ 起名开局（A/B 例外：**A＋B 同时按住 3 秒** → 管理员密码界面）；二级标题是固定场所，不响应 1/2/3 与 ESC，**唯一回一级的路径是管理员密码界面**（方向指令密码，见「管理员弹窗」行） |
 | 玩家名字（PlayerName） | `ui/name_input.gd` + `shared/player_session.gd` | 首次进游戏在**街机虚拟键盘**上输入名字（↑↓←→ 移动、A 确认、B 删除、X 清空、Y 预留、ESC 取消；0-9/A-Z + 右下 OK 钮，最多 9 字，空名按 OK 只有闪+抖回馈）；面板 Enter 重开保留名字、ESC 退出清除。难度不在这里选（一级标题由管理员选）。**起名是叠在二级标题上的三层 overlay**：launcher 在 NAME_INPUT 模式仍画二级标题图当底层，起名层盖 50% 黑罩再叠各游戏的起名弹窗图（RGBA），键盘钮素材按 game_id 取 `assets/title/Naming/NamingKeyboard/` 的 btn/btn_chosen |
 | 排行榜（Leaderboard） | `shared/leaderboard_record.gd` / `leaderboard_manager.gd` / `date_utils.gd` + `ui/game_over.gd`（局终界面）+ `ui/leaderboard_panel.gd`（面板） | 本地存储 `user://leaderboard.json`（version:1，每款最多 1000 条，按 game_id 分榜）。三款共用同一套。游戏只发 `round_finished(score, duration, game_over)` 信号，不知道排行榜存在；组装与提交在 launcher，局终先进 **Game Over 界面**（GAME OVER/TIME UP、分数、**本局排名**、玩家名字 + RESTART/LEADERBOARD 两钮，↑↓ 切换、A 执行），选 LEADERBOARD 才进面板。**面板只显示前 10 名**（左右两栏各 5 列、不翻页），**不显示本局成绩与排名**（无 YOUR SCORE 行、不高亮自己）；B/ESC 回该款二级标题并清名字 |
-| 管理员弹窗 | `ui/admin_password.gd` | F3 弹出的 Modal Overlay，开着时 launcher 不处理任何按键 |
+| 管理员弹窗 | `ui/admin_password.gd` | 二级标题 **A＋B 同时按住 3 秒**进入的 Modal Overlay，开着时 launcher 不处理任何按键。密码是**方向指令序列「上上下下左右左右」**（↑↑↓↓←→←→ 共 8 位）：每按一个方向键输入一位，输满 8 位按 A 确认（正确 → 回一级、错误清空重填；B 删除一位、ESC 取消回二级） |
 | 视觉反馈 | `shared/juice.gd`（全画面）+ `shared/fx.gd`（单物件） | 震动/镜头偏移/顿格/粒子/挤压变形。预设 SUBTLE / ARCADE 两档，目前三款都挂 ARCADE，未实机定案 |
 
 ## 场景结构
@@ -59,7 +59,7 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 
 | 脚本 | 职责 |
 |---|---|
-| `launcher/launcher.gd` | 标题选单与全流程状态机、F3 密码、排行榜接线的组装端 |
+| `launcher/launcher.gd` | 标题选单与全流程状态机、A＋B 长按管理员密码入口、排行榜接线的组装端 |
 | `games/seeker/seeker.gd` | Seeker 主程序与状态机；同目录 `maze.gd`（迷宫数据）、`player.gd`（露娜格子移动）、`cat.gd`（暗影猫 AI） |
 | `games/fishing/fishing.gd` | Fishing 单文件实现 |
 | `games/catch/catch.gd` | Catch 单文件实现 |
@@ -73,7 +73,7 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 | `ui/leaderboard_panel.gd` | 三款共用的排行榜面板（只显示前 10 名、不显示本局成绩，DIFF 列显示难度） |
 | `ui/game_over.gd` | 局终 Game Over 界面：GAME OVER/TIME UP、分数（滚动）、本局排名、玩家名字 + RESTART/LEADERBOARD 两钮（↑↓ 切换、A 执行、B/ESC 回二级） |
 | `ui/name_input.gd` | 姓名输入屏：街机虚拟键盘（摇杆 + A/B/X/Y 操作，数据驱动 `KEY_ROWS` 布局，OK 钮右下角） |
-| `ui/admin_password.gd` | F3 管理员密码弹窗 |
+| `ui/admin_password.gd` | 管理员密码界面：方向指令密码（↑↑↓↓←→←→ 8 位），A 确认、B 删除、ESC 取消 |
 | `tools/sim/*.py` | 平衡模拟脚本（Python 移植 GDScript 逻辑，跑几百局用统计验证数值），常量是 `.gd` 的副本，改了 `.gd` 要同步 |
 
 ## 输入规则
@@ -82,11 +82,8 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 |---|---|---|
 | 一级标题 | **1 / 2 / 3** | 进对应款二级标题（底部显示当前难度） |
 | 一级标题 | **← →** | 切换难度 EASY / HARD（管理员选择） |
-| 二级标题 | **↑ ↓ ← →** | 在 START / RANKING 两个大按钮间切换选择（选中 = 亮粉 MENU_SELECTED 2px 框＋泛光、未选中 = 深粉 MENU_IDLE 1px 框） |
-| 二级标题 | **A** | 执行所选按钮：START = 起名开局（等同 Space）、RANKING = 打开该款排行榜（等同 R，B/ESC 关闭回二级） |
-| 二级标题 | **Space / Enter** | 起名开局（等同 START 按钮，按钮下方有缓慢闪烁的英文提示）；起名界面是**二级标题上的 50% 黑罩 overlay**（透出二级画面），起名页是**街机虚拟键盘**：↑↓←→ 移动、A 确认（字元/OK）、B 删除、X 清空、Y 预留、ESC 取消 |
-| 二级标题 | **R** | 打开该款排行榜**只读预览**（等同 RANKING 按钮，只显示前 10 名、清除停用，B/ESC 关闭） |
-| 二级标题 | **F3** | 管理员密码弹窗（`admin` / `pandora`），正确才回一级 |
+| 二级标题 | **任意键** | 起名开局（无按钮、无提示文字；A/B 例外，见下行） |
+| 二级标题 | **A＋B 同时按住 3 秒** | 进入管理员密码界面：方向键输入「上上下下左右左右」8 位指令、A 确认（正确回一级管理员界面），B 删除、ESC 取消；不足 3 秒松开 A/B = 普通按键，照常起名开局 |
 | 游戏中 | **ESC** | 回该款的二级标题（名字清除） |
 | 局终 Game Over 界面 | **↑ ↓** | 切换 RESTART / LEADERBOARD 按钮的选择状态 |
 | 局终 Game Over 界面 | **A**（或 Enter/空格） | 执行选中的按钮：RESTART 重开同款（名字保留）、LEADERBOARD 进排行榜面板 |

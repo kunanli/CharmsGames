@@ -39,11 +39,10 @@ const DATA_X := 82.5
 const DATA_W := 340
 
 # 每半欄（寬 111.25）內的行欄位，RANK 右對齊／NAME 左對齊／
-# SCORE 右對齊／DIFF 左對齊（12 字名字與六位分數都不會互相頂到）。
+# SCORE 右對齊（12 字名字與六位分數都不會互相頂到）。
 const COL_RANK_RIGHT := 12
 const COL_NAME_LEFT := 29
 const COL_SCORE_RIGHT := 89
-const COL_DIFF_LEFT := 93
 # 名字最寬 43px（六位分數佔 20px＋2px 間距），超出就截掉
 const MAX_NAME_W := COL_SCORE_RIGHT - COL_NAME_LEFT - 22
 
@@ -158,8 +157,6 @@ func _draw_rows() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Palette.NIGHT)
 		draw_string(font, Vector2(x + COL_SCORE_RIGHT - 25, y), "%d" % r.score,
 			HORIZONTAL_ALIGNMENT_RIGHT, -1, 6, Palette.NIGHT)
-		draw_string(font, Vector2(x + COL_DIFF_LEFT, y), r.difficulty_name,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Palette.WALL_DARK)
 
 
 ## 半欄只有 111px 寬，長名字按實際字寬截到不頂到分數欄為止。
