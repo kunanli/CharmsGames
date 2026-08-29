@@ -21,7 +21,8 @@ enum Hook { SWING, EXTEND, RETRACT }
 enum Kind { JUNK_FISH, SMALL_PEARL, BIG_FISH, STARDUST, CHARM, ROCK, SHADOW_FISH }
 
 const ROUND_TIME := 60.0
-const READY_TIME := 1.5
+# 開場停頓：ReadyGo 淡入 0.25s＋動畫 24幀@14fps≈1.71s＋0.05s 緩衝（播完才開場）
+const READY_TIME := ReadyGo.FADE_SECONDS + ReadyGo.ANIM_SECONDS + 0.05
 
 # ── 畫面配置 ────────────────────────────────────────────
 const SCREEN := Vector2(480, 270)
@@ -190,6 +191,7 @@ func _start_round() -> void:
 	_populate()
 	state = State.READY
 	state_timer = READY_TIME
+	ReadyGo.create(self)          # 開場 READY 動畫：淡入→播完→淡出→自行釋放
 
 
 ## 本局結束：把成績交給 launcher，由它提交排行榜並打開面板。
@@ -541,9 +543,7 @@ func _draw() -> void:
 	_draw_hud()
 	_draw_urgency()
 
-	if state == State.READY:
-		_center("READY!", 150, 24, Palette.GOLD)
-	elif state == State.RESULT:
+	if state == State.RESULT:
 		_draw_result()
 
 

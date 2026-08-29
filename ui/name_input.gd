@@ -81,8 +81,8 @@ var title_image: Texture2D       # 各遊戲的起名彈窗圖（RGBA，彈窗�
 var game_id := ""                # launcher 傳入，決定用哪組按鍵素材
 
 var _name := DEFAULT_NAME       # 目前輸入的名字，初始為預設名 pandora
-var _sel_row := KEY_ROWS.size() - 1   # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
-var _sel_col := KEY_ROWS[_sel_row].size() - 1   # 預設選中最後一列最後一格（OK）
+var _sel_row: int = KEY_ROWS.size() - 1   # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
+var _sel_col: int = KEY_ROWS[_sel_row].size() - 1   # 預設選中最後一列最後一格（OK）
 var _dir_held := {               # 搖杆／按鍵的按住狀態（只在上升緣動作）
 	"up": false, "down": false, "left": false, "right": false,
 }

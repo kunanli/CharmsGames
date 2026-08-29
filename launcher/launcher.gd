@@ -165,6 +165,13 @@ var clear_index := 0          # 三級清除選單：0 = CLEAR TODAY、1 = LAST 
 
 
 func _ready() -> void:
+	# 全專案文字統一用像素字體（assets/fonts/PixelFont.ttf，10×12 網格、原生
+	# 渲染尺寸 12px）：所有 draw_string 都讀 ThemeDB.fallback_font，換掉它
+	# 全部界面文字一次生效。load 失敗（素材沒進場）時維持引擎預設字型。
+	var pixel_font := load("res://assets/fonts/PixelFont.ttf") as Font
+	if pixel_font:
+		ThemeDB.fallback_font = pixel_font
+
 	# 用 ResourceLoader 而不是 FileAccess：匯出後 .gd 會被編譯進 pck 並重新對應，
 	# FileAccess.file_exists() 在匯出版會一律回 false，選單就全變成 COMING SOON。
 	for entry in GAMES:

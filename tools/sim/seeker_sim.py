@@ -365,7 +365,7 @@ def difficulty(rounds=30):
                     pdir = (0, 0)
                     for k in cats:
                         k.setup()
-                    t += 1.2 + 1.5          # DYING + READY
+                    t += 1.2 + 2.0          # DYING + READY（READY_TIME 1.5→2.0：開場改播 ReadyGo 動畫）
                     break
         deaths_all.append(deaths)
         if lives > 0:

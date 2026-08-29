@@ -20,7 +20,8 @@ signal round_finished(score: int, duration: float, game_over: bool)
 enum State { READY, PLAYING, DYING, RESULT }
 
 const ROUND_TIME := 60.0      # 一局的秒數
-const READY_TIME := 1.5       # 開場停頓秒數
+# 開場停頓：ReadyGo 淡入 0.25s＋動畫 24幀@14fps≈1.71s＋0.05s 緩衝（播完才開場）
+const READY_TIME := ReadyGo.FADE_SECONDS + ReadyGo.ANIM_SECONDS + 0.05
 const DYING_TIME := 1.2       # 被抓到後的停頓秒數
 const CATCH_DIST := 9.0       # 碰撞判定距離（px），約半格多一點
 const START_LIVES := 3
@@ -140,6 +141,7 @@ func _enter_ready() -> void:
 	for cat in cats:
 		cat.setup(maze, cat.home_cell)
 		cat.set_process(false)
+	ReadyGo.create(self)          # 開場 READY 動畫：淡入→播完→淡出→自行釋放
 
 
 func _enter_playing() -> void:
@@ -366,9 +368,7 @@ func _draw() -> void:
 	_draw_urgency()
 	_draw_petrify_edge()
 
-	if state == State.READY:
-		_draw_center_text("READY!", 130, 24, Palette.GOLD)
-	elif state == State.DYING:
+	if state == State.DYING:
 		_draw_center_text("CAUGHT!", 130, 22, Palette.WARN)
 	elif state == State.RESULT:
 		_draw_result()

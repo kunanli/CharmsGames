@@ -180,7 +180,7 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
 - **不要引入外部套件或 addon**。
 - **不要用物理碰撞（CharacterBody2D 等）做格子移動**。已經用純數學判斷實作，改用物理會造成卡牆角與抖動。
 - **只用 `shared/palette.gd` 的 20 色**，不自行新增中間色。唯一被允許的變化是對既有色套 alpha，例如 `Color(Palette.NIGHT, 0.82)`。需要新色請先跟企劃討論再加進色盤。
-- **HUD 文字一律用英文**。Godot 內建預設字型沒有中文字符，中文會變成方框。等像素中文字型接進來再改。
+- **HUD 文字一律用英文**。全專案文字統一用 `assets/fonts/PixelFont.ttf`（x10y12pxDenkiChipHangul，10×12 像素網格）：`launcher.gd` 的 `_ready()` 把它設成 `ThemeDB.fallback_font`，所有 `draw_string` 一次生效（引擎內建預設字型已不用）。文字維持英文 —— 這支字體只含部分漢字（640 個 CJK），中英混排的像素對齊也不可靠。字體原生渲染尺寸是 12px，新增文字尺寸時優先取 12 的整數倍（12／24），非整數倍會讓像素網格對不齊。
 - **畫面位移（震動、鏡頭偏移）只能走繪製層，絕對不要寫進 `position`**。`player.gd` / `cat.gd` 每幀都用 `position` 算移動與 9px 碰撞判定，位移寫進去會被修正掉、過格時被清空，還會動到判定。用 `draw_set_transform()`，有子節點的就包一層容器節點（Seeker 的 `_world`）。
 
 ---
@@ -203,6 +203,7 @@ res://
 │   ├── palette.gd          20 色共用色盤（class_name Palette）
 │   ├── juice.gd            全畫面：震動／鏡頭偏移／視差／頓格（class_name Juice）
 │   ├── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
+│   ├── ready_go.gd         開場 READY 動畫：實例化 Ready_go.tscn、淡入淡出、播完自行釋放（class_name ReadyGo）
 │   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS，user://settings.cfg）
 ├── ui/
 │   ├── game_over.gd        局終 Game Over 界面（分數／排名／名字＋RESTART／LEADERBOARD）
@@ -311,7 +312,7 @@ python3 tools/sim/catch_sim.py
   目標列較短就夾到最後一格；輸入一碼後自動前進到下一個可輸入位置（跳過 OK，
   到底繞回第一格）。
 - **寶箱系統已移除**（2026-08，刻意偏離 GDD）：局終不再揭寶箱等級、不抽寶箱、沒有任何寶箱獎勵，**只計分數與排名**。原本三款各自的 `CHEST_BRONZE/SILVER/GOLD` 常數、`chest_tier()`、面板頂部的寶箱揭示行已全部拆除，launcher 也不再傳 `chest_tiers`。不要加回來；美術的寶箱圖示（art-spec 的 `ui_chest.png`）不需要出了，原 M7 的 MysteryBox 接線也一併取消。
-- **狀態機模式統一**：`READY`（開場停頓 1.5 秒）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
+- **狀態機模式統一**：`READY`（開場播 `assets/AnimationScene/UI_Animate/Ready_go.tscn` 的 Ready_GO 動畫，24 幀 @14FPS；`shared/ready_go.gd` 負責實例化與淡入淡出（各 0.25 秒）、播完自行釋放。READY 時長 = `ReadyGo.FADE_SECONDS + ANIM_SECONDS + 0.05` ≈ 2.0 秒，各遊戲 `READY_TIME` 直接引用這兩個常量）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
 
 ---
 
