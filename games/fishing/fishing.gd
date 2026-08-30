@@ -418,6 +418,7 @@ func _extend(delta: float) -> void:
 	# 碰到任何物件即自動回收
 	for it in items:
 		if it.rect().has_point(tip):
+			AudioManager.play_sfx("fishing_catch")   # 魚鉤撞上任何物件
 			carried = it
 			carried.pos = tip + Vector2(0, 6)
 			items.erase(it)
@@ -468,6 +469,7 @@ func _retract(delta: float) -> void:
 ## 獵物上船：加分或扣時間
 func _land(it: Item) -> void:
 	if it.kind == Kind.SHADOW_FISH:
+		AudioManager.play_sfx("fishing_boom")        # 暗影猫魚：扣時間
 		time_left = maxf(0.0, time_left - 3.0)
 		_juice.kick(0.80)
 		_juice.freeze(0.12)
@@ -477,6 +479,7 @@ func _land(it: Item) -> void:
 		var gained := _score_of(it.kind)
 		score += gained
 		if gained > 0:
+			AudioManager.play_sfx("fishing_gainpoints")   # 上船加分
 			var col: Color = Palette.GOLD if it.kind == Kind.CHARM else Palette.TEXT
 			if it.kind == Kind.CHARM:
 				_juice.kick(0.55)

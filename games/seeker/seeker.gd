@@ -325,6 +325,7 @@ func _on_player_bumped(d: Vector2i) -> void:
 
 
 func _lose_life() -> void:
+	AudioManager.play_sfx("maze_player_hurt")   # 被暗影猫抓住扣命
 	lives -= 1
 	# 剛失去的那顆愛心播「1 秒放大 1.5 倍＋淡出」（格位 = 少掉後的 lives）
 	_heart_fade = 1.0
@@ -338,11 +339,13 @@ func _lose_life() -> void:
 func _on_player_ate(_cell: Vector2i, kind: int) -> void:
 	match kind:
 		Maze.ITEM_BEAN:
+			AudioManager.play_sfx("maze_pickup_perl")   # 撿起星塵珍珠
 			score += SCORE_BEAN
 			beans_eaten += 1
 			# 一局 205 顆，所以只給 2 顆極小的閃光 —— 再多就變成整片雜訊
 			_fx.burst(player.position, 2, Palette.PEARL, 34.0, 0.26, 2.0, 0.4)
 		Maze.ITEM_MOON:
+			AudioManager.play_sfx("maze_pickup_heart")   # 撿起月光能量（場上畫成愛心）
 			score += SCORE_MOON
 			# 撿到不會直接發動，存進 HUD 等玩家按 A（GDD 的 Xbox 協議）
 			moon_stock = mini(moon_stock + 1, MOON_STOCK_MAX)

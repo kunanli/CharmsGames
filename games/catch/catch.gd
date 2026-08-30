@@ -304,6 +304,7 @@ func _move_luna(delta: float) -> void:
 	if not is_equal_approx(want_x, clamped) and absf(luna_vx) > 1.0:
 		if not _at_wall:
 			var impact := clampf(absf(luna_vx) / (MOVE_SPEED * HOLD_MULT), 0.0, 1.0)
+			AudioManager.play_sfx("catch_hitwall")   # 撞上邊界的那一幀
 			_juice.kick(lerpf(0.28, 0.60, impact), Vector2.RIGHT)
 			_juice.freeze(0.03 + impact * 0.03)
 			# 露娜貼著邊界壓扁 —— 這比震動更看得出「我撞到左邊還右邊」
@@ -508,6 +509,7 @@ func _move_drops(delta: float) -> void:
 func _on_caught(d: Drop) -> void:
 	match d.kind:
 		Kind.BOMB:
+			AudioManager.play_sfx("catch_boom")      # 接到炸彈（護盾擋下也是接到）
 			if shield_left > 0.0:
 				shield_left = 0.0          # 護盾擋掉一顆炸彈後消失
 				_juice.kick(0.50)
@@ -540,6 +542,7 @@ func _on_caught(d: Drop) -> void:
 			_fx.burst(d.pos, 14, Palette.MOON, 80.0, 0.6, 3.0, 0.3)
 			_pop("SHIELD 8s", Palette.MOON, d.pos)
 		_:
+			AudioManager.play_sfx("catch_item")      # 接到會加分的掉落物
 			var base := _base_score(d.kind)
 			var was_mult := multiplier
 			combo += 1

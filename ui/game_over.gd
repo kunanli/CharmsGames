@@ -64,8 +64,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	match key.keycode:
 		KEY_UP, KEY_DOWN:
 			_sel = 1 - _sel
+			AudioManager.play_sfx("ui_select")   # 切換 RESTART／LEADERBOARD
 			queue_redraw()
 		KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+			AudioManager.play_sfx("ui_confirm")   # 執行選中的按鈕
 			_confirm()
 		KEY_B, KEY_ESCAPE:
 			exit_requested.emit()

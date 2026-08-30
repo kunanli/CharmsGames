@@ -75,6 +75,7 @@ func _confirm() -> void:
 		_error_timer = 1.2
 		return
 	if _input == PASSWORD:
+		AudioManager.play_sfx("ui_confirm")   # 密碼正確
 		succeeded.emit()
 	else:
 		_input.clear()

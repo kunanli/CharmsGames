@@ -58,15 +58,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		match key.keycode:
 			KEY_LEFT:
 				_rule = (_rule + RULES.size() - 1) % RULES.size()
+				AudioManager.play_sfx("ui_select")
 			KEY_RIGHT:
 				_rule = (_rule + 1) % RULES.size()
+				AudioManager.play_sfx("ui_select")
 			KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+				AudioManager.play_sfx("ui_confirm")   # 進二次確認
 				_confirm = true
 			KEY_B, KEY_ESCAPE:
 				cancelled.emit()
 	else:
 		match key.keycode:
 			KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+				AudioManager.play_sfx("ui_confirm")   # 執行刪除
 				LeaderboardManager.clear_records(game_id, _rule)
 				cleared.emit()
 			KEY_B, KEY_ESCAPE:

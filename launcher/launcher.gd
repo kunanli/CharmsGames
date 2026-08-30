@@ -60,6 +60,7 @@ const GAMES := [
 		"id": "seeker",
 		"title": "CHARMS SEEKER",
 		"menu_name": "MAZE",             # 一級標題遊戲選擇清單顯示的短名
+		"bgm": "MAZE",                   # 開局時的 BGM（AudioManager 名稱）
 		"blurb": "MAZE CHASE",
 		"script": "res://games/seeker/seeker.gd",
 		"title_image": preload("res://assets/title/Title_Maze.jpg"),
@@ -70,6 +71,7 @@ const GAMES := [
 		"id": "fishing",
 		"title": "CHARMS FISHING",
 		"menu_name": "FISHING",
+		"bgm": "FISHING",
 		"blurb": "HOOK THE CHARMS",
 		"script": "res://games/fishing/fishing.gd",
 		"title_image": preload("res://assets/title/Title_Fishing.jpg"),
@@ -80,6 +82,7 @@ const GAMES := [
 		"id": "catch",
 		"title": "CHARMS CATCH",
 		"menu_name": "CATCH",
+		"bgm": "CATCH",
 		"blurb": "CATCH AND DODGE",
 		"script": "res://games/catch/catch.gd",
 		"title_image": preload("res://assets/title/Title_Catch.jpg"),
@@ -273,11 +276,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				KEY_UP, KEY_DOWN:
 					var dir := 1 if key.keycode == KEY_DOWN else -1
 					selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
+					AudioManager.play_sfx("ui_select")   # 選單移動
 					queue_redraw()
 				KEY_B:
 					if selected_game < GAMES.size():
 						_open_clear_menu()     # SETTING 行 B 無操作
 				KEY_A:
+					AudioManager.play_sfx("ui_confirm")   # A 確認
 					if selected_game >= GAMES.size():
 						mode = Mode.SETTING     # SETTING → 二級選單
 					else:
@@ -287,8 +292,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			match key.keycode:
 				KEY_UP, KEY_DOWN:
 					setting_index = 1 - setting_index    # 兩個選項直接互換
+					AudioManager.play_sfx("ui_select")
 					queue_redraw()
 				KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					AudioManager.play_sfx("ui_confirm")
 					if setting_index == SETTING_CLEAR_IDX:
 						mode = Mode.SETTING_CLEAR        # 進三級清除選單
 					else:
@@ -302,8 +309,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				KEY_UP, KEY_DOWN:
 					var dir := 1 if key.keycode == KEY_DOWN else -1
 					clear_index = (clear_index + dir + CLEAR_OPTIONS.size()) % CLEAR_OPTIONS.size()
+					AudioManager.play_sfx("ui_select")
 					queue_redraw()
 				KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					AudioManager.play_sfx("ui_confirm")
 					LeaderboardManager.clear_all_games_records(CLEAR_RULES[clear_index])
 					_show_notice("SCORE DATA CLEARED", Palette.GOLD)
 					mode = Mode.SETTING                   # 執行完回二級，選項狀態保留
@@ -387,6 +396,7 @@ func _start_game(index: int) -> void:
 	if node.has_signal("round_finished"):
 		node.connect("round_finished", Callable(self, "_on_round_finished"))
 	mode = Mode.PLAYING
+	AudioManager.play_bgm(entry["bgm"])   # 開局切到該款的 BGM
 	queue_redraw()
 
 
@@ -594,10 +604,13 @@ func _close_password_modal() -> void:
 # ── 二級標題待機（IDLE：10 秒無操作 → 全屏待機影片；有效輸入喚醒）────
 
 ## 進二級標題（NORMAL）：停掉影片、重開 10 秒無操作計時。
+## 進入二級標題的所有路徑（一級按 A／局終回二級／起名取消／遊戲中 ESC）都
+## 從這裡經過，所以標題 BGM 也在此切換；已在同一首時 AudioManager 自動略過。
 func _begin_title_idle_watch() -> void:
 	_title_idle = false
 	_idle_video.stop()
 	_idle_timer.start()
+	AudioManager.play_bgm("TITLE")
 
 
 ## 離開二級標題：待機計時與影片全部停掉（起名／開局／密碼彈窗時用）。

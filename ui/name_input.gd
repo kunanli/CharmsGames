@@ -223,6 +223,7 @@ func _move(dir: String, pressed: bool) -> void:
 	_dir_held[dir] = pressed
 	if not pressed:
 		return
+	AudioManager.play_sfx("ui_select")   # 選擇框移動（鍵盤／手把共用入口）
 	match dir:
 		"up":
 			_sel_row = maxi(_sel_row - 1, 0)
@@ -245,11 +246,13 @@ func _confirm() -> void:
 			_flash = 0.4
 			_ok_shake = 0.4
 		else:
+			AudioManager.play_sfx("ui_confirm")   # OK 確認名字
 			confirmed.emit(_name)
 		return
 	if _name.length() >= MAX_NAME_LEN:
 		_flash = 0.2
 		return
+	AudioManager.play_sfx("ui_confirm")   # 選字確認
 	_name += cell
 	_advance()
 
