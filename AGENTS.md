@@ -44,7 +44,11 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    二級標題 —— 選中 SETTING 時 A 進 **SETTING 二級選單**（見「SETTING
    管理員設定」段）。所有選單文字都在 1920×1080 設計座標 (734,392) 起、
    651×291 的區域內。
-   二級標題（各款的全屏圖）**沒有按鈕、沒有提示文字**，只有全屏圖：
+   二級標題（背景是各款的全屏影片 `assets/title/TItleVideo/Title_*.ogv`，
+   等比例縮放填滿 480×270 —— 素材是 16:9 所以正好全屏；影片沒進場時退回
+   標題圖 `Title_*.jpg`）**沒有按鈕**，底部有一行閃爍的
+   **PRESS ANY BUTTON TO START** 提示（亮滅二值閃爍、週期 1.2 秒亮 0.7 秒，
+   與待機的 CLICK TO PLAY 同款；起名 overlay 與待機畫面不畫這行）：
    按**任意鍵**（方向鍵／A／B／空格／字母鍵……都可以）→ 起名開局；
    唯二的例外是 **A＋B 同時按住 3 秒** → 進入**管理員密碼界面**
    （見下，2026-08 取代舊的 START／RANKING 大按鈕與 R／F3 入口 ——
@@ -53,7 +57,7 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    玩家從二級標題起名開局（難度已取消，見「三款共通的設計規格」）。
    二級標題另有**待機動畫**（2026-08 新增，純 launcher 層、不碰遊戲流程）：
    進二級起 10 秒無操作計時，**↑↓←→／A／B** 任一輸入重設計時；連續 10 秒
-   無輸入 → 進 IDLE：隱藏標題圖／文字、播放該款待機影片並在中央閃爍
+   無輸入 → 進 IDLE：隱藏背景影片／文字、播放該款待機影片並在中央閃爍
    **CLICK TO PLAY**（`assets/title/IdleVideo/`，每款一支，路徑在 launcher
    `GAMES` 的 `idle_video` 欄位；影片**等比例縮放置中**、VideoStreamPlayer
    節點本身隱藏、畫面由 launcher 手繪），任一有效輸入喚醒 ——
@@ -117,8 +121,13 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   `ui/admin_clear_menu.gd`（管理員的排行榜清除選單：一級標題按 B 進入）、
   `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「起名」）。
 - **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }`。
-  標題層只畫 `assets/title/` 的全屏圖，一級標題另外把遊戲選擇清單（名字）
-  用 draw_string 疊在圖上；二級標題 A＋B 長按進入的管理員密碼界面
+  標題層：一級畫 `assets/title/Title_ChooseGames.png` 全屏圖、另把遊戲選擇
+  清單（名字）用 draw_string 疊在圖上；**二級的背景是該款的全屏影片**
+  （`assets/title/TItleVideo/Title_*.ogv`，2026-08 從靜態圖改成影片當背景
+  —— 路徑在 `GAMES` 的 `title_video` 欄位，launcher 用 VideoStreamPlayer
+  播放、`_draw()` 手繪等比例縮放置中，素材沒進場時退回 `title_image`
+  標題圖；起名 overlay 與管理員密碼彈窗底下都透出這支影片，開局／回一級
+  才停）；二級標題 A＋B 長按進入的管理員密碼界面
   （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
   遊戲**只**發 `round_finished(score, duration, game_over)` 信號，不知道排行榜存在；
   launcher 組裝 LeaderboardRecord、提交、開 Game Over 動畫界面
@@ -221,7 +230,8 @@ res://
 │   ├── name_input.gd       起名：街機虛擬鍵盤
 │   └── admin_password.gd   管理員密碼界面（二級標題 A＋B 長按進入，方向指令密碼）
 ├── tools/sim/              平衡模擬腳本（見該目錄 README）
-├── assets/                 美術素材（尚未進場，目前都是空資料夾）
+├── assets/                 美術素材（標題圖／二級背景影片 TItleVideo／待機影片
+│                           IdleVideo／起名素材 Naming 已進場；遊戲內畫面仍是程式繪製）
 └── Guides/                 GDD、美術規格書、色盤
 ```
 
@@ -301,7 +311,8 @@ python3 tools/sim/catch_sim.py
 ## 三款共通的設計規格
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
-- **共用外框**：一級標題 → 二級標題（**無按鈕無提示，按任意鍵起名開局**；A＋B 長按 3 秒進管理員密碼界面）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 動畫**（背景保留遊戲場景，只淡入淡出 GAME OVER／TIME UP 文字，不顯示分數／名字／排名；播完自動進排行榜）→ 排行榜（大標題＋前 10 名單欄＋底部當前玩家行）→ B/ESC 回二級（名字清除）。
+- **共用外框**：一級標題 → 二級標題（**無按鈕，底部一行閃爍的 PRESS ANY
+  BUTTON TO START 提示，按任意鍵起名開局**；A＋B 長按 3 秒進管理員密碼界面）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 動畫**（背景保留遊戲場景，只淡入淡出 GAME OVER／TIME UP 文字，不顯示分數／名字／排名；播完自動進排行榜）→ 排行榜（大標題＋前 10 名單欄＋底部當前玩家行）→ B/ESC 回二級（名字清除）。
 - **起名**：一級標題沒有難度設定（EASY/HARD 已於 2026-08 移除，← → 不再
   響應）。玩家在二級標題按任意鍵後先起名再開局。起名是**疊在二級標題上的
   三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫
