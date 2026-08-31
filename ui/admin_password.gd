@@ -9,7 +9,7 @@ extends Node2D
 #
 # 按鍵（輸入優先級 Level 1，全吃）：
 #   ↑ ↓ ← →    輸入一位（超過 8 位不收）
-#   B           刪除最後一位
+#   B           刪除最後一位；沒輸入內容時等同 ESC（取消回二級）
 #   A           確認（未輸滿 8 位只給提示）
 #   ESC         取消 → cancelled（回二級標題，不回一級）
 #
@@ -59,7 +59,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if _input.size() < PASSWORD_LEN:
 				_input.append(key.keycode)
 		KEY_B:
-			if not _input.is_empty():
+			if _input.is_empty():
+				cancelled.emit()   # 沒輸入內容：等同 ESC，直接回二級標題
+			else:
 				_input.pop_back()
 		KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
 			_confirm()
@@ -104,7 +106,7 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 			Palette.TEXT if filled else Palette.TEXT_DIM)
 
-	draw_string(font, Vector2(140, 162), "A CONFIRM   B DELETE   ESC CANCEL",
+	draw_string(font, Vector2(140, 162), "A CONFIRM   B DELETE/BACK   ESC CANCEL",
 		HORIZONTAL_ALIGNMENT_CENTER, 200, 8, Palette.TEXT_DIM)
 	if _error != "":
 		draw_string(font, Vector2(240, 172), _error,

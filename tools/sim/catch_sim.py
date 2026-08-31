@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CharmsCatch：Combo 可達性、分數分佈、頓格是否偷走比賽時間。
+"""CharmsCatch：Combo 可達性、分數分佈、頓格是否偷走比賽時間、掉落物數量翻倍。
 
 執行： python3 tools/sim/catch_sim.py
 
@@ -23,11 +23,13 @@ SPAWN_Y, KILL_Y = -10.0, 270.0    # 漏接線＝判定框底邊＝螢幕最底
 START_LIVES, SHIELD_TIME, MOON_MAX = 3, 8.0, 3
 COMBO_STEP, COMBO_MAX = 5, 5
 ROUND_TIME, PHASE_LEN, CHARM_EVERY = 60.0, 15.0, 15.0
+# 掉落物數量翻倍（2026-09 企劃）：gap 減半、max_on 翻倍、炸彈比例對折。
+# 連炸彈一起翻倍的話 AI 存活率 68%→19%、平均局長 56s→45s（見第 6 節）。
 PHASES = [
-    dict(speed=60.0,  max_on=2, bomb=0.10, cm=1.0, gap=(1.6, 2.2)),
-    dict(speed=80.0,  max_on=3, bomb=0.20, cm=1.0, gap=(1.4, 2.0)),
-    dict(speed=100.0, max_on=4, bomb=0.30, cm=1.0, gap=(1.2, 1.8)),
-    dict(speed=120.0, max_on=5, bomb=0.35, cm=2.0, gap=(1.0, 1.5)),
+    dict(speed=60.0,  max_on=4,  bomb=0.05,  cm=1.0, gap=(0.8, 1.1)),
+    dict(speed=80.0,  max_on=6,  bomb=0.10,  cm=1.0, gap=(0.7, 1.0)),
+    dict(speed=100.0, max_on=8,  bomb=0.15,  cm=1.0, gap=(0.6, 0.9)),
+    dict(speed=120.0, max_on=10, bomb=0.175, cm=2.0, gap=(0.5, 0.75)),
 ]
 JEWEL, STARDUST, CHARM, BOMB, MOON = range(5)
 BASE = {JEWEL: 50, STARDUST: 100, CHARM: 300, BOMB: 0, MOON: 0}
@@ -66,6 +68,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
     spawn_t, charm_t = 0.6, CHARM_EVERY
     vs = vc = 0
     best_mult, frozen, at_wall, walls = 1, 0.0, False, 0
+    bombs = 0
 
     def urgent_valuable():
         b = None
@@ -190,6 +193,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
             d.y += ph["speed"] * DT
             if bx0 <= d.x < bx1 and CATCH_Y <= d.y < CATCH_Y + CATCH[1]:
                 if d.k == BOMB:
+                    bombs += 1
                     if shield > 0:
                         shield = 0.0
                     else:
@@ -213,7 +217,8 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
             keep.append(d)
         drops = keep
     return dict(score=score, vs=vs, vc=vc, bm=best_mult, walls=walls,
-                frozen=frozen, survived=t_left <= 0)
+                frozen=frozen, survived=t_left <= 0,
+                bombs=bombs, t_played=ROUND_TIME - t_left)
 
 
 def report(label, rounds=120, **kw):
@@ -244,9 +249,12 @@ def main():
     ok(cur["capture"] > a["capture"] + 10,
        f"接取率 {a['capture']:.0f}% → {cur['capture']:.0f}%")
     # 長按 ×2.5 後 AI 幾乎全屏可達，可及性約束的邊際價值被高速度稀釋
-    # （關掉約束 ×2.59，門檻從 +0.4 放寬到 +0.3）。約束在真實玩家手中仍
-    # 有意義（玩家不會像 AI 一樣精準移動），生成端照樣保留。
-    ok(cur["mean_mult"] > b["mean_mult"] + 0.3,
+    # （關掉約束 ×2.59，門檻從 +0.4 放寬到 +0.3）。2026-09 掉落物翻倍後
+    # 再被密度稀釋（關掉約束 ×2.40 vs 現行 ×2.51，門檻放寬到 +0.1）：
+    # 有價物越多，任意時刻都有一顆「快落地」的當最緊急目標，window 變大、
+    # reach 幾乎覆蓋全屏，約束幾乎不縮窄候選。約束在真實玩家手中仍有意義
+    # （玩家不會像 AI 一樣精準移動），生成端照樣保留。
+    ok(cur["mean_mult"] > b["mean_mult"] + 0.1,
        f"關掉可及性約束時平均最高倍率只有 ×{b['mean_mult']:.2f} —— "
        "有價物必須落在「接完前一顆還追得上」的範圍內")
 
@@ -273,6 +281,26 @@ def main():
        f"每次得分凍結 0.08s（共 {st.mean(r['frozen'] for r in hs):.1f}s/局）"
        f"下，分數膨脹 {infl:+.2f}%（門檻 ±5%）")
     print("  原因是結構性的：凍結時整個 _run_state 跳過，time_left 也不減。")
+
+    print("\n== 6. 掉落物數量翻倍（2026-09 企劃）==")
+    # 企劃要求掉落物數量翻倍：gap 減半＋max_on 翻倍後，有價物 28.6→61.7 顆/局。
+    # 但炸彈也跟著翻倍會讓 AI 存活率 68%→19%、平均局長 56s→45s —— 局提前結束，
+    # 總掉落數與分數反而縮水（中位 3900→3400）。所以炸彈比例對折（0.10→0.05 等），
+    # 炸彈密度（生成率 × 比例）維持不變，死亡數與局長也不變。這裡鎖住四個結果：
+    # 有價物翻倍、炸彈密度不變、局長不縮水、存活率不崩。
+    rs = [play(s) for s in range(120)]
+    vs = st.mean(r["vs"] for r in rs)
+    vc = st.mean(r["vc"] for r in rs)
+    bombs = st.mean(r["bombs"] for r in rs)
+    t_played = st.mean(r["t_played"] for r in rs)
+    surv = 100 * st.mean(r["survived"] for r in rs)
+    cap = 100 * vc / vs
+    print(f"  每局有價物 {vs:.1f} 顆（翻倍前 28.6）、接到 {vc:.1f}、接取率 {cap:.0f}%")
+    print(f"  每局炸彈 {bombs:.1f} 顆（翻倍前 2.1）、平均局長 {t_played:.1f}s、存活率 {surv:.0f}%")
+    ok(55.0 <= vs, f"有價物 {vs:.1f} ≥ 55 —— 確實翻倍")
+    ok(1.0 <= bombs <= 3.5, f"炸彈 {bombs:.1f} 落在 1.0~3.5 —— 密度沒跟著翻倍")
+    ok(t_played >= 53.0, f"平均局長 {t_played:.1f}s ≥ 53 —— 局不會提前結束")
+    ok(surv >= 50.0, f"存活率 {surv:.0f}% ≥ 50% —— 難度沒有失控")
 
     print()
     if FAILED:

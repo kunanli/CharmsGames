@@ -67,11 +67,17 @@ const COMBO_MAX := 5                # 上限 ×5
 # 結果就是 Combo 這個「拉開分差的關鍵」整局都停在 ×1。
 # 把生成間隔獨立出來、讓同屏數平常低於上限，上限只在爆量時才咬到，
 # 才是「上限」該有的語意。難度遞增仍然由落速與炸彈比例負責。
+#
+# 掉落物數量翻倍（2026-09 企劃）：gap 全部減半、max_on 翻倍，同時
+# 炸彈比例對折（0.10→0.05 等）—— 只有炸彈不翻倍。原因見模擬第 6 節：
+# 連炸彈一起翻倍時 AI 存活率 68%→19%、平均局長 56s→45s，局提前結束，
+# 「翻倍」反而讓總掉落數與分數都縮水。對折後炸彈密度（生成率×比例）
+# 維持不變，有價物 28.6→61.7 顆/局、死亡數與局長不變。
 const PHASES := [
-	{"speed": 60.0,  "max_on": 2, "bomb": 0.10, "charm_mult": 1.0, "gap": Vector2(1.6, 2.2)},
-	{"speed": 80.0,  "max_on": 3, "bomb": 0.20, "charm_mult": 1.0, "gap": Vector2(1.4, 2.0)},
-	{"speed": 100.0, "max_on": 4, "bomb": 0.30, "charm_mult": 1.0, "gap": Vector2(1.2, 1.8)},
-	{"speed": 120.0, "max_on": 5, "bomb": 0.35, "charm_mult": 2.0, "gap": Vector2(1.0, 1.5)},
+	{"speed": 60.0,  "max_on": 4,  "bomb": 0.05,  "charm_mult": 1.0, "gap": Vector2(0.8, 1.1)},
+	{"speed": 80.0,  "max_on": 6,  "bomb": 0.10,  "charm_mult": 1.0, "gap": Vector2(0.7, 1.0)},
+	{"speed": 100.0, "max_on": 8,  "bomb": 0.15,  "charm_mult": 1.0, "gap": Vector2(0.6, 0.9)},
+	{"speed": 120.0, "max_on": 10, "bomb": 0.175, "charm_mult": 2.0, "gap": Vector2(0.5, 0.75)},
 ]
 const PHASE_LEN := 15.0
 const CHARM_EVERY := 15.0           # Charm 每 15 秒必定出現 1 個

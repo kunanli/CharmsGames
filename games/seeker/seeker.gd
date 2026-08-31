@@ -502,7 +502,7 @@ func _draw_hud() -> void:
 
 	# 石化倒數與連擊
 	if petrify_left > 0.0:
-		draw_string(font, Vector2(0, 34), "PETRIFIED %.1f" % petrify_left,
+		draw_string(font, Vector2(0, 55), "PETRIFIED %.1f" % petrify_left,
 			HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.MOON)
 		if break_chain > 0:
 			draw_string(font, Vector2(0, 46), "BREAK x%d" % break_chain,

@@ -18,27 +18,30 @@ SWING_PERIOD, RUSH_TIME, RUSH_SWING = 2.4, 15.0, 1.15
 LINE_MIN, LINE_MAX = 12.0, 205.0
 EXTEND_SPEED, RETRACT_EMPTY = 150.0, 210.0
 MOON_USES, MOON_BOOST = 3, 3.0
-SHALLOW, MID, DEEP = (112, 158), (162, 208), (212, 258)
-RESPAWN_DELAY = 2.2
+# 水層（y 範圍）：淺/中/深 = (112,168)/(162,208)/(212,256)，全區 (112,256)。
+# 注意可及範圍是倒三角形，越淺越窄（y=112 附近全寬只有約 90px）。
+SHALLOW, MID, DEEP, ANY = (112, 168), (162, 208), (212, 256), (112, 256)
+# 重生延遲由慢到快：開局（time_left≈60）15 秒 → 局末（time_left≈0）5 秒。
+RESPAWN_MIN, RESPAWN_MAX = 5.0, 15.0
 ROUND_TIME = 60.0
 DT = 1 / 60
 
-JUNK, SPEARL, BIGF, STAR, CHARM, ROCK, SHADOW = range(7)
+DIAMOND, CHARM, CLOUD, IMP = range(4)
 DEF = {
-    JUNK:   dict(score=10,  pull=165.0, size=(16, 16), name="雜魚"),
-    SPEARL: dict(score=50,  pull=165.0, size=(16, 16), name="小珍珠"),
-    BIGF:   dict(score=100, pull=58.0,  size=(32, 16), name="大魚"),
-    STAR:   dict(score=200, pull=105.0, size=(16, 16), name="星塵珍珠"),
-    CHARM:  dict(score=500, pull=105.0, size=(16, 16), name="Charm"),
-    ROCK:   dict(score=0,   pull=34.0,  size=(16, 16), name="石頭"),
-    SHADOW: dict(score=0,   pull=105.0, size=(16, 16), name="暗影猫魚"),
+    DIAMOND: dict(score=200, pull=85.0,  size=(32, 32), name="鑽石"),
+    CHARM:   dict(score=100, pull=85.0,  size=(32, 32), name="寶珠"),
+    CLOUD:   dict(score=10,  pull=160.0, size=(32, 32), name="雲朵"),
+    IMP:     dict(score=0,   pull=105.0, size=(16, 16), name="小惡魔"),
 }
-# 星塵珍珠與 Charm 是 GDD 明寫「每局固定 N 顆」的有限寶物，不補充。
-RESPAWN = {JUNK: SHALLOW, SPEARL: SHALLOW, BIGF: (162, 258),
-           ROCK: (162, 258), SHADOW: MID}
-PLAN = [(JUNK, 8, SHALLOW), (SPEARL, 5, SHALLOW), (BIGF, 4, (MID[0], DEEP[1])),
-        (STAR, None, MID), (CHARM, None, DEEP), (ROCK, 6, (MID[0], DEEP[1])),
-        (SHADOW, 2, MID)]
+# 四種全部都是「族群」：撈走後同種類回補，重生層位與生成一致
+# （鑽石中/深層、寶珠中層、雲朵/惡魔任意層）。
+RESPAWN = {DIAMOND: (MID[0], DEEP[1]), CHARM: MID, CLOUD: ANY, IMP: ANY}
+# 數量翻倍（11 → 22 件）。放置順序「帶最窄的先放」：寶珠的中層帶只有 46px
+# 高，被鑽石佔走就生不出來；鑽石帶（中/深層）大得多，放後面容錯高。
+PLAN = [(CHARM, 4, MID), (DIAMOND, 6, (MID[0], DEEP[1])),
+        (CLOUD, 8, ANY), (IMP, 4, ANY)]
+SPAWN_MARGIN = (4.0, 0.0)   # 兩段式：先要求 4px 空隙，擠不下退讓成不重疊
+SPAWN_TRIES = 500           # 翻倍數量＋32px 大物件後空間很緊，40 次會偶爾生不出來
 
 FAILED = []
 
@@ -87,14 +90,12 @@ def overlaps(c, items, m):
 def spawn_one(k, band, items, rng):
     w, h = DEF[k]["size"]
     vx = 0.0
-    if k == BIGF:
-        vx = 20.0 * rng.choice([1, -1])
-    elif k == SHADOW:
+    if k == IMP:
         vx = 12.0 * rng.choice([1, -1])
     # 兩段式：先要求 4px 空隙，擠不下就退讓成「不重疊即可」，
     # 否則族群補充在滿場時會靜靜失敗，魚群隨時間越來越稀。
-    for m in (4.0, 0.0):
-        for _ in range(40):
+    for m in SPAWN_MARGIN:
+        for _ in range(SPAWN_TRIES):
             it = Item(k, rng.uniform(WATER_L + w, WATER_R - w),
                       rng.uniform(band[0], band[1]), vx)
             if reachable(it) and not overlaps(it, items, m):
@@ -106,8 +107,7 @@ def spawn_one(k, band, items, rng):
 def populate(rng):
     items = []
     for k, n, band in PLAN:
-        cnt = n if n is not None else (rng.randint(4, 5) if k == STAR else rng.randint(2, 3))
-        for _ in range(cnt):
+        for _ in range(n):
             spawn_one(k, band, items, rng)
     return items
 
@@ -132,7 +132,7 @@ def band_area(y0, y1):
 
 def placement(rounds=300):
     print("== 1. 放置與死內容 ==")
-    want = {JUNK: 8, SPEARL: 5, BIGF: 4, ROCK: 6, SHADOW: 2}
+    want = {DIAMOND: 6, CHARM: 4, CLOUD: 8, IMP: 4}
     unreach, total, short = 0, 0, 0
     counts = {}
     for s in range(rounds):
@@ -158,16 +158,16 @@ def placement(rounds=300):
         a = band_area(*b)
         print(f"    {name} y={b[0]}-{b[1]}  {a:8.0f}px²  約放得下 {a/576:.0f} 個")
 
-    print("\n  族群補充可靠度（滿場時強制補 200 次）：")
+    print("\n  族群補充可靠度（滿場時強制補 200 次，種類與撈走的相同）：")
     rng = random.Random(9)
     its = populate(rng)
     good = 0
     for _ in range(200):
-        k = rng.choice(list(RESPAWN))
+        if not its:
+            break
+        k = its.pop(rng.randrange(len(its))).k   # 撈走 → 回補同一種（真實遊戲行為）
         if spawn_one(k, RESPAWN[k], its, rng):
             good += 1
-        if its:
-            its.pop(rng.randrange(len(its)))
     ok(good == 200, f"補充成功 {good}/200")
 
 
@@ -202,7 +202,9 @@ def play(seed, skill="good", respawn=True):
             if tgt is not None:
                 sc = DEF[tgt.k]["score"]
                 cost = (dist - LINE_MIN) / EXTEND_SPEED + (dist - LINE_MIN) / DEF[tgt.k]["pull"]
-                th = 40.0 if skill == "good" else 0.0
+                # 新經濟下 CP≈：鑽石 70、寶珠 30~40、雲朵 ≈6、惡魔 0。
+                # 門檻 30 = 會挑的玩家：只撈鑽石與寶珠，雲朵/惡魔放過。
+                th = 30.0 if skill == "good" else 0.0
                 if t_left < 8.0:
                     th = 15.0
                 if sc / max(cost, 0.01) >= th:
@@ -216,8 +218,10 @@ def play(seed, skill="good", respawn=True):
                 items.remove(carried)
                 state, boost = "retract", False
                 if respawn and carried.k in RESPAWN:
-                    resp.append([carried.k, RESPAWN_DELAY, RESPAWN[carried.k]])
-                if moon > 0 and DEF[carried.k]["pull"] <= 105.0 and DEF[carried.k]["score"] >= 200:
+                    # 由慢到快：開局 15 秒 → 局末 5 秒
+                    delay = RESPAWN_MIN + (RESPAWN_MAX - RESPAWN_MIN) * (t_left / ROUND_TIME)
+                    resp.append([carried.k, delay, RESPAWN[carried.k]])
+                if moon > 0 and DEF[carried.k]["pull"] <= 105.0 and DEF[carried.k]["score"] >= 100:
                     moon -= 1
                     boost = True
                 elif moon > 0 and DEF[carried.k]["score"] == 0:
@@ -232,7 +236,7 @@ def play(seed, skill="good", respawn=True):
             if L <= LINE_MIN:
                 L = LINE_MIN
                 if carried is not None:
-                    if carried.k == SHADOW:
+                    if carried.k == IMP:
                         t_left = max(0.0, t_left - 3.0)
                     else:
                         score += DEF[carried.k]["score"]
@@ -249,11 +253,11 @@ def scores(rounds=40):
         print(f"  {label:8s} 中位 {xs[rounds//2]:5d}  最高 {xs[-1]:5d}  "
               f"平均撈 {st.mean(r[1] for r in rs):.0f} 件")
 
-    print("\n  沒有族群補充會怎樣（GDD 原始設定）：")
+    print("\n  沒有族群補充會怎樣：")
     xs = sorted(play(s, "greedy", respawn=False)[0] for s in range(rounds))
     print(f"    中位 {xs[rounds//2]}  最高 {xs[-1]}")
-    ok(xs[-1] < 3300,
-       "無補充時分數天花板就是盤面總值（約 3070）—— "
+    ok(xs[-1] < 2000,
+       "無補充時分數天花板就是盤面總值（6×200+4×100+8×10=1680）—— "
        "這就是補充機制存在的理由")
 
 

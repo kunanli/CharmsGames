@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://eeucer1s3ceh"
-path="res://.godot/imported/F_stardust.png-c880ccd3bde0086760350949ebe487c1.ctex"
+uid="uid://d3cb4poxc0mkr"
+path="res://.godot/imported/S_P_Walk_2.png-630b879d78743dd44be2374313b8215b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/fishing/F_stardust.png"
-dest_files=["res://.godot/imported/F_stardust.png-c880ccd3bde0086760350949ebe487c1.ctex"]
+source_file="res://assets/seeker/playerAnim/walk/S_P_Walk_2.png"
+dest_files=["res://.godot/imported/S_P_Walk_2.png-630b879d78743dd44be2374313b8215b.ctex"]
 
 [params]
 

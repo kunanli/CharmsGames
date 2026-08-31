@@ -18,7 +18,7 @@ signal round_finished(score: int, duration: float, game_over: bool)
 
 enum State { READY, PLAYING, RESULT }
 enum Hook { SWING, EXTEND, RETRACT }
-enum Kind { JUNK_FISH, SMALL_PEARL, BIG_FISH, STARDUST, CHARM, ROCK, SHADOW_FISH }
+enum Kind { DIAMOND, CHARM, CLOUD, IMP }
 
 const ROUND_TIME := 60.0
 # 開場停頓：ReadyGo 淡入 0.25s＋動畫 24幀@14fps≈1.71s＋0.05s 緩衝（播完才開場）
@@ -28,6 +28,12 @@ const READY_TIME := ReadyGo.FADE_SECONDS + ReadyGo.ANIM_SECONDS + 0.05
 const SCREEN := Vector2(480, 270)
 const SURFACE_Y := 96.0                    # 水面線：天空 96 / 水下 174
 const PIVOT := Vector2(240.0, 96.0)        # 鉤子支點（船底）
+
+# 船＋露娜整張貼圖（F_Luna.png，300×300：露娜頭頂在貼圖 y=30、船底龍骨在 y=269）。
+# 顯示大小 60×60：船體寬約 51px（貼近舊版 56px 佔位），露娜頭頂落在 y≈42、
+# 不會被 HUD 分數框（底緣 y=40.5）蓋到。換貼圖時只需調 LUNA_KEEL。
+const LUNA_SIZE := Vector2(60.0, 60.0)
+const LUNA_KEEL := 269.0                   # 船底龍骨在貼圖座標的 y（對齊水面線）
 const WATER_L := 6.0
 const WATER_R := 474.0
 const WATER_B := 266.0
@@ -47,32 +53,33 @@ const MOON_USES := 3
 const MOON_BOOST := 3.0                    # 勾到寶物時收線 ×3
 
 # ── 水層（y 範圍）───────────────────────────────────────
+# 淺/中/深 = (112,168)/(162,208)/(212,256)，全區 (112,256)。
 # 注意水層不是等面積的：鉤子從 (240,96) 以 ±75° 掃，可及範圍是一個倒三角形，
-# 越淺越窄。淺層實際只有約 10000px²（放得下約 13 個），中層與深層各有其兩倍。
-# 淺層的物件數要照這個來配，不然會有一堆生不出來。
-const SHALLOW := Vector2(112, 158)
+# 越淺越窄（y=112 附近全寬只有約 90px）。物件數要照這個來配，
+# 不然會有一堆生不出來 —— 翻倍數量＋32px 大物件是模擬試出來的上限。
+const SHALLOW := Vector2(112, 168)
 const MID := Vector2(162, 208)
-const DEEP := Vector2(212, 258)
+const DEEP := Vector2(212, 256)
+const ANY := Vector2(112, 256)
 
 # ── 族群補充 ────────────────────────────────────────────
-# 這些種類撈走後會有新的游進來，回到同一個水層。
+# 四種物件撈走後都會回補（同一種類、同一層位），重生延遲 5~15 秒、
+# 隨剩餘時間由慢到快：開局撈走的等最久（15 秒），局末很快就補回來（5 秒）。
 #
-# 為什麼要有這個：GDD 把星塵珍珠固定 4~5 顆、Charm 固定 2~3 顆，
-# 盤面總值上限因此只有約 3070 分 —— 不補充的話，撈得再快也會撞到
-# 天花板（模擬過：抓走盤面 91% 的機器人也只有 2800）。
-# 有限的寶物（星塵珍珠／Charm）維持 GDD 的固定顆數不動，只讓魚群回補，
-# 這樣 60 秒的上限就取決於玩家手速而不是盤面大小，也符合「湖裡的魚會游進來」。
-const RESPAWN_DELAY := 2.2
+# 為什麼要有這個：盤面總值上限只有 1680 分（6×200+4×100+8×10），
+# 不補充的話，撈得再快也會撞到天花板（模擬過：照單全收的機器人
+# 清完盤面也只有 1680）。
+const RESPAWN_MIN := 5.0
+const RESPAWN_MAX := 15.0
 const RESPAWN_KINDS := {
-	Kind.JUNK_FISH: SHALLOW,
-	Kind.SMALL_PEARL: SHALLOW,
-	Kind.BIG_FISH: Vector2(162, 258),
-	Kind.ROCK: Vector2(162, 258),
-	Kind.SHADOW_FISH: MID,
+	Kind.DIAMOND: Vector2(MID.x, DEEP.y),
+	Kind.CHARM: MID,
+	Kind.CLOUD: ANY,
+	Kind.IMP: ANY,
 }
 
 
-## 水下的一個物件。大魚與暗影猫魚會橫向游動，其餘固定不動。
+## 水下的一個物件。小惡魔會橫向游動、放線時主動靠近鉤子，其餘固定不動。
 class Item:
 	var kind: int
 	var pos := Vector2.ZERO
@@ -118,27 +125,33 @@ var _rushed := false                # 最後 15 秒的加速只提示一次
 var _line_flash := 0.0              # 勾中時釣線閃一下（GDD 指定的表現）
 var _score_shown := 0.0             # HUD 上滾動中的分數
 
+# 露娜視覺的替換接口：目前直接畫 F_Luna.png（船＋露娜一體，見 _draw_boat）。
+# 之後要換成 tscn 動畫場景做動畫切換時，把場景實例 add_child 掛到這裡：
+#   luna_view = load("res://.../luna.tscn").instantiate()
+#   add_child(luna_view)
+# _process 每幀會把它對齊到 _luna_anchor() + _juice.world_offset()，
+# _draw_boat() 偵測到 luna_view 非 null 就跳過貼圖、由動畫節點自己畫
+# （AnimatedSprite2D／自訂 _draw 都行）。
+# 注意：luna_view 是純視覺節點，position 只當繪製錨點、不參與任何玩法判定，
+# 所以把畫面位移寫進它的 position 是安全的（跟 player/cat 那套不同）。
+var luna_view: Node2D = null
+
 var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
+var s_luna: Texture2D = preload("res://assets/fishing/F_Luna.png")
 var _textures := {
-	Kind.JUNK_FISH: preload("res://assets/catch/CC_04.png"),
-	Kind.SMALL_PEARL: preload("res://assets/fishing/F_Perl1.png"),
-	Kind.STARDUST: preload("res://assets/fishing/F_stardust.png"),
-	Kind.CHARM: preload("res://assets/fishing/F_CHARM.png"),
-	Kind.ROCK: preload("res://assets/catch/CC_05.png"),
-	Kind.SHADOW_FISH: preload("res://assets/fishing/F_SHADOW_FISH.png"),
-	Kind.BIG_FISH: preload("res://assets/fishing/F_SHADOW_FISH.png"),
+	Kind.DIAMOND: preload("res://assets/fishing/F_Diamond_s.png"),
+	Kind.CHARM: preload("res://assets/fishing/F_Charm_s.png"),
+	Kind.CLOUD: preload("res://assets/fishing/F_Cloud_s.png"),
+	Kind.IMP: preload("res://assets/fishing/F_Imp.png"),
 }
 
 var _item_sizes := {
-	Kind.JUNK_FISH: Vector2(30, 30),
-	Kind.SMALL_PEARL: Vector2(30, 30),
-	Kind.STARDUST: Vector2(35, 35),
-	Kind.CHARM: Vector2(20, 20),
-	Kind.ROCK: Vector2(40, 40),
-	Kind.SHADOW_FISH: Vector2(20, 20),
-	Kind.BIG_FISH: Vector2(35, 35),
+	Kind.DIAMOND: Vector2(32, 32),
+	Kind.CHARM: Vector2(32, 32),
+	Kind.CLOUD: Vector2(32, 32),
+	Kind.IMP: Vector2(16, 16),
 }
 
 
@@ -150,19 +163,14 @@ func _ready() -> void:
 	_start_round()
 
 
-## 物件資料表（GDD 的「水下物件表」）
-## 收線速度就是 GDD 的「重量」欄位：輕→快、中→普通、重→慢、極重→極慢。
+## 物件資料表
+## 收線速度就是「重量」欄位：輕→快、中→普通、重→慢、極重→極慢。
 func _build_defs() -> void:
 	_defs = {
-		Kind.JUNK_FISH:   {"score": 10,  "pull": 165.0, "size": Vector2(16, 16), "col": Palette.WALL,       "label": "FISH"},
-		Kind.SMALL_PEARL: {"score": 50,  "pull": 165.0, "size": Vector2(16, 16), "col": Palette.PEARL,      "label": "PEARL"},
-		# GDD 寫「大魚 16×32」，但橫向游動的魚應該是寬大於高，
-		# 這裡採 32×16。若美術真的要交 16 寬 32 高的直立魚，改這一行即可。
-		Kind.BIG_FISH:    {"score": 100, "pull": 58.0,  "size": Vector2(32, 16), "col": Palette.WALL_DARK,  "label": "BIG FISH"},
-		Kind.STARDUST:    {"score": 200, "pull": 105.0, "size": Vector2(16, 16), "col": Palette.PEARL,      "label": "STARDUST"},
-		Kind.CHARM:       {"score": 500, "pull": 105.0, "size": Vector2(16, 16), "col": Palette.GOLD,       "label": "CHARM"},
-		Kind.ROCK:        {"score": 0,   "pull": 34.0,  "size": Vector2(16, 16), "col": Palette.FAR,        "label": "ROCK"},
-		Kind.SHADOW_FISH: {"score": 0,   "pull": 105.0, "size": Vector2(16, 16), "col": Palette.CAT,        "label": "-3 SEC"},
+		Kind.DIAMOND: {"score": 200, "pull": 85.0,  "size": Vector2(32, 32), "col": Palette.PEARL, "label": "DIAMOND"},
+		Kind.CHARM:   {"score": 100, "pull": 85.0,  "size": Vector2(32, 32), "col": Palette.GOLD,  "label": "CHARM"},
+		Kind.CLOUD:   {"score": 10,  "pull": 160.0, "size": Vector2(32, 32), "col": Palette.FAR,   "label": "CLOUD"},
+		Kind.IMP:     {"score": 0,   "pull": 105.0, "size": Vector2(16, 16), "col": Palette.CAT,   "label": "-3 SEC"},
 	}
 
 
@@ -171,7 +179,7 @@ func _score_of(k: int) -> int:
 
 
 func _is_treasure(k: int) -> bool:
-	# 月光能量要判斷「寶物還是廢物」：有分數的是寶物，石頭與暗影猫魚是廢物
+	# 月光能量要判斷「寶物還是廢物」：有分數的是寶物，小惡魔是廢物
 	return _score_of(k) > 0
 
 
@@ -209,22 +217,18 @@ func _reset_hook() -> void:
 	moon_active = false
 
 
-## 依 GDD 的「配置」欄鋪放水下物件。
-##
-## 星塵珍珠與 Charm 是 GDD 明寫「每局固定 N 顆」的有限寶物，撈完就沒了；
-## 雜魚／小珍珠／大魚／石頭／暗影猫魚屬於「族群」，撈走後會有新的游進來
-## （見 _schedule_respawn）。這是為了讓 60 秒的計分上限取決於玩家手速，
-## 而不是取決於盤面總值 —— 詳見下方 RESPAWN_KINDS 的註解。
+## 依水層配置鋪放水下物件。四種物件都屬於「族群」，
+## 撈走後會有新的游進來（見 _schedule_respawn）—— 這是為了讓 60 秒的
+## 計分上限取決於玩家手速，而不是取決於盤面總值。
 func _populate() -> void:
 	items.clear()
 	_respawns.clear()
-	_spawn_many(Kind.JUNK_FISH, 8, SHALLOW)                      # 淺層，數量最多
-	_spawn_many(Kind.SMALL_PEARL, 5, SHALLOW)                    # 淺層
-	_spawn_many(Kind.BIG_FISH, 4, Vector2(MID.x, DEEP.y))        # 中／深層，會游動
-	_spawn_many(Kind.STARDUST, _rng.randi_range(4, 5), MID)      # 中層，固定 4~5 顆
-	_spawn_many(Kind.CHARM, _rng.randi_range(2, 3), DEEP)        # 深層，固定 2~3 顆
-	_spawn_many(Kind.ROCK, 6, Vector2(MID.x, DEEP.y))            # 中／深層干擾物
-	_spawn_many(Kind.SHADOW_FISH, 2, MID)                        # 中層，會主動靠近鉤子
+	# 帶最窄的先放：寶珠的中層帶只有 46px 高，被鑽石佔走就生不出來；
+	# 鑽石帶（中/深層）大得多，放後面容錯高。
+	_spawn_many(Kind.CHARM, 4, MID)                        # 中層
+	_spawn_many(Kind.DIAMOND, 6, Vector2(MID.x, DEEP.y))   # 中／深層
+	_spawn_many(Kind.CLOUD, 8, ANY)                        # 任意層
+	_spawn_many(Kind.IMP, 4, ANY)                          # 任意層，會游動
 
 
 func _spawn_many(kind: int, count: int, band: Vector2) -> void:
@@ -240,15 +244,15 @@ func _spawn_one(kind: int, band: Vector2) -> void:
 	it.kind = kind
 	it.size = size
 	it.phase = _rng.randf() * TAU
-	if kind == Kind.BIG_FISH:
-		it.vx = 20.0 * (1.0 if _rng.randf() < 0.5 else -1.0)
-	elif kind == Kind.SHADOW_FISH:
+	if kind == Kind.IMP:
 		it.vx = 12.0 * (1.0 if _rng.randf() < 0.5 else -1.0)
 
 	# 兩段式：先要求物件之間留 4px 空隙，真的擠不下就退讓成「不重疊即可」。
 	# 不這樣做的話，族群補充在滿場時會靜靜地失敗，魚群會隨著時間越來越稀。
+	# 嘗試 500 次：翻倍數量＋32px 大物件後空間很緊，40 次會偶爾生不出來
+	# （模擬：500 次 + 先小後大的放置順序 = 10000 局零失敗）。
 	for margin in [4.0, 0.0]:
-		for _try in 40:
+		for _try in 500:
 			it.pos = Vector2(
 				_rng.randf_range(WATER_L + size.x, WATER_R - size.x),
 				_rng.randf_range(band.x, band.y))
@@ -280,10 +284,13 @@ func _overlaps(candidate: Item, margin: float) -> bool:
 
 
 ## 族群類的物件被撈走後，隔一段時間會有新的游進來。
+## 重生延遲 5~15 秒、隨剩餘時間由慢到快：開局撈走的等最久（15 秒），
+## 局末很快就補回來（5 秒）。
 func _schedule_respawn(kind: int) -> void:
 	if not RESPAWN_KINDS.has(kind):
 		return
-	_respawns.append({"kind": kind, "timer": RESPAWN_DELAY, "band": RESPAWN_KINDS[kind]})
+	var delay := RESPAWN_MIN + (RESPAWN_MAX - RESPAWN_MIN) * (time_left / ROUND_TIME)
+	_respawns.append({"kind": kind, "timer": delay, "band": RESPAWN_KINDS[kind]})
 
 
 func _tick_respawns(delta: float) -> void:
@@ -310,6 +317,9 @@ func _process(delta: float) -> void:
 	# 分數滾動：小魚幾乎瞬間，Charm（+500）會滾個 0.3 秒
 	_score_shown = move_toward(_score_shown, float(score),
 		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
+	if luna_view != null:
+		# 動畫場景對齊到船底龍骨（含鏡頭位移；純視覺，見 luna_view 註解）
+		luna_view.position = _luna_anchor() + _juice.world_offset()
 	queue_redraw()
 
 
@@ -423,8 +433,9 @@ func _extend(delta: float) -> void:
 			carried.pos = tip + Vector2(0, 6)
 			items.erase(it)
 			_schedule_respawn(it.kind)   # 族群類的，讓新的一隻在收線期間游進來
-			# 力道與重量成反比（pull 就是 GDD 的重量欄）：還沒看清楚就先
-			# 感覺到鉤到什麼。石頭最重最慢最不值錢，撞得最兇。
+			# 力道與重量成反比（pull 就是重量欄）：還沒看清楚就先
+			# 感覺到鉤到什麼。鑽石與寶珠最重（收得最慢）撞得最兇，
+			# 雲朵最輕幾乎沒感覺。
 			var pull := float(_defs[it.kind]["pull"])
 			var hit := clampf(0.75 - pull / 320.0, 0.20, 0.75)
 			_juice.kick(hit, _hook_dir())
@@ -468,8 +479,8 @@ func _retract(delta: float) -> void:
 
 ## 獵物上船：加分或扣時間
 func _land(it: Item) -> void:
-	if it.kind == Kind.SHADOW_FISH:
-		AudioManager.play_sfx("fishing_boom")        # 暗影猫魚：扣時間
+	if it.kind == Kind.IMP:
+		AudioManager.play_sfx("fishing_boom")        # 小惡魔：扣時間
 		time_left = maxf(0.0, time_left - 3.0)
 		_juice.kick(0.80)
 		_juice.freeze(0.12)
@@ -485,7 +496,7 @@ func _land(it: Item) -> void:
 				_juice.kick(0.55)
 				_juice.freeze(0.10)
 				_fx.burst(PIVOT, 22, Palette.GOLD, 115.0, 0.75, 3.0, 0.55)
-			elif it.kind == Kind.STARDUST:
+			elif it.kind == Kind.DIAMOND:
 				_juice.kick(0.35)
 				_juice.freeze(0.05)
 				_fx.burst(PIVOT, 12, Palette.PEARL, 85.0, 0.55, 2.0, 0.5)
@@ -510,7 +521,7 @@ func _move_items(delta: float) -> void:
 		if it.vx == 0.0:
 			continue
 
-		if it.kind == Kind.SHADOW_FISH and line_out:
+		if it.kind == Kind.IMP and line_out:
 			# 全場唯一會主動靠近鉤子的目標：線放出來時往鉤頭靠
 			var toward := signf(tip.x - it.pos.x)
 			it.pos.x += toward * 26.0 * delta
@@ -616,6 +627,21 @@ func _draw_item(it: Item) -> void:
 
 	var size : Vector2 = _item_sizes.get(it.kind, texture.get_size())
 	_draw_centered_texture(texture, it.pos, size)
+	if it.kind == Kind.DIAMOND:
+		_draw_diamond_flash(it)
+
+
+## 鑽石的表面白光閃爍：二值閃（0.4 秒週期、亮 0.2 秒），亮的時候在貼圖上疊
+## 一個白色十字星芒＋中心白點。用 it.phase 驅動 —— 每顆初始相位隨機，
+## 不會整場同步閃；只讀相位不改狀態，掛在鉤上收線時照樣閃。
+func _draw_diamond_flash(it: Item) -> void:
+	if fmod(it.phase, 0.4) >= 0.2:
+		return
+	var s := it.size.x
+	var col := Color(Palette.TEXT, 0.85)
+	draw_line(it.pos + Vector2(-s * 0.38, 0), it.pos + Vector2(s * 0.38, 0), col, 1.0)
+	draw_line(it.pos + Vector2(0, -s * 0.38), it.pos + Vector2(0, s * 0.38), col, 1.0)
+	draw_circle(it.pos, s * 0.13, col)
 
 
 
@@ -637,17 +663,24 @@ func _draw_line_and_hook() -> void:
 		_draw_item(carried)
 
 
+## 露娜（船底龍骨）在遊戲座標的位置：船底中央對齊水面線。
+## 鉤子支點 PIVOT 也在這裡，釣線從船底正下方出發。
+func _luna_anchor() -> Vector2:
+	return Vector2(PIVOT.x, SURFACE_Y)
+
+
 func _draw_boat() -> void:
-	# 船身
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(212, SURFACE_Y - 10), Vector2(268, SURFACE_Y - 10),
-		Vector2(260, SURFACE_Y), Vector2(220, SURFACE_Y)]), Palette.NEAR)
-	draw_line(Vector2(212, SURFACE_Y - 10), Vector2(268, SURFACE_Y - 10),
-		Palette.WALL_DARK, 1.0)
-	# 露娜（坐姿 placeholder）＋帽上的心形徽章
-	draw_rect(Rect2(233, SURFACE_Y - 26, 14, 16), Palette.LUNA, false, 1.0)
-	draw_rect(Rect2(230, SURFACE_Y - 32, 20, 6), Palette.LUNA)
-	draw_rect(Rect2(239, SURFACE_Y - 31, 2, 2), Palette.LUNA_LIGHT)
+	# 露娜的統一繪製入口：動畫場景（luna_view）掛上後由它接管，跳過貼圖
+	if luna_view != null:
+		return
+	if s_luna == null:
+		return
+	# 整張貼圖（船＋露娜一體）：船底龍骨（貼圖 y=269）對齊水面線
+	var s := LUNA_SIZE.x / s_luna.get_width()
+	var top := SURFACE_Y - LUNA_KEEL * s
+	draw_texture_rect(s_luna,
+		Rect2(PIVOT.x - LUNA_SIZE.x * 0.5, top, LUNA_SIZE.x, s_luna.get_height() * s),
+		false)
 
 
 func _draw_hud() -> void:
@@ -668,12 +701,12 @@ func _draw_hud() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.LUNA)
 	# 鉤子深度（水面下幾 px）
 	var depth := int(maxf(0.0, _hook_pos().y - SURFACE_Y))
-	draw_string(font, Vector2(0, 18), "DEPTH %03d" % depth,
-		HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, 12, Palette.TEXT_DIM)
+	draw_string(font, Vector2(0, 35), "DEPTH %03d" % depth,
+		HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, 12, Palette.LUNA)
 
 	# 月光能量剩餘次數：右下三顆月亮
 	for i in MOON_USES:
-		var c := Vector2(432 + i * 14, 254)
+		var c := Vector2(432 + i * 14, 244)
 		if i < moon_left:
 			draw_circle(c, 5.0, Palette.MOON)
 			draw_circle(c + Vector2(-2, -1), 4.0, Palette.NIGHT)

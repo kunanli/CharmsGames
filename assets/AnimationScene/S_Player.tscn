@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://c8hpmnyxquqr1"]
+
+[ext_resource type="Texture2D" uid="uid://cc2538u1efdtx" path="res://assets/seeker/playerAnim/walk/S_P_Walk_1.png" id="1_khsks"]
+[ext_resource type="Texture2D" uid="uid://d3cb4poxc0mkr" path="res://assets/seeker/playerAnim/walk/S_P_Walk_2.png" id="2_ycd4w"]
+[ext_resource type="Texture2D" uid="uid://b6s184q0x420c" path="res://assets/seeker/playerAnim/walk/S_P_Walk_3.png" id="3_vawpc"]
+[ext_resource type="Texture2D" uid="uid://bwhri5n350mp6" path="res://assets/seeker/playerAnim/walk/S_P_Walk_4.png" id="4_dnfbg"]
+[ext_resource type="Texture2D" uid="uid://cdqta5r4w555t" path="res://assets/seeker/playerAnim/walk/S_P_Walk_5.png" id="5_qm11f"]
+[ext_resource type="Texture2D" uid="uid://inywhdykl7nn" path="res://assets/seeker/playerAnim/walk/S_P_Walk_6.png" id="6_ap7vv"]
+[ext_resource type="Texture2D" uid="uid://bhr3gq5b07u8n" path="res://assets/seeker/playerAnim/walk/S_P_Walk_7.png" id="7_m4v3b"]
+[ext_resource type="Texture2D" uid="uid://cxf0egd0fhi74" path="res://assets/seeker/playerAnim/walk/S_P_Walk_8.png" id="8_hg47p"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_wvhbo"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_khsks")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_ycd4w")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_vawpc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_dnfbg")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_qm11f")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_ap7vv")
+}, {
+"duration": 1.0,
+"texture": ExtResource("7_m4v3b")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_hg47p")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 10.0
+}]
+
+[node name="SPlayer" type="Node2D" unique_id=1892157184]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1847871107]
+sprite_frames = SubResource("SpriteFrames_wvhbo")
+animation = &"walk"
+frame_progress = 0.9084438
+
+[node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=1441491958]
