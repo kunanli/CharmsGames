@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cujwfx5ltygn5"
-path="res://.godot/imported/S_Heart.png-e906aeced90647038185708bda618a16.ctex"
+uid="uid://vbxdxg8t4neo"
+path="res://.godot/imported/F_IDLE_13.png-d5563c486e85a8405a7bf7ced99c9088.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/S_Heart.png"
-dest_files=["res://.godot/imported/S_Heart.png-e906aeced90647038185708bda618a16.ctex"]
+source_file="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_13.png"
+dest_files=["res://.godot/imported/F_IDLE_13.png-d5563c486e85a8405a7bf7ced99c9088.ctex"]
 
 [params]
 

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cujwfx5ltygn5"
-path="res://.godot/imported/S_Heart.png-e906aeced90647038185708bda618a16.ctex"
+uid="uid://b33pginvp8a74"
+path="res://.godot/imported/F_Hurt_4.png-a91780266097a3629c138e5fd549c00c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/S_Heart.png"
-dest_files=["res://.godot/imported/S_Heart.png-e906aeced90647038185708bda618a16.ctex"]
+source_file="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_4.png"
+dest_files=["res://.godot/imported/F_Hurt_4.png-a91780266097a3629c138e5fd549c00c.ctex"]
 
 [params]
 

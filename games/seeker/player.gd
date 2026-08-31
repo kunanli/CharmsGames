@@ -26,28 +26,63 @@ const SQUASH_TIME := 0.20
 var _squash := 0.0
 var _squash_axis := Vector2.ZERO
 
-# ─────────────────────────────────────────────────────────
-# 跑步動畫：S_Player_walk.png 是畫師的 8 倍大圖（2 行 × 4 列）。
-#   列 = 行走循環 4 幀；行 = 兩個循環版本，WALK_ROW 換一個字即可切換。
-#   幀源矩形已做「腳底貼底 + 水平居中」歸一化，消除畫師每幀的放置誤差，
-#   播放起來才不會左右上下抖。
-# ─────────────────────────────────────────────────────────
-const WALK_ROW := 0
-## 顯示尺寸：貼圖自適應縮放到 16×32（美術規格的幀大小，也正好是走廊寬度）——
-## 比例取 min(16/寬, 32/高)，不變形地塞進 16×32 的框裡。
-const SHOW_SIZE := Vector2(16.0, 32.0)
-## 幀播放順序：源圖的列是從右往左排的，照 0,1,2,3 播會倒著走（實機確認）。
-const FRAME_ORDER := [3, 2, 1, 0]
-const ANIM_FPS := 8.0
-const WALK_FRAMES := [
-	[Rect2(48, 50, 331, 424), Rect2(424, 50, 331, 424), Rect2(824, 50, 331, 424), Rect2(1184, 50, 331, 424)],
-	[Rect2(54, 532, 337, 429), Rect2(439, 532, 337, 429), Rect2(826, 532, 337, 429), Rect2(1188, 532, 337, 429)],
+# ─────────────────────────────────────────────
+# 跑步動畫：S_Player.tscn（畫師交付的 walk 動畫場景，8 幀）。
+# 動畫不自己播 —— 由 _process 用場景定義的 fps 手動推幀：
+# set_process(false) 凍結角色時畫面也凍住，跟狀態機的慣例一致。
+# FRAME_BOXES 是每幀的角色包圍盒（alpha>32，在 464×464 畫布上量的），
+# 用於「腳底貼底 + 水平居中」歸一化 —— 畫師每幀的擺位有 ±20px 誤差，
+# 不歸一化播放起來會上下左右抖（跟舊 WALK_FRAMES 同一套做法；
+# 畫師改圖時用腳本重測這 8 個數字）。
+# ─────────────────────────────────────────────
+const S_PLAYER_SCENE := preload("res://assets/AnimationScene/S_Player.tscn")
+const ANIM_NAME := &"walk"
+## 顯示寬度：貼圖自適應縮放到 16px 寬（走廊寬度，跟舊版同一條規則），
+## 高度照比例 —— 新圖比舊圖寬，實際高約 18px。腳底錨點維持 +8。
+const SHOW_W := 16.0
+const FRAME_BOXES := [
+	Rect2(72, 39, 363, 397),   # S_P_Walk_1.png
+	Rect2(107, 38, 334, 404),  # S_P_Walk_2.png
+	Rect2(106, 40, 329, 390),  # S_P_Walk_3.png
+	Rect2(81, 37, 359, 397),   # S_P_Walk_4.png
+	Rect2(77, 30, 361, 399),   # S_P_Walk_5.png
+	Rect2(108, 39, 334, 404),  # S_P_Walk_6.png
+	Rect2(94, 39, 338, 379),   # S_P_Walk_7.png
+	Rect2(72, 39, 363, 397),   # S_P_Walk_8.png
 ]
 
-var s_player_walk: Texture2D = preload("res://assets/seeker/S_Player_walk.png")
 var facing := Vector2i.DOWN   # 最後的移動方向（源圖角色朝左，向右移動時水平鏡像）
-var _frame := 0
 var _anim_time := 0.0
+var _view: Node2D
+var _anim: AnimatedSprite2D
+var _show_scale := 1.0        # 所有幀共用的縮放（取最寬那幀當基準）
+
+
+func _ready() -> void:
+	_view = S_PLAYER_SCENE.instantiate()
+	_anim = _view.get_node("AnimatedSprite2D") as AnimatedSprite2D
+	_anim.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var max_w := 0.0
+	for b in FRAME_BOXES:
+		max_w = maxf(max_w, b.size.x)
+	_show_scale = SHOW_W / max_w
+	# 縮放必須在第一幀就設好：READY 期間 _process 沒在跑，_update_anim 不會
+	# 執行 —— 沒設的話開場會以貼圖原尺寸（464×464）畫出一個巨無霸露娜。
+	_anim.scale = Vector2(_show_scale, _show_scale)
+	_anim.pause()                          # 幀由 _process 手動推進（見 _update_anim）
+	_anim.frame_changed.connect(_apply_frame_anchor)
+	_apply_frame_anchor()
+	add_child(_view)
+
+
+## 幀歸一化：每幀的角色中心對到玩家座標（x=0）、腳底對到 +8（跟舊版錨點一致）。
+## centered=true 的畫布中心落在 offset，換算回未縮放座標要 ÷_show_scale。
+func _apply_frame_anchor() -> void:
+	var b: Rect2 = FRAME_BOXES[_anim.frame % FRAME_BOXES.size()]
+	var ts: Vector2 = _anim.sprite_frames.get_frame_texture(ANIM_NAME, _anim.frame).get_size()
+	_anim.offset = Vector2(
+		ts.x * 0.5 - b.get_center().x,
+		ts.y * 0.5 - b.end.y + 8.0 / _show_scale)
 
 
 func setup(m: Maze, start_cell: Vector2i) -> void:
@@ -65,8 +100,9 @@ func reset_direction() -> void:
 	blocked = false
 	_squash = 0.0
 	facing = Vector2i.DOWN
-	_frame = 0
 	_anim_time = 0.0
+	if _anim.frame != 0:
+		_anim.frame = 0
 
 
 func _process(delta: float) -> void:
@@ -74,8 +110,6 @@ func _process(delta: float) -> void:
 		return
 	if _squash > 0.0:
 		_squash = maxf(0.0, _squash - delta / SQUASH_TIME)
-		# 擠壓動畫要在 0.2 秒內連續重繪（position 變換不保證觸發 _draw 重跑）
-		queue_redraw()
 	_read_input()
 	_move(delta)
 	_update_anim(delta)
@@ -86,14 +120,23 @@ func _update_anim(delta: float) -> void:
 	if dir != Vector2i.ZERO:
 		facing = dir
 		_anim_time += delta
-		var f := int(_anim_time * ANIM_FPS) % WALK_FRAMES[WALK_ROW].size()
-		if f != _frame:
-			_frame = f
-			queue_redraw()
+		var fps := _anim.sprite_frames.get_animation_speed(ANIM_NAME)
+		var f := int(_anim_time * fps) % FRAME_BOXES.size()
+		if f != _anim.frame:
+			_anim.frame = f
 	elif want != Vector2i.ZERO:
 		facing = want   # 頂著牆按方向鍵時也轉向
 	else:
 		_anim_time = 0.0
+		if _anim.frame != 0:
+			_anim.frame = 0
+	# 鏡像：源圖角色朝左，向右移動時水平鏡像（scale.x 負號繞原點鏡像；
+	# 角色水平居中在 x=0，鏡像就原地翻面）。擠壓變形疊在縮放上。
+	var flip := -1.0 if facing.x > 0 else 1.0
+	var sq := Fx.squash(_squash, _squash_axis)
+	var want_scale := Vector2(_show_scale * flip * sq.x, _show_scale * sq.y)
+	if want_scale != _anim.scale:
+		_anim.scale = want_scale
 
 
 func _read_input() -> void:
@@ -153,24 +196,3 @@ func _arrive_at_cell() -> void:
 		_squash_axis = Vector2(dir)
 		bumped.emit(dir)
 		dir = Vector2i.ZERO   # 前面是牆，停下來
-
-
-func _draw() -> void:
-	var src: Rect2 = WALK_FRAMES[WALK_ROW][FRAME_ORDER[_frame]]
-	# 自適應縮放（8 倍大圖 → 塞進 16×32 的顯示框）與左右鏡像合成進 transform。
-	# 擠壓變形：撞到哪一邊就往哪一邊壓扁。這比震動的資訊量更大 ——
-	# 玩家看得出是撞到左牆還右牆，而且畫面完全沒動，不會暈。
-	var s := minf(SHOW_SIZE.x / src.size.x, SHOW_SIZE.y / src.size.y)
-	var scale := Vector2(s, s)
-	# 源圖角色本身朝左：向右移動時才需要水平鏡像
-	if facing.x > 0:
-		scale.x = -scale.x
-	if _squash > 0.0:
-		scale *= Fx.squash(_squash, _squash_axis)
-	draw_set_transform(Vector2.ZERO, 0.0, scale)
-	# 腳底錨點不變：腳貼線在 position.y + 8（與舊占位圖一致）。
-	# rect 用未縮放座標，transform 負責縮放；8.0 / s 讓縮放後腳線恰好落在 +8。
-	if s_player_walk == null:
-		return
-	var dest := Rect2(-src.size.x * 0.5, 8.0 / s - src.size.y, src.size.x, src.size.y)
-	draw_texture_rect_region(s_player_walk, dest, src, Color.WHITE, false)

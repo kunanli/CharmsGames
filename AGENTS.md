@@ -232,7 +232,9 @@ res://
 │   └── admin_password.gd   管理員密碼界面（二級標題 A＋B 長按進入，方向指令密碼）
 ├── tools/sim/              平衡模擬腳本（見該目錄 README）
 ├── assets/                 美術素材（標題圖／二級背景影片 TItleVideo／待機影片
-│                           IdleVideo／起名素材 Naming 已進場；遊戲內畫面仍是程式繪製）
+│                           IdleVideo／起名素材 Naming 已進場；Seeker 的
+│                           S_MAP 全屏背景、S_Player 跑步動畫場景與
+│                           S_Perl/S_Moon 道具貼圖 2026-08-31 進場）
 └── Guides/                 GDD、美術規格書、色盤
 ```
 
@@ -356,6 +358,24 @@ python3 tools/sim/catch_sim.py
 - **重生一律回到 ACTIVE，不會以石化狀態回來**（GDD 沒寫，我們定的）：三隻出生格在中央緊鄰，若石化重生就會變成「中央蹲點等 5 秒再撞一輪」，一次石化可刷 1550 分。回到 ACTIVE 後單次石化上限是 350。重生後有 1 秒半透明待命，不會無預警秒扣命。
 - **撞牆會震一下＋露娜貼著牆壓扁**（`player.gd` 的 `bumped` signal，只在移動中被擋下時觸發一次）。`player.gd` 另有一個 `blocked` 旗標表示「停著頂牆」，**目前沒有接任何效果** —— 它每幀都成立，接震動會變成每秒 60 次的閃頻。
 - **移動只吃方向鍵，不支援 WASD** —— A 鍵被 GDD 指定為主動技能，會跟 WASD 的 A 打架，而 GDD 本來就只寫方向鍵與左搖桿。
+- **背景與跑步動畫已接美術（2026-08-31）**：`S_MAP.png`（1920×1080 出圖）÷4
+  拉伸當全屏背景（`_draw_backdrop`，圖內迷宮區域對齊 `Maze.ORIGIN`×4，不變形），
+  原本補視差的程式星點（`SHOW_STARS`）隨之關閉。露娜跑步動畫改用畫師交付的
+  `assets/AnimationScene/S_Player.tscn`（8 幀 walk 動畫場景），替換掉原本
+  `player.gd` 程序繪製的 `WALK_FRAMES`：tscn 只當**視覺節點**（`_ready` 實例化
+  掛到 player 下，AnimatedSprite2D 保持 pause、由 `_process` 用場景定義的 fps
+  手動推幀，`set_process(false)` 凍結時畫面才跟著凍）；每幀的「腳底貼底＋
+  水平居中」歸一化數據寫在 `FRAME_BOXES`（畫師每幀擺位有 ±20px 誤差，
+  畫師改圖要重測那 8 個 Rect2）。顯示寬度維持 16px（走廊寬度）、腳底錨點 +8。
+  **縮放必須在 `_ready()` 就設好**（`_anim.scale`）—— READY 期間 `_process`
+  沒在跑，只靠 `_update_anim` 設縮放的話開場會以 464×464 原尺寸畫出巨無霸露娜。
+- **場上道具與月光庫存已接美術（2026-08-31）**：星塵珍珠 `S_Perl.png`、月光
+  能量 `S_Moon.png`（都是 220×220 美術圖，`ITEM_SHOW` 等比縮到 15px 在格子
+  中央顯示，內容物約 11~13px，跟舊 15×15 程式圖視覺一致，不會蓋到隔壁格）。
+  HUD 左下角的月光庫存由程式圓形改成 `S_Moon.png`（14px、間距 20），跟愛心
+  同一套規則：有庫存全亮、空位暗色（alpha 0.22）、用掉的那顆播 1 秒「放大
+  1.25 倍＋淡出」—— `_moon_fade`/`_moon_fade_slot` 鏡像 `_heart_fade` 的寫法，
+  觸發點在 `_activate_moon()` 的 `moon_stock -= 1` 之後。
 
 ### CharmsFishing（黃金礦工）
 

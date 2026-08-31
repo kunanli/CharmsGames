@@ -1,0 +1,217 @@
+[gd_scene format=3 uid="uid://0pga87uyy4r3"]
+
+[ext_resource type="Texture2D" uid="uid://cvep8aj3tx1lt" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_0.png" id="1_jipc1"]
+[ext_resource type="Texture2D" uid="uid://b7awsxbs5kp3a" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_1.png" id="2_rgj1s"]
+[ext_resource type="Texture2D" uid="uid://q7fmpb1gy8pw" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_2.png" id="3_a33gj"]
+[ext_resource type="Texture2D" uid="uid://dkc25f5vi5vwe" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_3.png" id="4_ynlv7"]
+[ext_resource type="Texture2D" uid="uid://da6h4dggxub10" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_4.png" id="5_poors"]
+[ext_resource type="Texture2D" uid="uid://bbe1vy5ymgm2w" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_5.png" id="6_4a75d"]
+[ext_resource type="Texture2D" uid="uid://c7krse630brx3" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_6.png" id="7_bwvtr"]
+[ext_resource type="Texture2D" uid="uid://tgxn7ratnyy6" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_7.png" id="8_ih2la"]
+[ext_resource type="Texture2D" uid="uid://bj1ngx3t8p6jn" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_8.png" id="9_6x3vp"]
+[ext_resource type="Texture2D" uid="uid://dj4sq6ayilhcm" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_9.png" id="10_gxqey"]
+[ext_resource type="Texture2D" uid="uid://chhsf0130dbf5" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_10.png" id="11_8ig36"]
+[ext_resource type="Texture2D" uid="uid://bo2hpjsbjydrx" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_11.png" id="12_phs1w"]
+[ext_resource type="Texture2D" uid="uid://d2iath3gd8gfk" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_12.png" id="13_17tby"]
+[ext_resource type="Texture2D" uid="uid://jbulxoe5wcjq" path="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_13.png" id="14_nbhjb"]
+[ext_resource type="Texture2D" uid="uid://b4ko7a2el57pi" path="res://assets/fishing/PlayerAnim/Player_Hook/F_Hook_0.png" id="15_8qo35"]
+[ext_resource type="Texture2D" uid="uid://j5h8kwj6tdjq" path="res://assets/fishing/PlayerAnim/Player_Hook/F_Hook_1.png" id="16_1j7jw"]
+[ext_resource type="Texture2D" uid="uid://1puwoy7hbp88" path="res://assets/fishing/PlayerAnim/Player_Hook/F_Hook_2.png" id="17_1pctl"]
+[ext_resource type="Texture2D" uid="uid://cy28tk25klj5o" path="res://assets/fishing/PlayerAnim/Player_Hook/F_Hook_3.png" id="18_1061w"]
+[ext_resource type="Texture2D" uid="uid://bufa7iyxs2bck" path="res://assets/fishing/PlayerAnim/Player_Hook/F_Hook_4.png" id="19_wtvwb"]
+[ext_resource type="Texture2D" uid="uid://b5i25bgeamal" path="res://assets/fishing/PlayerAnim/Player_Hook/F_Hook_5.png" id="20_emalc"]
+[ext_resource type="Texture2D" uid="uid://divoodu7fukre" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_0.png" id="21_wyg0c"]
+[ext_resource type="Texture2D" uid="uid://ct1w2478qy5ec" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_1.png" id="22_r7ksn"]
+[ext_resource type="Texture2D" uid="uid://dbgarmc4bt4kb" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_2.png" id="23_vgpf4"]
+[ext_resource type="Texture2D" uid="uid://b072x4j82s71b" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_3.png" id="24_1imae"]
+[ext_resource type="Texture2D" uid="uid://b33pginvp8a74" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_4.png" id="25_npoh5"]
+[ext_resource type="Texture2D" uid="uid://cjjyaxp5rldhb" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_5.png" id="26_36vwm"]
+[ext_resource type="Texture2D" uid="uid://b66eeros3i0tg" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_6.png" id="27_nvhu3"]
+[ext_resource type="Texture2D" uid="uid://cd7ssnvpldn4" path="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_7.png" id="28_w3l31"]
+[ext_resource type="Texture2D" uid="uid://c4wr8r31alyhn" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_0.png" id="29_bnk32"]
+[ext_resource type="Texture2D" uid="uid://b4bml5w57tlis" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_1.png" id="30_r06b4"]
+[ext_resource type="Texture2D" uid="uid://docqdlnn6653n" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_2.png" id="31_qh3tb"]
+[ext_resource type="Texture2D" uid="uid://dvlawcqbq5gnm" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_3.png" id="32_k3lvl"]
+[ext_resource type="Texture2D" uid="uid://csihp5tgp233a" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_4.png" id="33_236uo"]
+[ext_resource type="Texture2D" uid="uid://buj2atrths8nf" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_5.png" id="34_2tn20"]
+[ext_resource type="Texture2D" uid="uid://b4ecos8x7wilt" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_6.png" id="35_lkn55"]
+[ext_resource type="Texture2D" uid="uid://cne3wka3fyxdp" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_7.png" id="36_32u2v"]
+[ext_resource type="Texture2D" uid="uid://krt54pjebhdu" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_8.png" id="37_wipnd"]
+[ext_resource type="Texture2D" uid="uid://vfq6stb7tsww" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_9.png" id="38_npny3"]
+[ext_resource type="Texture2D" uid="uid://dynsqes0neh6a" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_10.png" id="39_tu05g"]
+[ext_resource type="Texture2D" uid="uid://c3egux86uosmi" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_11.png" id="40_dd5v7"]
+[ext_resource type="Texture2D" uid="uid://xb12f2b0ffoy" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_12.png" id="41_uoadn"]
+[ext_resource type="Texture2D" uid="uid://vbxdxg8t4neo" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_13.png" id="42_ak5o5"]
+[ext_resource type="Texture2D" uid="uid://dh1uikvvswq6u" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_14.png" id="43_1vnw3"]
+[ext_resource type="Texture2D" uid="uid://14loklm72nv6" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_15.png" id="44_p3ua7"]
+[ext_resource type="Texture2D" uid="uid://dytq3iymf12dr" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_16.png" id="45_l04o4"]
+[ext_resource type="Texture2D" uid="uid://dxgmgvwbmlyby" path="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_17.png" id="46_i1k7s"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_wvhbo"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_jipc1")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_rgj1s")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_a33gj")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_ynlv7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_poors")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_4a75d")
+}, {
+"duration": 1.0,
+"texture": ExtResource("7_bwvtr")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_ih2la")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_6x3vp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_gxqey")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_8ig36")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_phs1w")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_17tby")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_nbhjb")
+}],
+"loop": 0,
+"name": &"GetPoint",
+"speed": 9.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("15_8qo35")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_1j7jw")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_1pctl")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_1061w")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_wtvwb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_emalc")
+}],
+"loop": 0,
+"name": &"Hook",
+"speed": 9.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("21_wyg0c")
+}, {
+"duration": 1.0,
+"texture": ExtResource("22_r7ksn")
+}, {
+"duration": 1.0,
+"texture": ExtResource("23_vgpf4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("24_1imae")
+}, {
+"duration": 1.0,
+"texture": ExtResource("25_npoh5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("26_36vwm")
+}, {
+"duration": 1.0,
+"texture": ExtResource("27_nvhu3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("28_w3l31")
+}],
+"loop": 0,
+"name": &"Hurt",
+"speed": 9.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("29_bnk32")
+}, {
+"duration": 1.0,
+"texture": ExtResource("30_r06b4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("31_qh3tb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("32_k3lvl")
+}, {
+"duration": 1.0,
+"texture": ExtResource("33_236uo")
+}, {
+"duration": 1.0,
+"texture": ExtResource("34_2tn20")
+}, {
+"duration": 1.0,
+"texture": ExtResource("35_lkn55")
+}, {
+"duration": 1.0,
+"texture": ExtResource("36_32u2v")
+}, {
+"duration": 1.0,
+"texture": ExtResource("37_wipnd")
+}, {
+"duration": 1.0,
+"texture": ExtResource("38_npny3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("39_tu05g")
+}, {
+"duration": 1.0,
+"texture": ExtResource("40_dd5v7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("41_uoadn")
+}, {
+"duration": 1.0,
+"texture": ExtResource("42_ak5o5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("43_1vnw3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("44_p3ua7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("45_l04o4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("46_i1k7s")
+}],
+"loop": 0,
+"name": &"Idle",
+"speed": 9.0
+}]
+
+[node name="Node2D" type="Node2D" unique_id=349178608]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=701929984]
+sprite_frames = SubResource("SpriteFrames_wvhbo")
+animation = &"GetPoint"
+frame = 13
+frame_progress = 1.0

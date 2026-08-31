@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cujwfx5ltygn5"
-path="res://.godot/imported/S_Heart.png-e906aeced90647038185708bda618a16.ctex"
+uid="uid://dt2emlg0hyurr"
+path="res://.godot/imported/S_Moon.png-b622bf3c46641c534d14a5f79ae13c9c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/S_Heart.png"
-dest_files=["res://.godot/imported/S_Heart.png-e906aeced90647038185708bda618a16.ctex"]
+source_file="res://assets/seeker/S_Moon.png"
+dest_files=["res://.godot/imported/S_Moon.png-b622bf3c46641c534d14a5f79ae13c9c.ctex"]
 
 [params]
 

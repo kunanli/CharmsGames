@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cgkkhv6rebodx"
-path="res://.godot/imported/S_Player_walk.png-f6b391542ecab8897587180eb982effd.ctex"
+uid="uid://cvep8aj3tx1lt"
+path="res://.godot/imported/F_GETPOINT_0.png-cf44cfb6e17bedcd9d7bc7df8c848d93.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/S_Player_walk.png"
-dest_files=["res://.godot/imported/S_Player_walk.png-f6b391542ecab8897587180eb982effd.ctex"]
+source_file="res://assets/fishing/PlayerAnim/Player_GetPoint/F_GETPOINT_0.png"
+dest_files=["res://.godot/imported/F_GETPOINT_0.png-cf44cfb6e17bedcd9d7bc7df8c848d93.ctex"]
 
 [params]
 

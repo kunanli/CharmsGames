@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://jrn0odytnla4"
-path="res://.godot/imported/S_Player.png-cb9168e02fecccd2ffa2b3c135337c76.ctex"
+uid="uid://dvlawcqbq5gnm"
+path="res://.godot/imported/F_IDLE_3.png-26a0ec6b16e9825c04061675e8e67d39.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/S_Player.png"
-dest_files=["res://.godot/imported/S_Player.png-cb9168e02fecccd2ffa2b3c135337c76.ctex"]
+source_file="res://assets/fishing/PlayerAnim/Player_Idle/F_IDLE_3.png"
+dest_files=["res://.godot/imported/F_IDLE_3.png-26a0ec6b16e9825c04061675e8e67d39.ctex"]
 
 [params]
 

@@ -33,11 +33,10 @@ const PETRIFY_WARN := 2.0     # 剩幾秒開始閃爍提示
 # 同一次石化內連續擊碎的分數，超過四隻就維持 400
 const SCORE_BREAK: Array[int] = [50, 100, 200, 400]
 
-# 迷宮後面那層淡星點。純粹是為了讓視差有東西可以咬 —— 迷宮的底是一塊純色。
-# **星點用 FAR 而不是 PEARL**：Fishing/Catch 的星星用 PEARL，但在 Seeker 裡
-# PEARL 就是可收集的星塵珍珠本身，用它畫星星等於在場上灑假目標，
-# 也違反美術規格書「只有三樣東西該發光」。美術有意見的話這行改 false 就關掉。
-const SHOW_STARS := true
+# 迷宮後面的視差層。以前迷宮底是一塊純色，需要程式畫星點才有東西可以咬；
+# S_MAP.png 全屏背景進場後這層由美術的圖承擔，程式星點關掉。
+# 美術想要回星點的話這行改 true 就開。
+const SHOW_STARS := false
 
 const SCORE_BEAN := 10
 const SCORE_MOON := 30
@@ -72,11 +71,13 @@ var _fx := Fx.new()               # 粒子（見 shared/fx.gd）
 var _score_shown := 0.0           # HUD 上滾動中的分數，會追上 score
 var _heart_fade := 0.0            # 剛失去的愛心淡出動畫剩餘秒數（0 = 沒在播）
 var _heart_fade_slot := -1        # 正在播動畫的愛心格位
+var _moon_fade := 0.0             # 剛用掉的月光圖示淡出動畫剩餘秒數（0 = 沒在播）
+var _moon_fade_slot := -1         # 正在播動畫的月光格位
 
 var s_bg: Texture2D = preload("res://assets/seeker/Map/S_MAP.png")
 var s_hinder: Texture2D = preload("res://assets/seeker/Map/S_Hinder.png")
-var s_perl1: Texture2D = preload("res://assets/seeker/S_Perl1.png")
-var s_heart: Texture2D = preload("res://assets/seeker/S_Heart.png")
+var s_perl: Texture2D = preload("res://assets/seeker/S_Perl.png")
+var s_moon: Texture2D = preload("res://assets/seeker/S_Moon.png")
 var s_logo: Texture2D = preload("res://assets/seeker/Map/S_Hinder_logo.png")
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
@@ -132,6 +133,8 @@ func _start_round() -> void:
 	_score_shown = 0.0
 	_heart_fade = 0.0
 	_heart_fade_slot = -1
+	_moon_fade = 0.0
+	_moon_fade_slot = -1
 	_enter_ready()
 
 
@@ -196,9 +199,11 @@ func _process(delta: float) -> void:
 	_score_shown = move_toward(_score_shown, float(score),
 		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
 
-	# 愛心淡出動畫：純表現，不受命中頓格影響
+	# 愛心與月光圖示的淡出動畫：純表現，不受命中頓格影響
 	if _heart_fade > 0.0:
 		_heart_fade = maxf(0.0, _heart_fade - delta)
+	if _moon_fade > 0.0:
+		_moon_fade = maxf(0.0, _moon_fade - delta)
 
 	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
 	_world.position = _juice.world_offset()
@@ -258,6 +263,9 @@ func _activate_moon() -> void:
 	if moon_stock <= 0 or petrify_left > 0.0:
 		return
 	moon_stock -= 1
+	# 剛用掉的那顆月光圖示播「1 秒放大 1.25 倍＋淡出」（格位 = 用掉後的 moon_stock）
+	_moon_fade = 1.0
+	_moon_fade_slot = moon_stock
 	petrify_left = PETRIFY_TIME
 	break_chain = 0
 	_juice.kick(0.55)
@@ -345,7 +353,7 @@ func _on_player_ate(_cell: Vector2i, kind: int) -> void:
 			# 一局 205 顆，所以只給 2 顆極小的閃光 —— 再多就變成整片雜訊
 			_fx.burst(player.position, 2, Palette.PEARL, 34.0, 0.26, 2.0, 0.4)
 		Maze.ITEM_MOON:
-			AudioManager.play_sfx("maze_pickup_heart")   # 撿起月光能量（場上畫成愛心）
+			AudioManager.play_sfx("maze_pickup_heart")   # 撿起月光能量（場上畫成月亮）
 			score += SCORE_MOON
 			# 撿到不會直接發動，存進 HUD 等玩家按 A（GDD 的 Xbox 協議）
 			moon_stock = mini(moon_stock + 1, MOON_STOCK_MAX)
@@ -390,11 +398,13 @@ func _draw() -> void:
 		_draw_result()
 
 
-## 視差層。迷宮本身只是一塊純色底，沒有東西可以做視差，所以補一層淡星點。
+## 視差層。迷宮的底是 S_MAP.png 全屏背景（1920×1080 美術出圖，4 倍設計稿），
+## ÷4 拉伸到 480×270 —— 圖裡的迷宮區域已對齊 Maze.ORIGIN×4，拉伸後正好
+## 貼上程式畫的牆（等比縮放，不變形）。
 func _draw_backdrop() -> void:
 	var m := Juice.OVERDRAW
 	draw_rect(Rect2(-m, -m, 480.0 + m * 2.0, 270.0 + m * 2.0), Palette.BG)
-	draw_texture(s_bg, Vector2.ZERO)
+	draw_texture_rect(s_bg, Rect2(5, 13, 480, 270), false)
 	if not SHOW_STARS:
 		return
 	# 固定的偽隨機（跟 Fishing/Catch 同一套寫法），不要每幀跳動
@@ -424,9 +434,9 @@ func _draw_maze() -> void:
 	for c in maze.items:
 		var center := maze.cell_center(c)
 		if maze.items[c] == Maze.ITEM_MOON:
-			_draw_centered_texture(s_heart, center)
+			_draw_centered_texture(s_moon, center, ITEM_SHOW)
 		else:
-			_draw_centered_texture(s_perl1, center)
+			_draw_centered_texture(s_perl, center, ITEM_SHOW)
 
 	_draw_logo()
 
@@ -441,12 +451,17 @@ func _draw_logo() -> void:
 	draw_texture_rect(s_logo, Rect2(top_left, size), false)
 
 
-func _draw_centered_texture(texture: Texture2D, center: Vector2) -> void:
+## 場上道具（星塵珍珠／月光能量）的顯示尺寸：兩張都是 220×220 美術圖，
+## 等比縮到 15px 見方 —— 迷宮格只有 15×15，原尺寸畫下去會蓋掉隔壁格。
+## 舊版珍珠是 15×15 原生尺寸，內容物約 11px，縮到 15px 後視覺大小一致。
+const ITEM_SHOW := 15.0
+
+
+func _draw_centered_texture(texture: Texture2D, center: Vector2, size: float) -> void:
 	if texture == null:
 		return
-		
-	var size := texture.get_size()
-	draw_texture(texture, center - size * 0.5)
+	draw_texture_rect(texture, Rect2(center - Vector2(size, size) * 0.5,
+		Vector2(size, size)), false)
 
 
 func _draw_hud() -> void:
@@ -485,19 +500,25 @@ func _draw_hud() -> void:
 			_draw_heart(c, heart_size, 0.22)
 
 	# 右下角：珍珠進度
-	draw_string(font, Vector2(0, 264), "BEANS %d/%d" % [beans_eaten, beans_total],
+	draw_string(font, Vector2(0, 254), "BEANS %d/%d" % [beans_eaten, beans_total],
 		HORIZONTAL_ALIGNMENT_RIGHT, 464, 8, Palette.TEXT_DIM)
 
-	# 左下角：囤著的月光能量（最多 2 個），空的畫成暗框
+	# 左下角：囤著的月光能量（最多 2 個）。S_Moon.png（220×220 美術圖縮到
+	# 14px 顯示）—— 跟右上的愛心同一套規則：有庫存全亮、空位畫成暗色、
+	# 剛用掉的那顆播「放大＋淡出」。間距 20px 比舊程式圓形（r=5、間距 14）寬，
+	# 兩顆月亮才不會黏在一起。
+	var moon_size := Vector2(14, 14)
 	for i in MOON_STOCK_MAX:
-		var c := Vector2(22 + i * 14, 258)
+		var c := Vector2(24 + i * 20, 258)
 		if i < moon_stock:
-			draw_circle(c, 5.0, Palette.MOON)
-			draw_circle(c + Vector2(-2, -1), 4.0, Palette.BG)
+			_draw_moon(c, moon_size, 1.0)
+		elif i == _moon_fade_slot and _moon_fade > 0.0:
+			var k := 1.0 - _moon_fade          # 0 → 1
+			_draw_moon(c, moon_size * (1.0 + 0.25 * k), 1.0 - k)
 		else:
-			draw_arc(c, 5.0, 0.0, TAU, 14, Palette.TEXT_DIM, 1.0)
+			_draw_moon(c, moon_size, 0.22)
 	if moon_stock > 0 and petrify_left <= 0.0:
-		draw_string(font, Vector2(50, 262), "PRESS A",
+		draw_string(font, Vector2(56, 252), "PRESS A",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.MOON)
 
 	# 石化倒數與連擊
@@ -545,6 +566,13 @@ func _draw_heart(center: Vector2, size: Vector2, alpha: float) -> void:
 	if s_heart_ui == null:
 		return
 	draw_texture_rect(s_heart_ui, Rect2(center - size * 0.5, size), false,
+		Color(1, 1, 1, alpha))
+
+
+func _draw_moon(center: Vector2, size: Vector2, alpha: float) -> void:
+	if s_moon == null:
+		return
+	draw_texture_rect(s_moon, Rect2(center - size * 0.5, size), false,
 		Color(1, 1, 1, alpha))
 
 

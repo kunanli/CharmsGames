@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://irl5smw4mua3"
-path="res://.godot/imported/S_Bg.png-60b85de01ab00be7ddd5286fef528ef0.ctex"
+uid="uid://ct1w2478qy5ec"
+path="res://.godot/imported/F_Hurt_1.png-74b608132a7b22a18a0e92ca9a6738e9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/S_Bg.png"
-dest_files=["res://.godot/imported/S_Bg.png-60b85de01ab00be7ddd5286fef528ef0.ctex"]
+source_file="res://assets/fishing/PlayerAnim/Player_Hurt/F_Hurt_1.png"
+dest_files=["res://.godot/imported/F_Hurt_1.png-74b608132a7b22a18a0e92ca9a6738e9.ctex"]
 
 [params]
 
