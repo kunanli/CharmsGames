@@ -781,15 +781,10 @@ func _draw_urgency() -> void:
 
 
 func _draw_result() -> void:
+	# 壓暗背景 —— GAME OVER／TIME UP 文字與分數由 launcher 的 Game Over
+	# 動畫層畫（ui/game_over.gd），這裡只負責讓遊戲場景沉下去
+	# （遊戲節點會保留到動畫播完，見 launcher._open_game_over）。
 	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(Palette.NIGHT, 0.82))
-	var over := lives <= 0
-	_center("GAME OVER" if over else "TIME UP", 96, 22,
-		Palette.WARN if over else Palette.GOLD)
-	_center("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
-	# 提示等分數滾完才出現，跟分數揭曉同一個瞬間
-	if int(round(_score_shown)) >= score:
-		_center("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
-		_center("ESC FOR MENU", 216, 10, Palette.TEXT_DIM)
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:

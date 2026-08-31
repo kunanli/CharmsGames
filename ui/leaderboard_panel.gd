@@ -4,22 +4,23 @@ extends Node2D
 # 通用排行榜面板（三款遊戲共用一份，不要各寫一套）。
 #
 # launcher 負責在 add_child 前設定欄位：
-#   game_id / game_name
-# 之後面板自己跟 LeaderboardManager 要資料，排行榜邏輯完全不進遊戲腳本。
+#   game_id / player_name / score / record_id
+# 之後面板自己跟 LeaderboardManager 要資料；「當前玩家」的成績與排名
+# 由 launcher 傳入（submit 已在局終完成，record_id 一定查得到排名）。
 #
-# 版面（2026-08 美術進場後改版，2026-08 底改為「只看前 10」）：
-#   - 底圖是各款的 assets/UI/LeaderBoard/rank-<game_id>.png
-#     （catch/seeker 1920×1080、fishing 1536×864），全屏繪製
-#     （邏輯 480×270）。表頭、花紋、標題都是美術畫在底圖上的。
-#   - 資料表在 1920 座標的 (330, 240) 起、890×415（÷4 即邏輯座標）。
-#   - **只顯示前 10 名**：左右兩欄各 5 列（左欄 1~5、右欄 6~10），
-#     列距拉成兩倍、垂直置中落在原 20 列版面的行區內（底緣與原本
-#     第 10 列同一條線，各款行區的實測常數直接沿用，見 LAYOUT）。
-#   - 不顯示本局成績：沒有 YOUR SCORE 行、不高亮自己的記錄
-#     （自己的排名與分數只在局終的 Game Over 界面顯示）。
-#
-# 一律只讀（2026-08 底：清除功能搬到管理員一級標題的清除選單
-# ui/admin_clear_menu.gd，面板不再有任何清除入口）。
+# 版面（2026-09 改版：需求以 1920×1080 設計座標給定位、÷4 轉邏輯座標，
+# 三款共用同一套，不再吃各款底圖的實測常數）：
+#   - 底圖 = 各款 assets/UI/LeaderBoard/rank-<game_id>.png 全屏繪製
+#     （美術只畫黑底＋裝飾，所有文字都是程式畫的）。
+#   - 大標題 **YOUR SCORE**：(960, 80) 水平置中、96px（邏輯 24px）。
+#   - **前 10 名單欄**垂直排列：第一行視覺中心 Y≈190（1920）、行距 72px；
+#     每行三欄左對齊、字體 60px（邏輯 15px）：
+#       排名 1ST./2ND./…（X≈370）、玩家名字（X≈620）、分數（X≈1255）。
+#   - 進入面板時**逐行交錯顯現**：淡入＋從左滑入，每行錯開 ROW_STAGGER 秒，
+#     只播一次；底部當前玩家行最後顯現。
+#   - 畫面最底部是**當前玩家**的成績行（GOLD 高亮，同樣排名／名字／分數
+#     格式；排名是本局實際名次，可能 >10）—— 不管本局有沒有進前 10
+#     都會顯示。
 #
 # 按鍵：
 #   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱）
@@ -29,72 +30,52 @@ signal exit_requested
 
 # ── launcher 在 add_child 前設定 ─────────────────────────
 var game_id := ""
-var game_name := ""           # catch/fishing 的底圖沒畫標題，程式補畫
+var player_name := ""
+var score := 0
+var record_id := ""
 
 const SCREEN := Vector2(480, 270)
 const TOP_N := 10             # 只顯示前 10 名，不翻頁
 
-# 資料表區域：1920×1080 美術座標 (330, 240, 890, 415)，÷4 → 邏輯座標。
-const DATA_X := 82.5
-const DATA_W := 340
+# ── 版面（1920×1080 設計座標 ÷ 4）────────────────────────
+const TITLE_CENTER_Y := 20.0      # 標題視覺中心 (1920: 80)，水平置中
+const TITLE_SIZE := 24            # 1920: 96px
+const ROW_FONT := 15              # 每行字體 (1920: 60px)
+const ROW_CENTER_Y := 47.5        # 第一行視覺中心 (1920: 190)
+const ROW_PITCH := 18.0           # 行距 (1920: 72)
+const RANK_X := 92.5              # 排名欄左緣 (1920: 370)
+const NAME_X := 155.0             # 名字欄左緣 (1920: 620)
+const SCORE_X := 313.75           # 分數欄左緣 (1920: 1255)
+const PLAYER_BASELINE := 256.0    # 底部當前玩家行基線 (1920: 1024)
 
-# 每半欄（寬 111.25）內的行欄位，RANK 右對齊／NAME 左對齊／
-# SCORE 右對齊（12 字名字與六位分數都不會互相頂到）。
-const COL_RANK_RIGHT := 12
-const COL_NAME_LEFT := 29
-const COL_SCORE_RIGHT := 89
-# 名字最寬 43px（六位分數佔 20px＋2px 間距），超出就截掉
-const MAX_NAME_W := COL_SCORE_RIGHT - COL_NAME_LEFT - 22
+# 交錯顯現動畫（進入時只播一次）
+const TITLE_DELAY := 0.10
+const ROW_DELAY := 0.25           # 第一行開始顯現的時間
+const ROW_STAGGER := 0.10         # 行與行之間錯開的秒數
+const ROW_FADE := 0.22            # 單行淡入＋滑入的時長
+const SLIDE_PX := 8.0             # 滑入的起始左移量（邏輯 px）
 
-# 每款版面（依 rank-*.png 實測底圖的深色帶／行區／底部花紋位置調的）：
-#   name_y  ≥ 0 表示底圖沒有標題要程式補畫（-1 則不畫）
-#   rows_y    = 原 10 列版面的第一列基線（前 10 名版式第 1 列在
-#               rows_y + pitch，第 5 列在 rows_y + 9*pitch —— 見 _draw_rows）
-#   pitch     = 原列距；前 10 名版式實際列距 = 2 * pitch
-#   footer    = 頁腳（清除選單、TOP N、按鍵提示）：
-#               mode "wide" 左右分佈在深色底，mode "center" 置中在行區下的淺色帶
-#   light     = 文字底色是深色帶（true，淺色字）還是淺色底（false，深色字）
-const LAYOUT := {
-	"catch": {
-		"bg": "res://assets/UI/LeaderBoard/rank-catch.png",
-		"data_x": 82.5,
-		"name_y": 12,
-		"rows_y": 78, "pitch": 13,
-		"footer": {"mode": "wide", "a": 247, "b": 258, "size": 10},
-		"light": true,
-	},
-	"fishing": {
-		"bg": "res://assets/UI/LeaderBoard/rank-fishing.png",
-		"data_x": 82.5,
-		"name_y": 8,
-		"rows_y": 88, "pitch": 13,
-		# 底部 y200 以下全是美術的花紋，頁腳置中放在行區下的乾淨淺色帶
-		"footer": {"mode": "center", "a": 172, "b": 245, "c": 192, "size": 10},
-		"light": true,
-	},
-	"seeker": {
-		"bg": "res://assets/UI/LeaderBoard/rank-seeker.png",
-		"data_x": 87.0,                     # 行區左緣有描邊，整欄右移閃開
-		"name_y": -1,                       # 底圖已畫標題
-		"rows_y": 102, "pitch": 11,          # 行區只有 372→655（底圖標題帶較高）
-		# 底部全是花紋，頁腳置中放行區下的淺色帶（再下去 y205 是花紋線）
-		"footer": {"mode": "center", "a": 178, "b": 246, "c": 230, "size": 10},
-		"light": false,
-	},
-}
-
-var _layout: Dictionary = {}
 var _bg: Texture2D
-
 var _records: Array = []        # Array[LeaderboardRecord]，前 10 名
 var _total := 0
+var _rank := -1
+var _elapsed := 0.0
+var _anim_done := false
 
 
 func _ready() -> void:
-	_layout = LAYOUT.get(game_id, LAYOUT["catch"])
-	_bg = load(_layout["bg"])
+	_bg = load("res://assets/UI/LeaderBoard/rank-%s.png" % game_id)
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_rank = LeaderboardManager.get_rank(record_id)
 	_refresh()
+
+
+func _process(delta: float) -> void:
+	if _anim_done:
+		return
+	_elapsed += delta
+	_anim_done = _elapsed >= _player_delay() + ROW_FADE
+	queue_redraw()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -114,6 +95,21 @@ func _refresh() -> void:
 	queue_redraw()
 
 
+## 底部當前玩家行的顯現起始時間：前十名全部顯現完之後。
+func _player_delay() -> float:
+	return ROW_DELAY + TOP_N * ROW_STAGGER + 0.12
+
+
+## 交錯顯現的單行狀態：回傳 {alpha, dx}，alpha 0~1、dx 為滑入左移量。
+## start 之前的行完全不可見（不畫），之後在 ROW_FADE 秒內淡入並歸位。
+func _reveal(start: float) -> Dictionary:
+	var t := _elapsed - start
+	if t <= 0.0:
+		return {"alpha": 0.0, "dx": SLIDE_PX}
+	var k := clampf(t / ROW_FADE, 0.0, 1.0)
+	return {"alpha": k, "dx": SLIDE_PX * (1.0 - k)}
+
+
 # ── 繪製 ─────────────────────────────────────────────────
 
 func _draw() -> void:
@@ -122,68 +118,74 @@ func _draw() -> void:
 	else:
 		draw_rect(Rect2(Vector2.ZERO, SCREEN), Palette.BG)
 	var font := ThemeDB.fallback_font
-	var text_col: Color = Palette.TEXT if _layout["light"] else Palette.NIGHT
-	var dim_col: Color = Palette.TEXT_DIM if _layout["light"] else Palette.WALL_DARK
 
-	if _layout["name_y"] >= 0:
-		_center(game_name, _layout["name_y"], 12, text_col)
+	var t := _reveal(TITLE_DELAY)
+	if t["alpha"] > 0.0:
+		_center(font, "YOUR SCORE",
+			TITLE_CENTER_Y + font.get_ascent(TITLE_SIZE) / 2.0,
+			TITLE_SIZE, Color(Palette.GOLD, t["alpha"]))
 
 	if _total == 0:
-		# 表格區三款都是淺色底，統一用深字
-		_center("NO RECORDS YET - BE THE FIRST", 120, 8, Palette.NIGHT)
+		var e := _reveal(ROW_DELAY)
+		if e["alpha"] > 0.0:
+			_center(font, "NO RECORDS YET - BE THE FIRST",
+				ROW_CENTER_Y + font.get_ascent(ROW_FONT) / 2.0 + ROW_PITCH * 5.0,
+				8, Color(Palette.TEXT_DIM, e["alpha"]))
 	else:
-		_draw_rows()
+		_draw_rows(font)
 
-	var f: Dictionary = _layout["footer"]
-	_draw_footer_line(f, f["size"], text_col, dim_col)
+	_draw_player_row(font)
+
+	draw_string(font, Vector2(0, 264.0), "B BACK",
+		HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 10.0, 6, Palette.TEXT_DIM)
 
 
-## 前 10 名：左欄 1~5、右欄 6~10，各 5 列。列距 = 2×pitch，
-## 第 1 列在 rows_y + pitch、第 5 列在 rows_y + 9×pitch —— 與原 20 列
-## 版式的第 2~10 列同一批基線，行區內垂直置中，實測常數不用重調。
-func _draw_rows() -> void:
-	var font := ThemeDB.fallback_font
-	var half_w := DATA_W / 2.0
-	var pitch: float = _layout["pitch"]
+func _draw_rows(font: Font) -> void:
 	for i in _records.size():
+		var e := _reveal(ROW_DELAY + i * ROW_STAGGER)
+		if e["alpha"] <= 0.0:
+			continue
 		var r: LeaderboardRecord = _records[i]
-		var side := i / 5                    # 0 左欄 1 右欄
-		var row := i % 5
-		var x := float(_layout["data_x"]) + side * half_w
-		var y := float(_layout["rows_y"]) + (2 * row + 1) * pitch
-		draw_string(font, Vector2(x + COL_RANK_RIGHT, y),
-			"%d" % (i + 1), HORIZONTAL_ALIGNMENT_RIGHT, -1, 6, Palette.NIGHT)
-		draw_string(font, Vector2(x + COL_NAME_LEFT, y), _fit_name(font, r.player_name, MAX_NAME_W),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Palette.NIGHT)
-		draw_string(font, Vector2(x + COL_SCORE_RIGHT - 25, y), "%d" % r.score,
-			HORIZONTAL_ALIGNMENT_RIGHT, -1, 6, Palette.NIGHT)
+		var y := ROW_CENTER_Y + font.get_ascent(ROW_FONT) / 2.0 + i * ROW_PITCH
+		var col := Color(Palette.TEXT, e["alpha"])
+		var dx: float = e["dx"]
+		draw_string(font, Vector2(RANK_X + dx, y), _ordinal(i + 1),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
+		draw_string(font, Vector2(NAME_X + dx, y), r.player_name,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
+		draw_string(font, Vector2(SCORE_X + dx, y), "%d" % r.score,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
 
 
-## 半欄只有 111px 寬，長名字按實際字寬截到不頂到分數欄為止。
-func _fit_name(font: Font, name: String, max_w: float) -> String:
-	var text := name
-	while text.length() > 1:
-		if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 6).x <= max_w:
-			break
-		text = text.substr(0, text.length() - 1)
-	return text
+## 底部當前玩家行：最後顯現、GOLD 高亮。排名是本局的實際名次
+## （可能 >10；找不到記錄時顯示 -- 兜底）。
+func _draw_player_row(font: Font) -> void:
+	var e := _reveal(_player_delay())
+	if e["alpha"] <= 0.0:
+		return
+	var col := Color(Palette.GOLD, e["alpha"])
+	var dx: float = e["dx"]
+	var rank_text := _ordinal(_rank) if _rank > 0 else "--"
+	draw_string(font, Vector2(RANK_X + dx, PLAYER_BASELINE), rank_text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
+	draw_string(font, Vector2(NAME_X + dx, PLAYER_BASELINE), player_name,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
+	draw_string(font, Vector2(SCORE_X + dx, PLAYER_BASELINE), "%d" % score,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
 
 
-func _draw_footer_line(f: Dictionary, size: int, text_col: Color, dim_col: Color) -> void:
-	var font := ThemeDB.fallback_font
-	var first := 1
-	var last := mini(TOP_N, _total)
-	var page_text := "%d-%d / %d" % [first, last, _total]
-	if f["mode"] == "center":
-		_center(page_text, f["b"], size, dim_col)
-		_center("B BACK", f["c"], size, text_col)
-	else:
-		draw_string(font, Vector2(12, f["b"]), page_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, size, dim_col)
-		draw_string(font, Vector2(0, f["b"]), "B BACK",
-			HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, size, text_col)
+## 1ST.／2ND.／3RD.／4TH.…（英文序數＋句點）。
+func _ordinal(i: int) -> String:
+	var n := i % 100
+	if n >= 11 and n <= 13:
+		return "%dTH." % i
+	match i % 10:
+		1: return "%dST." % i
+		2: return "%dND." % i
+		3: return "%dRD." % i
+	return "%dTH." % i
 
 
-func _center(text: String, y: float, size: int, col: Color) -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(0, y), text,
+func _center(font: Font, text: String, y: float, size: int, col: Color) -> void:
+	draw_string(font, Vector2(0, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, size, col)

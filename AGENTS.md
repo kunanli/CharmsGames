@@ -75,8 +75,8 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    進入）：密碼是**方向指令序列「上上下下左右左右」**（↑ ↑ ↓ ↓ ← → ← →
    共 8 位），玩家每按一個**方向鍵**就輸入一位，輸滿 8 位後按 **A** 確認 ——
    正確 → 回一級標題；錯誤 → 清空重填（B 刪除最後一位、ESC 取消回二級）。
-   遊戲中 **ESC** 與局終 Game Over 界面的 **B／ESC** 都回**該款的二級標題**
-   （名字清除；Game Over 界面選 RESTART 則名字保留）
+   遊戲中 **ESC** 與排行榜面板的 **B／ESC** 都回**該款的二級標題**
+   （名字清除）
 
 操作：
 
@@ -86,19 +86,20 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 | Fishing | ← → 探看湖面 | **A**／空白／↓／Enter 放線，**B**／**X** 用月光能量 | 月光能量只在收線途中有效 |
 | Catch | ← → | **B**／**X** 引爆護盾 | 長按同方向 1 秒加速至 ×2.5（A/Shift 衝刺已移除） |
 
-局終進 **Game Over 界面**（`ui/game_over.gd`，三款共用）：顯示
-GAME OVER／TIME UP、本局分數（滾動）、**本局排名**、玩家名字，
-下方 **RESTART**／**LEADERBOARD** 兩個按鈕，**↑ ↓ 切換選擇、A 執行**
-（Enter／空白同義）。選 RESTART 重開同一款（名字保留）；選
-LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款二級標題
-（名字清除）。
+局終進 **Game Over 動畫**（`ui/game_over.gd`，三款共用）：**背景保留
+遊戲場景** —— launcher 暫停遊戲節點定格在最後一幀當底（不釋放、不是
+二級標題圖），遊戲自己的 RESULT 壓暗遮罩照畫；動畫只有 GAME OVER／
+TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 秒淡出），
+**不顯示分數／名字／排名**（那些交給排行榜面板），播完**自動進排行榜
+面板** —— 沒有按鈕、不吃任何按鍵（舊版 RESTART／LEADERBOARD 兩鈕已於
+2026-09 移除）。
 
 ---
 
 ## 排行榜（本地，三款共用）
 
 一套本地排行榜系統，選單 → 輸入名字 → 玩 → 局終自動提交成績 →
-**Game Over 界面** → （選 LEADERBOARD）排行榜面板。
+**Game Over 動畫** → 排行榜面板。
 儲存在 `user://leaderboard.json`（`version:1`，每款最多 1000 條，各按 `game_id`
 分榜互不干擾；檔案損壞自動改名 `.bak` 以空資料重來；**新提交的記錄永不因
 裁剪丟失**，刪的永遠是最差的老記錄）。
@@ -109,9 +110,10 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
   `clear_all_games_records(ClearRule)`，見下）、
   `shared/player_session.gd`（玩家名字的生命週期：首次進遊戲要輸入，
   重開保留，回二級清除；見下）、
-  `ui/game_over.gd`（局終 Game Over 界面：分數／排名／名字 ＋ RESTART／
-  LEADERBOARD 兩鈕，三款共用一份，取代舊的「局終直接進排行榜」）、
-  `ui/leaderboard_panel.gd`（通用排行榜面板，三款共用一份，一律只讀）、
+  `ui/game_over.gd`（局終 Game Over 動畫：只淡入淡出 GAME OVER／TIME UP
+  文字，背景是暫停定格的遊戲場景，三款共用一份）、
+  `ui/leaderboard_panel.gd`（通用排行榜面板：大標題 YOUR SCORE＋前 10 名
+  單欄＋底部當前玩家行，進入時逐行交錯顯現，三款共用一份，一律只讀）、
   `ui/admin_clear_menu.gd`（管理員的排行榜清除選單：一級標題按 B 進入）、
   `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「起名」）。
 - **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }`。
@@ -119,12 +121,19 @@ LEADERBOARD 進排行榜面板（只顯示前 10 名）；**B／ESC** 回該款�
   用 draw_string 疊在圖上；二級標題 A＋B 長按進入的管理員密碼界面
   （`ui/admin_password.gd`）是 Modal Overlay，開著時 launcher 不處理任何按鍵。
   遊戲**只**發 `round_finished(score, duration, game_over)` 信號，不知道排行榜存在；
-  launcher 組裝 LeaderboardRecord、提交、開 Game Over 界面。
-  Game Over 的 RESTART = 重開（名字保留）、LEADERBOARD = 開面板、
-  B/ESC = 回二級（清名字）；面板 B/ESC = 回二級（清名字）。
-- **排行榜只顯示前 10 名**（左右兩欄各 5 列，左 1~5 右 6~10，不翻頁），
-  **不顯示本局成績**（沒有 YOUR SCORE 行、不高亮自己的記錄）—— 自己的
-  排名與分數只在局終的 Game Over 界面顯示一次。
+  launcher 組裝 LeaderboardRecord、提交、開 Game Over 動畫界面
+  （**暫停遊戲節點定格畫面當背景，動畫播完進面板前才釋放**）。
+  Game Over 動畫播完**自動**開排行榜面板（沒有按鈕）；
+  面板 B/ESC = 回二級（清名字）。**RESTART 已移除**（2026-09，跟著
+  Game Over 兩鈕一起拆）：重玩路徑＝排行榜 B/ESC 回二級 → 任意鍵 →
+  重新起名。
+- **排行榜版面**（2026-09 改版，需求以 1920×1080 座標給定位、程式 ÷4）：
+  大標題 **YOUR SCORE**（(960, 80) 水平置中、96px），下面**前 10 名單欄**
+  垂直排列（第一行視覺中心 Y≈190、行距 72px），每行三欄左對齊、60px：
+  **排名 1ST./2ND./…**（X≈370）／**玩家名字**（X≈620）／**分數**（X≈1255）。
+  進入面板時**逐行交錯顯現**（淡入＋從左滑入，每行錯開 0.1 秒，只播一次）。
+  **畫面最底部是當前玩家的成績行**（GOLD 高亮，同樣排名／名字／分數格式；
+  排名是本局實際名次、可能 >10）—— 不管本局有沒有進前 10 都會顯示。
 - **清除功能在管理員一級標題**（2026-08 從排行榜面板搬過來，面板一律只讀、
   玩家端沒有清除入口）：一級標題選中某款後按 **B** 進該款的清除選單
   （`ui/admin_clear_menu.gd`，Modal Overlay，開著時標題層不處理任何按鍵）。
@@ -206,8 +215,8 @@ res://
 │   ├── ready_go.gd         開場 READY 動畫：實例化 Ready_go.tscn、淡入淡出、播完自行釋放（class_name ReadyGo）
 │   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS，user://settings.cfg）
 ├── ui/
-│   ├── game_over.gd        局終 Game Over 界面（分數／排名／名字＋RESTART／LEADERBOARD）
-│   ├── leaderboard_panel.gd 排行榜面板（只顯示前 10 名，三款共用，一律只讀）
+│   ├── game_over.gd        局終 Game Over 動畫（只淡入淡出文字，背景＝暫停定格的遊戲場景）
+│   ├── leaderboard_panel.gd 排行榜面板（YOUR SCORE 標題＋前 10 名單欄＋底部玩家行）
 │   ├── admin_clear_menu.gd 管理員排行榜清除選單（一級標題按 B 進入）
 │   ├── name_input.gd       起名：街機虛擬鍵盤
 │   └── admin_password.gd   管理員密碼界面（二級標題 A＋B 長按進入，方向指令密碼）
@@ -292,7 +301,7 @@ python3 tools/sim/catch_sim.py
 ## 三款共通的設計規格
 
 - **單一關卡，60 秒**，時間到即結算，不做關卡遞進。
-- **共用外框**：一級標題 → 二級標題（**無按鈕無提示，按任意鍵起名開局**；A＋B 長按 3 秒進管理員密碼界面）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 界面**（分數／排名／名字＋RESTART／LEADERBOARD 兩鈕）→ 重開（名字保留）／排行榜（只顯示前 10 名）／回二級（名字清除）。
+- **共用外框**：一級標題 → 二級標題（**無按鈕無提示，按任意鍵起名開局**；A＋B 長按 3 秒進管理員密碼界面）→ 名字（首次進遊戲）→ 遊戲 → **Game Over 動畫**（背景保留遊戲場景，只淡入淡出 GAME OVER／TIME UP 文字，不顯示分數／名字／排名；播完自動進排行榜）→ 排行榜（大標題＋前 10 名單欄＋底部當前玩家行）→ B/ESC 回二級（名字清除）。
 - **起名**：一級標題沒有難度設定（EASY/HARD 已於 2026-08 移除，← → 不再
   響應）。玩家在二級標題按任意鍵後先起名再開局。起名是**疊在二級標題上的
   三層 overlay** —— launcher 在 NAME_INPUT 模式仍畫

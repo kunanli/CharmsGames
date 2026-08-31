@@ -534,17 +534,11 @@ func _draw_petrify_edge() -> void:
 
 
 func _draw_result() -> void:
-	# 半透明遮罩，讓迷宮沉下去
+	# 半透明遮罩，讓迷宮沉下去 —— GAME OVER／TIME UP 文字與分數由
+	# launcher 的 Game Over 動畫層畫（ui/game_over.gd），這裡只負責
+	# 壓暗背景（遊戲節點會保留到動畫播完，見 launcher._open_game_over）。
 	# 用色盤的最深夜色壓半透明，不是自己調一個新的深藍
 	draw_rect(Rect2(0, 0, 480, 270), Color(Palette.NIGHT, 0.82))
-
-	var title := "GAME OVER" if game_over else "TIME UP"
-	var title_col := Palette.WARN if game_over else Palette.GOLD
-	_draw_center_text(title, 96, 22, title_col)
-	_draw_center_text("SCORE  %06d" % int(round(_score_shown)), 134, 18, Palette.TEXT)
-	# 提示等分數滾完才出現，跟分數揭曉同一個瞬間
-	if int(round(_score_shown)) >= score:
-		_draw_center_text("PRESS ENTER TO PLAY AGAIN", 200, 10, Palette.TEXT_DIM)
 
 
 func _draw_heart(center: Vector2, size: Vector2, alpha: float) -> void:

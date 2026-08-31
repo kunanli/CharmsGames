@@ -41,12 +41,11 @@ extends Node2D
 # 排行榜面板，見 shared/ 與 ui/）：
 #   遊戲進 RESULT 時發 round_finished(score, duration, game_over)
 #   → launcher 組裝記錄、submit_score()、開 Game Over 界面
-#   （ui/game_over.gd：GAME OVER ／分數／排名／玩家名字 ＋ RESTART／
-#   LEADERBOARD 兩個按鈕，↑ ↓ 切換、A 執行）
-#   Game Over 選 RESTART = 重開同一款（名字保留）；
-#   選 LEADERBOARD = 開排行榜面板（只顯示前 10 名）；
-#   B/ESC = 回該款二級標題（清名字）。
-#   排行榜面板 B/ESC = 回該款二級標題（清名字，不保留玩家名稱）。
+#   （ui/game_over.gd：GAME OVER ／分數／排名／玩家名字的 1 秒動畫，
+#   沒有按鈕、不吃按鍵，播完**自動**開排行榜面板 —— 舊版 RESTART／
+#   LEADERBOARD 兩鈕已於 2026-09 移除）
+#   排行榜面板 = 大標題 YOUR SCORE ＋ 前 10 名單欄 ＋ 底部當前玩家行，
+#   進入時逐行交錯顯現；面板 B/ESC = 回該款二級標題（清名字）。
 #   名字由 CurrentPlayerSession 管理：第一次進遊戲先輸入，回二級即清。
 #
 # 新增一款遊戲＝在 GAMES 加一筆（含 id），不用新增場景、不用改這支以外的檔案。
@@ -421,47 +420,37 @@ func _on_round_finished(score: int, duration: float, game_over: bool) -> void:
 	_open_game_over.call_deferred()
 
 
-## 局終開 Game Over 界面（取代舊的「局終直接進排行榜面板」）。
-## 界面顯示 GAME OVER／TIME UP、分數、排名、玩家名字，並提供
-## RESTART／LEADERBOARD 兩個按鈕（↑ ↓ 切換、A 執行，見 ui/game_over.gd）。
+## 局終開 Game Over 動畫：**背景保留遊戲場景** —— 遊戲節點暫停不釋放
+## （process_mode = DISABLED 停整棵子樹，畫面定格在最後一幀），文字
+## 淡入淡出播完**自動**進排行榜面板，沒有按鈕、不吃按鍵（見 ui/game_over.gd）。
+## 遊戲節點等 _on_game_over_leaderboard 開面板前才釋放。
 func _open_game_over() -> void:
 	if mode != Mode.PLAYING:
 		return                # 保險：局終後緊接著的 ESC 之類的路徑，避免重複開
-	_free_game_node()        # 只釋放節點，不動 session —— 界面還要顯示名字
+	if game != null:
+		game.process_mode = Node.PROCESS_MODE_DISABLED   # 定格遊戲畫面當背景
 
-	var entry: Dictionary = GAMES[active_index]
 	var panel := Node2D.new()
 	panel.name = "GameOver"
 	panel.set_script(load("res://ui/game_over.gd"))
 	# 面板的欄位要用 set() 設定：panel 是 Node2D 型別，編譯器看不到腳本屬性
-	panel.set("title_image", entry["title_image"])
-	panel.set("player_name", CurrentPlayerSession.player_name)
-	panel.set("score", _finish_data["score"])
 	panel.set("game_over", _finish_data["game_over"])
-	panel.set("record_id", _finish_data["record_id"])
-	panel.connect("restart_requested", Callable(self, "_on_panel_restart"))
 	panel.connect("leaderboard_requested", Callable(self, "_on_game_over_leaderboard"))
-	panel.connect("exit_requested", Callable(self, "_on_panel_exit"))
 	_panel = panel
 	add_child(panel)
 	mode = Mode.GAME_OVER
 	queue_redraw()
 
 
-## Game Over 界面選 LEADERBOARD：關界面、開排行榜面板。
+## Game Over 動畫播完：釋放遊戲節點、關動畫界面、開排行榜面板。
 func _on_game_over_leaderboard() -> void:
+	_free_game_node()
 	_close_panel()
 	_open_leaderboard()
 
 
-func _on_panel_restart() -> void:
-	# 重新開始：名字保留，直接重開同一款（下一局結束會再提交一條新記錄）
-	_close_panel()
-	_start_game(active_index)
-
-
-## 排行榜面板／Game Over 界面的 B/ESC：清名字回**該款的二級標題**
-## （不回一級），下次 Space 重新起名。排行歷史由 LeaderboardManager 保管，
+## 排行榜面板的 B/ESC：清名字回**該款的二級標題**
+## （不回一級），下次起名重新輸入。排行歷史由 LeaderboardManager 保管，
 ## 與玩家名字生命週期無關。
 func _on_panel_exit() -> void:
 	_close_panel()
@@ -473,10 +462,11 @@ func _on_panel_exit() -> void:
 	queue_redraw()
 
 
-# ── 排行榜面板（Game Over 界面進入）────
+# ── 排行榜面板（Game Over 動畫播完自動進入）────
 
-## 開排行榜面板（Game Over 界面選 LEADERBOARD 進入）：只顯示前 10 名、
-## 不顯示本局成績，B/ESC 回該款二級標題。
+## 開排行榜面板：大標題 YOUR SCORE ＋ 前 10 名單欄 ＋ 底部當前玩家行，
+## B/ESC 回該款二級標題。當前玩家的成績（名字／分數／record_id）由
+## launcher 傳入，排名在面板內用 record_id 查。
 ## 清除功能已移到一級標題的清除選單（見 _open_clear_menu），面板一律只讀。
 func _open_leaderboard() -> void:
 	var entry: Dictionary = GAMES[active_index]
@@ -485,7 +475,9 @@ func _open_leaderboard() -> void:
 	panel.set_script(load("res://ui/leaderboard_panel.gd"))
 	# 面板的欄位要用 set() 設定：panel 是 Node2D 型別，編譯器看不到腳本屬性
 	panel.set("game_id", entry["id"])
-	panel.set("game_name", entry["title"])
+	panel.set("player_name", CurrentPlayerSession.player_name)
+	panel.set("score", _finish_data["score"])
+	panel.set("record_id", _finish_data["record_id"])
 	panel.connect("exit_requested", Callable(self, "_on_panel_exit"))
 	_panel = panel
 	add_child(panel)

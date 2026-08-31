@@ -176,10 +176,13 @@ animations = [{
 "loop": 0,
 "name": &"Ready_GO",
 "speed": 14.0
+}, {
+"frames": [],
+"loop": 1,
+"name": &"new_animation",
+"speed": 5.0
 }]
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" unique_id=1687065785]
 sprite_frames = SubResource("SpriteFrames_ifow5")
-animation = &"Ready_GO"
-frame = 23
-frame_progress = 1.0
+animation = &"new_animation"
