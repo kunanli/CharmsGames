@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bg8bv50ryv4eg"
-path="res://.godot/imported/F_CHARM.png-0a4788aa49e08a6dfe4242bcc3c9bc52.ctex"
+uid="uid://bhsmh8j6l4nee"
+path="res://.godot/imported/F_Imp_6.png-fc9e8244ac03ffb7d3e7b69bfc9bc142.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/fishing/F_CHARM.png"
-dest_files=["res://.godot/imported/F_CHARM.png-0a4788aa49e08a6dfe4242bcc3c9bc52.ctex"]
+source_file="res://assets/fishing/ImpAnim/F_Imp_6.png"
+dest_files=["res://.godot/imported/F_Imp_6.png-fc9e8244ac03ffb7d3e7b69bfc9bc142.ctex"]
 
 [params]
 

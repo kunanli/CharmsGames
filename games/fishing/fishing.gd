@@ -8,7 +8,7 @@ extends Node2D
 # 沒有生命值，犯錯只會浪費秒數，這是刻意跟 Seeker 的三條命互補。
 #
 # 畫面分層（GDD）：天空 96px／水下 174px，水面線在 y=96。
-# 鉤子支點固定在船底 (240, 96)，±75° 擺動，單趟週期 2.4 秒，
+# 釣線起點 LINE_ORIGIN 預設在船底 (240, 96)，±75° 擺動，單趟週期 2.4 秒，
 # 最後 15 秒擺速 +15% 製造收尾壓力。
 #
 # 座標一律用 Vector2（像素）—— 這款沒有格子，不會有 Vector2i 混用問題。
@@ -27,7 +27,10 @@ const READY_TIME := ReadyGo.FADE_SECONDS + ReadyGo.ANIM_SECONDS + 0.05
 # ── 畫面配置 ────────────────────────────────────────────
 const SCREEN := Vector2(480, 270)
 const SURFACE_Y := 96.0                    # 水面線：天空 96 / 水下 174
-const PIVOT := Vector2(240.0, 96.0)        # 鉤子支點（船底）
+const PIVOT := Vector2(240.0, 96.0)        # 船底龍骨錨點（船與露娜的視覺中心）
+## 釣線的起點（鉤子擺動中心）。預設跟 PIVOT 同點；想單獨移動線的起點
+## （例如改到角色手上的釣竿尖端）只改這裡，船的錨點不動。
+const LINE_ORIGIN := Vector2(222.0, 69.0)
 
 # 船＋露娜整張貼圖（F_Luna.png，300×300：露娜頭頂在貼圖 y=30、船底龍骨在 y=269）。
 # 顯示大小 60×60：船體寬約 51px（貼近舊版 56px 佔位），露娜頭頂落在 y≈42、
@@ -43,7 +46,7 @@ const MAX_ANGLE_DEG := 75.0
 const SWING_PERIOD := 2.4                  # 一趟來回的秒數
 const RUSH_TIME := 15.0                    # 剩幾秒開始加速
 const RUSH_SWING := 1.15                   # 擺速 ×1.15
-const LINE_MIN := 12.0                     # 待機時的線長
+const LINE_MIN := 40.0                     # 待機時的線長
 const LINE_MAX := 205.0
 const EXTEND_SPEED := 150.0
 const RETRACT_EMPTY := 210.0               # 空鉤回收速度
@@ -125,16 +128,44 @@ var _rushed := false                # 最後 15 秒的加速只提示一次
 var _line_flash := 0.0              # 勾中時釣線閃一下（GDD 指定的表現）
 var _score_shown := 0.0             # HUD 上滾動中的分數
 
-# 露娜視覺的替換接口：目前直接畫 F_Luna.png（船＋露娜一體，見 _draw_boat）。
-# 之後要換成 tscn 動畫場景做動畫切換時，把場景實例 add_child 掛到這裡：
-#   luna_view = load("res://.../luna.tscn").instantiate()
-#   add_child(luna_view)
-# _process 每幀會把它對齊到 _luna_anchor() + _juice.world_offset()，
-# _draw_boat() 偵測到 luna_view 非 null 就跳過貼圖、由動畫節點自己畫
-# （AnimatedSprite2D／自訂 _draw 都行）。
-# 注意：luna_view 是純視覺節點，position 只當繪製錨點、不參與任何玩法判定，
-# 所以把畫面位移寫進它的 position 是安全的（跟 player/cat 那套不同）。
+# ─────────────────────────────────────────────────────────
+# 露娜視覺：F_Player.tscn（畫師交付的動畫場景，AnimatedSprite2D 四段動畫）：
+#   Idle      待機：鉤子擺動、玩家沒有操作時 —— 循環
+#   Hook      放線：A 按下、線伸出／收回途中 —— 循環
+#   GetPoint  寶物上船加分的慶祝 —— 播一次
+#   Hurt      小惡魔上船扣時間的受傷 —— 播一次
+# 一次性動畫播完自動回到基礎動畫（放線中＝Hook，否則 Idle）。
+# 動畫不自己播 —— pause 後由 _process 用場景定義的 fps 手動推幀，
+# launcher 停掉遊戲節點（process_mode = DISABLED）時畫面才跟著凍。
+# luna_view 是純視覺節點，position 只當繪製錨點、不參與任何玩法判定，
+# 所以把畫面位移寫進它的 position 是安全的（跟 player/cat 那套不同）；
+# _draw_boat() 偵測到 luna_view 非 null 就跳過舊貼圖（場景結構不符時退回）。
+# ─────────────────────────────────────────────────────────
+const F_PLAYER_SCENE := preload("res://assets/AnimationScene/F_Player.tscn")
+## 顯示縮放：與舊 F_Luna.png（300×300 畫到 60×60）同尺寸 —— 畫師照舊比例
+## 重畫的新幀（內容約 256×240px）在 0.2 倍下視覺大小跟舊貼圖一致。
+const PLAYER_SCALE := 0.2
+## 每段動畫的錨點參考框（取第 0 幀，alpha>32 的內容包圍盒；畫師改圖要重測）。
+## 整段動畫共用這個框算 offset —— 所有幀都是同一畫布尺寸、內容位置一致，
+## 不需要逐幀歸一化（逐幀錨定反而會讓船跟著角色肢體擺動而左右滑，見
+## _apply_frame_anchor 的註解）。
+const P_REFS := {
+	&"Idle": Rect2(34, 32, 257, 237),
+	&"Hook": Rect2(34, 33, 257, 237),
+	&"GetPoint": Rect2(34, 32, 257, 237),
+	&"Hurt": Rect2(37, 42, 257, 237),
+}
+
+enum PAnim { IDLE, HOOK, GETPOINT, HURT }
+const P_ANIM_NAMES := [&"Idle", &"Hook", &"GetPoint", &"Hurt"]
+
 var luna_view: Node2D = null
+var _bg_view: Node2D = null           # 背景層子節點（z=-2，見 _setup_bg_view）
+var _bg_video: VideoStreamPlayer = null   # 背景影片（隱藏節點，只負責解碼）
+var _anim: AnimatedSprite2D = null
+var _p_anim := PAnim.IDLE         # 目前播的動畫（見 PAnim）
+var _p_time := 0.0                # 目前動畫累計時間（手動推幀用）
+var _p_oneshot := false           # 一次性動畫播放中（播完回基礎動畫）
 
 var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
@@ -147,11 +178,24 @@ var _textures := {
 	Kind.IMP: preload("res://assets/fishing/F_Imp.png"),
 }
 
+## 小惡魔的游泳動畫：7 幀循環（ImpAnim/F_Imp_0~6.png，200×200）。
+## 顯示尺寸沿用 _item_sizes 的 16×16（新幀內容占比與舊 220×220 貼圖一致）。
+const IMP_ANIM_FPS := 8.0
+var _imp_frames: Array[Texture2D] = [
+	preload("res://assets/fishing/ImpAnim/F_Imp_0.png"),
+	preload("res://assets/fishing/ImpAnim/F_Imp_1.png"),
+	preload("res://assets/fishing/ImpAnim/F_Imp_2.png"),
+	preload("res://assets/fishing/ImpAnim/F_Imp_3.png"),
+	preload("res://assets/fishing/ImpAnim/F_Imp_4.png"),
+	preload("res://assets/fishing/ImpAnim/F_Imp_5.png"),
+	preload("res://assets/fishing/ImpAnim/F_Imp_6.png"),
+]
+
 var _item_sizes := {
-	Kind.DIAMOND: Vector2(32, 32),
-	Kind.CHARM: Vector2(32, 32),
-	Kind.CLOUD: Vector2(32, 32),
-	Kind.IMP: Vector2(16, 16),
+	Kind.DIAMOND: Vector2(22, 22),
+	Kind.CHARM: Vector2(24, 24),
+	Kind.CLOUD: Vector2(38, 38),
+	Kind.IMP: Vector2(28, 28),
 }
 
 
@@ -160,7 +204,37 @@ var _item_sizes := {
 func _ready() -> void:
 	_rng.randomize()
 	_build_defs()
+	_setup_player_view()
+	_setup_bg_view()
 	_start_round()
+
+
+## 露娜視覺：實例化 F_Player.tscn 掛到 luna_view，由它接管角色繪製。
+## 場景結構不符預期（沒有 AnimatedSprite2D）時退回 F_Luna.png 靜態貼圖
+## （_draw_boat 的舊路徑，luna_view 保持 null）。
+func _setup_player_view() -> void:
+	luna_view = F_PLAYER_SCENE.instantiate()
+	_anim = luna_view.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	if _anim == null:
+		luna_view.queue_free()
+		luna_view = null
+		return
+	_anim.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# 縮放必須在這裡就設好：READY 期間 _process 推幀前就會先畫出第一幀，
+	# 沒設的話開場會以貼圖原尺寸（358×305）畫出一個巨無霸露娜。
+	_anim.scale = Vector2(PLAYER_SCALE, PLAYER_SCALE)
+	_anim.pause()                 # 幀由 _process 手動推（凍結時畫面才跟著凍）
+	luna_view.name = "LunaView"
+	add_child(luna_view)
+	# 子節點一律畫在父節點 _draw() 之後（在釣線之上）——把玩家壓到 -1 層，
+	# 釣線與鉤頭才不會被角色貼圖擋住。鉤子本來就掛在船的前方，這是正確的遮蔽順序。
+	luna_view.z_index = -1
+	_p_anim = PAnim.IDLE
+	_p_time = 0.0
+	_p_oneshot = false
+	_anim.animation = P_ANIM_NAMES[PAnim.IDLE]
+	_anim.frame = 0
+	_apply_frame_anchor()
 
 
 ## 物件資料表
@@ -196,6 +270,9 @@ func _start_round() -> void:
 	_rushed = false
 	_line_flash = 0.0
 	_score_shown = 0.0
+	_p_anim = PAnim.IDLE
+	_p_time = 0.0
+	_p_oneshot = false
 	_reset_hook()
 	_populate()
 	state = State.READY
@@ -267,7 +344,7 @@ func _spawn_one(kind: int, band: Vector2) -> void:
 ##   2. 直線距離超過最大線長 —— 深層最外側會超過 205px
 ## 兩者都留一點餘裕，免得卡在剛好邊緣。
 func _reachable(it: Item) -> bool:
-	var d := it.pos - PIVOT
+	var d := it.pos - LINE_ORIGIN
 	if d.y <= 0.0:
 		return false
 	if absf(atan2(d.x, d.y)) > deg_to_rad(MAX_ANGLE_DEG - 4.0):
@@ -320,6 +397,9 @@ func _process(delta: float) -> void:
 	if luna_view != null:
 		# 動畫場景對齊到船底龍骨（含鏡頭位移；純視覺，見 luna_view 註解）
 		luna_view.position = _luna_anchor() + _juice.world_offset()
+		_update_player_anim(delta)
+	if _bg_view != null:
+		_bg_view.queue_redraw()   # 背景層每幀重繪（視差位移會變）
 	queue_redraw()
 
 
@@ -418,7 +498,7 @@ func _hook_dir() -> Vector2:
 
 
 func _hook_pos() -> Vector2:
-	return PIVOT + _hook_dir() * line_len
+	return LINE_ORIGIN + _hook_dir() * line_len
 
 
 func _extend(delta: float) -> void:
@@ -464,6 +544,7 @@ func _retract(delta: float) -> void:
 	if line_len > LINE_MIN:
 		if carried != null:
 			carried.pos = _hook_pos() + Vector2(0, 6)   # 獵物跟著鉤子走
+			carried.phase += delta   # 收線途中動畫繼續播（游泳相位計時）
 		return
 
 	# 收回船上，這時才結算
@@ -480,6 +561,7 @@ func _retract(delta: float) -> void:
 ## 獵物上船：加分或扣時間
 func _land(it: Item) -> void:
 	if it.kind == Kind.IMP:
+		_play_oneshot(PAnim.HURT)              # 小惡魔：受傷動畫
 		AudioManager.play_sfx("fishing_boom")        # 小惡魔：扣時間
 		time_left = maxf(0.0, time_left - 3.0)
 		_juice.kick(0.80)
@@ -490,6 +572,7 @@ func _land(it: Item) -> void:
 		var gained := _score_of(it.kind)
 		score += gained
 		if gained > 0:
+			_play_oneshot(PAnim.GETPOINT)     # 寶物上船：慶祝動畫
 			AudioManager.play_sfx("fishing_gainpoints")   # 上船加分
 			var col: Color = Palette.GOLD if it.kind == Kind.CHARM else Palette.TEXT
 			if it.kind == Kind.CHARM:
@@ -543,15 +626,15 @@ func _move_items(delta: float) -> void:
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
-	# 三層，每層一個位移（見 shared/juice.gd 的分層模型）
-	draw_set_transform(_juice.bg_offset())
-	_draw_sky()                        # 天空／月亮／星星／遠山：視差層
+	# 三層（見 shared/juice.gd 的分層模型）：背景由 _bg_view（z=-2）畫、
+	# 玩家 luna_view 壓在 z=-1，其餘世界內容與 HUD 都在這層（z=0）——
+	# 子節點一律畫在父節點 _draw() 之後，背景留在這裡會被玩家蓋住。
 	draw_set_transform(_juice.world_offset())
 	#_draw_water()                      # 水面線跟世界同步，船才不會浮起來
 	for it in items:
 		_draw_item(it)
-	_draw_line_and_hook()
 	_draw_boat()
+	_draw_line_and_hook()   # 畫在船之後：釣線（與鉤頭）在角色前方
 	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	draw_set_transform(Vector2.ZERO)
 	_draw_ui_frame()
@@ -571,27 +654,78 @@ func _draw_ui_frame() -> void:
 	draw_texture_rect(s_ui_kuang, Rect2(0, 0, 480, 270), false)
 
 
-## 視差層。天空底色要往下延伸超過水面線 —— 水體是畫在 WORLD 層的，
-## 兩層分離時如果天空只畫到 y=96，水面線附近就會裂開一條沒人畫的縫。
-func _draw_sky() -> void:
-	var m := Juice.OVERDRAW
-	draw_rect(Rect2(-m, -m, SCREEN.x + m * 2.0, SURFACE_Y + m * 2.0), Palette.BG)
-	# 彎月
-	draw_circle(Vector2(402, 30), 13.0, Palette.MOON)
-	draw_circle(Vector2(396, 26), 12.0, Palette.BG)
-	# 星點（用相位固定的偽隨機，不要每幀跳動）
-	for i in 26:
-		var x := fmod(float(i) * 79.0, 470.0) + 5.0
-		var y := fmod(float(i) * 37.0, 74.0) + 6.0
-		draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
-	# 遠山剪影：多跑一輪並往左移，補上多畫出來的那一圈
-	for i in 8:
-		var bx := float(i) * 72.0 - 10.0 - Juice.OVERDRAW
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(bx, SURFACE_Y), Vector2(bx + 38, SURFACE_Y - 26),
-			Vector2(bx + 76, SURFACE_Y)]), Palette.FAR)
-			
-	draw_texture_rect(bg_texture, Rect2(2, 15, SCREEN.x -2, SCREEN.y - 10), false)
+## 背景層（天空／月亮／星星／遠山／全屏背景影片）畫在獨立子節點 z=-2：
+## 玩家 luna_view 在 z=-1，背景留在父節點 _draw() 會蓋過玩家
+## （子節點一律畫在父節點之後，父節點自己的輸出拆不出「玩家之下」的層）。
+## 這層唯一會變的是視差位移（bg_offset），_process 每幀重繪它。
+class BgView extends Node2D:
+	var game = null   # fishing 節點；不型別，執行期取背景狀態
+	func _draw() -> void:
+		if game == null:
+			return
+		draw_set_transform(game._juice.bg_offset())
+		var m := Juice.OVERDRAW
+		# 天空底色要往下延伸超過水面線 —— 水體畫在 WORLD 層，兩層分離時
+		# 如果天空只畫到 y=96，水面線附近就會裂開一條沒人畫的縫。
+		draw_rect(Rect2(-m, -m, game.SCREEN.x + m * 2.0, game.SURFACE_Y + m * 2.0), Palette.BG)
+		# 彎月
+		draw_circle(Vector2(402, 30), 13.0, Palette.MOON)
+		draw_circle(Vector2(396, 26), 12.0, Palette.BG)
+		# 星點（用相位固定的偽隨機，不要每幀跳動）
+		for i in 26:
+			var x := fmod(float(i) * 79.0, 470.0) + 5.0
+			var y := fmod(float(i) * 37.0, 74.0) + 6.0
+			draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
+		# 遠山剪影：多跑一輪並往左移，補上多畫出來的那一圈
+		for i in 8:
+			var bx := float(i) * 72.0 - 10.0 - Juice.OVERDRAW
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(bx, game.SURFACE_Y), Vector2(bx + 38, game.SURFACE_Y - 26),
+				Vector2(bx + 76, game.SURFACE_Y)]), Palette.FAR)
+		# 背景影片的當前幀（或載入失敗時的靜態圖）：等比例縮放填滿整個
+		# 畫面、水平垂直置中，超出畫面的部分裁掉 —— 素材尺寸任意都能自適應。
+		var vtex: Texture2D = null
+		if game._bg_video != null:
+			vtex = game._bg_video.get_video_texture()
+		if vtex != null and vtex.get_size().x > 0.0:
+			var vs := vtex.get_size()
+			var s := maxf(game.SCREEN.x / vs.x, game.SCREEN.y / vs.y)
+			var w := vs.x * s
+			var h := vs.y * s
+			draw_texture_rect(vtex,
+				Rect2((game.SCREEN.x - w) * 0.5, (game.SCREEN.y - h) * 0.5, w, h), false)
+		else:
+			draw_texture_rect(game.bg_texture,
+				Rect2(2, 15, game.SCREEN.x - 2, game.SCREEN.y - 10), false)
+
+
+func _setup_bg_view() -> void:
+	# 背景影片（F_BG_Anim.ogv）：VideoStreamPlayer 只負責解碼播放、節點本身
+	# 隱藏（它是 Control，不隱藏會用自己的尺寸把影片畫在角落），畫面由
+	# BgView 手繪 —— 跟 launcher 的標題／待機影片同一套做法。循環靠 loop，
+	# finished 重播是保險（同 launcher）。載入失敗（素材沒進場）退回靜態圖。
+	_bg_video = VideoStreamPlayer.new()
+	_bg_video.name = "BgVideo"
+	var stream: VideoStream = load("res://assets/fishing/F_BG_Anim.ogv")
+	if stream != null:
+		_bg_video.stream = stream
+	_bg_video.autoplay = true
+	_bg_video.loop = true
+	_bg_video.visible = false
+	_bg_video.connect("finished", Callable(self, "_on_bg_video_finished"))
+	add_child(_bg_video)
+	var v := BgView.new()
+	v.game = self
+	v.name = "BgView"
+	v.z_index = -2
+	add_child(v)
+	_bg_view = v
+
+
+## loop=true 的保險：萬一播放器到片尾沒接上循環，重播一次（同 launcher）
+func _on_bg_video_finished() -> void:
+	if _bg_video != null:
+		_bg_video.play()
 
 
 ## 水體屬於 WORLD 而不是背景 —— 船釘在水面線上，兩者必須共用同一個位移。
@@ -608,10 +742,21 @@ func _draw_sky() -> void:
 func _draw_centered_texture(
 		texture: Texture2D,
 		center: Vector2,
-		size: Vector2
+		size: Vector2,
+		flip_h := false
 	) -> void:
 
 	if texture == null:
+		return
+
+	if flip_h:
+		# 水平鏡像：把物體中心當原點、x 軸反轉後再畫（draw_texture_rect
+		# 沒有 flip 參數）。呼叫點都在 WORLD 層（變換＝鏡頭位移），
+		# 畫完恢復原變換，不影響後續繪製。
+		var wo := _juice.world_offset()
+		draw_set_transform(center + wo, 0.0, Vector2(-1.0, 1.0))
+		draw_texture_rect(texture, Rect2(-size * 0.5, size), false)
+		draw_set_transform(wo)
 		return
 
 	draw_texture_rect(
@@ -621,6 +766,19 @@ func _draw_centered_texture(
 	)
 
 func _draw_item(it: Item) -> void:
+	if it.kind == Kind.IMP:
+		# 小惡魔的游泳動畫：7 幀循環。用 it.phase 驅動 —— 每隻初始相位
+		# 隨機，不會整場同步（跟鑽石閃光同一顆計時器，互不干擾）。
+		var f := int(it.phase * IMP_ANIM_FPS) % _imp_frames.size()
+		var tex: Texture2D = _imp_frames[f]
+		var size: Vector2 = _item_sizes[Kind.IMP]
+		# 泳姿朝向：放線時往鉤頭靠（水平分量）、平時按自己的游速；掛上鉤
+		# 後維持最後朝向。美術默認朝左，往右游要水平鏡像。
+		var dir := signf(it.vx)
+		if hook_state != Hook.SWING and it != carried:
+			dir = signf(_hook_pos().x - it.pos.x)
+		_draw_centered_texture(tex, it.pos, size, dir > 0.0)
+		return
 	var texture: Texture2D = _textures.get(it.kind)
 	if texture == null:
 		return
@@ -639,9 +797,9 @@ func _draw_diamond_flash(it: Item) -> void:
 		return
 	var s := it.size.x
 	var col := Color(Palette.TEXT, 0.85)
-	draw_line(it.pos + Vector2(-s * 0.38, 0), it.pos + Vector2(s * 0.38, 0), col, 1.0)
-	draw_line(it.pos + Vector2(0, -s * 0.38), it.pos + Vector2(0, s * 0.38), col, 1.0)
-	draw_circle(it.pos, s * 0.13, col)
+	draw_line(it.pos + Vector2(-s * 0.2, 0), it.pos + Vector2(s * 0.2, 0), col, 0.5)
+	draw_line(it.pos + Vector2(0, -s * 0.2), it.pos + Vector2(0, s * 0.2), col, 0.5)
+	draw_circle(it.pos, s * 0.05, col)
 
 
 
@@ -651,7 +809,7 @@ func _draw_line_and_hook() -> void:
 	# 星光釣線：亮青白 1px。勾中的瞬間整條線閃一次白（GDD 指定）。
 	var line_col: Color = Palette.TEXT if _line_flash > 0.0 else Palette.MOON
 	var line_w := 2.0 if _line_flash > 0.0 else 1.0
-	draw_line(PIVOT, tip, line_col, line_w)
+	draw_line(LINE_ORIGIN, tip, line_col, line_w)
 	# 鉤頭是小星星
 	draw_circle(tip, 2.5, Palette.TEXT)
 	draw_rect(Rect2(tip.x - 3.5, tip.y - 0.5, 7, 1), Palette.MOON)
@@ -664,9 +822,70 @@ func _draw_line_and_hook() -> void:
 
 
 ## 露娜（船底龍骨）在遊戲座標的位置：船底中央對齊水面線。
-## 鉤子支點 PIVOT 也在這裡，釣線從船底正下方出發。
+## 釣線起點是獨立的 LINE_ORIGIN（預設與船底同點），改它不會動到船。
 func _luna_anchor() -> Vector2:
 	return Vector2(PIVOT.x, SURFACE_Y)
+
+
+## 觸發一次性動畫（GETPOINT／HURT）：立即中斷目前動畫，播完回基礎動畫。
+## 在 _land() 裡呼叫 —— 上船結算的那一幀就切，不等到下一幀。
+func _play_oneshot(anim: int) -> void:
+	_p_anim = anim
+	_p_time = 0.0
+	_p_oneshot = true
+	if _anim != null:
+		_anim.animation = P_ANIM_NAMES[anim]
+		_anim.frame = 0
+		_apply_frame_anchor()
+
+
+## 露娜動畫狀態機（手動推幀，見 PAnim／P_ANIM_NAMES）：
+## 基礎動畫由鉤子狀態決定 —— 線在外面（放線／收線途中）播 Hook，否則 Idle；
+## 一次性動畫（GETPOINT／HURT）播完才回基礎動畫，期間不被 Hook／Idle 打斷。
+func _update_player_anim(delta: float) -> void:
+	if _anim == null:
+		return
+	var base: int = PAnim.HOOK if hook_state != Hook.SWING else PAnim.IDLE
+	var anim := _p_anim if _p_oneshot else base
+	if anim != _p_anim:
+		_p_anim = anim
+		_p_time = 0.0
+		_p_oneshot = anim == PAnim.GETPOINT or anim == PAnim.HURT
+		_anim.animation = P_ANIM_NAMES[_p_anim]
+		_anim.frame = 0
+	var name: StringName = P_ANIM_NAMES[_p_anim]
+	var frames := _anim.sprite_frames.get_frame_count(name)
+	_p_time += delta
+	var f := int(_p_time * _anim.sprite_frames.get_animation_speed(name))
+	if _p_oneshot and f >= frames:
+		# 一次性動畫播完 → 回到基礎動畫
+		_p_oneshot = false
+		_p_anim = base
+		_p_time = 0.0
+		_anim.animation = P_ANIM_NAMES[_p_anim]
+		f = 0
+	elif not _p_oneshot:
+		f %= frames
+	if _anim.frame != f:
+		_anim.frame = f
+	_apply_frame_anchor()
+
+
+## 動畫錨點：每段動畫共用一個 offset（由 P_REFS 參考框算出，所有幀的
+## 畫布尺寸相同）—— 內容中心對到 x=0、內容底（船底龍骨）對到 y=0，
+## luna_view 的位置就是錨點（_luna_anchor + 鏡頭位移），所以船底永遠
+## 貼著水面線、水平置中。
+## 不做逐幀歸一化：畫師的幀都在同一畫布、內容位置一致，逐幀錨定反而會
+## 讓船跟著角色的肢體擺動（抬手、伸杆子）而左右滑、上下跳。
+## offset 是未縮放座標（scale 乘在整個節點上），錨點正好是 0 所以
+## 不需要像 Seeker 那樣加 ÷scale 的腳底偏移項。
+func _apply_frame_anchor() -> void:
+	var name: StringName = P_ANIM_NAMES[_p_anim]
+	var b: Rect2 = P_REFS[name]
+	var ts: Vector2 = _anim.sprite_frames.get_frame_texture(name, _anim.frame).get_size()
+	_anim.offset = Vector2(
+		ts.x * 0.5 - b.get_center().x,
+		ts.y * 0.5 - b.end.y)
 
 
 func _draw_boat() -> void:

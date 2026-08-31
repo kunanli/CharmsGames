@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bsi78rfdd4as3"
-path="res://.godot/imported/F_SHADOW_FISH.png-2ecd6709bddb0212ac077ed6dbf5938e.ctex"
+uid="uid://ihmoxxvbxx7r"
+path="res://.godot/imported/F_Imp_4.png-ebe0a7b09ddce2d064e768ddfb7db717.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/fishing/F_SHADOW_FISH.png"
-dest_files=["res://.godot/imported/F_SHADOW_FISH.png-2ecd6709bddb0212ac077ed6dbf5938e.ctex"]
+source_file="res://assets/fishing/ImpAnim/F_Imp_4.png"
+dest_files=["res://.godot/imported/F_Imp_4.png-ebe0a7b09ddce2d064e768ddfb7db717.ctex"]
 
 [params]
 
