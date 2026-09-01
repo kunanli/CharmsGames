@@ -8,8 +8,8 @@ extends RefCounted
 # 不註冊 autoload、不改 project.godot。
 #
 # 目前只有 UNLIMITED COINS 一個開關（launcher 的 SETTING 二級選單
-# 切換）。專案目前沒有投幣系統，開關先存起來、供未來的投幣／開始
-# 遊戲邏輯用 is_unlimited_coins() 讀取；未來加設定就是一個 static
+# 切換）。投幣系統（shared/coin_manager.gd 的 CoinManager）的開局閘門
+# 用 is_unlimited_coins() 讀這裡的狀態；未來加設定就是一個 static
 # var ＋ 一對 get/set ＋ _save() 裡的一行。
 # ─────────────────────────────────────────────────────────
 

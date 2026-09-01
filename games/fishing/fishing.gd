@@ -181,6 +181,9 @@ var _textures := {
 ## 小惡魔的游泳動畫：7 幀循環（ImpAnim/F_Imp_0~6.png，200×200）。
 ## 顯示尺寸沿用 _item_sizes 的 16×16（新幀內容占比與舊 220×220 貼圖一致）。
 const IMP_ANIM_FPS := 8.0
+## 小惡魔之間的最小間距（px）：靠得更近就沿兩心連線互相推開，
+## 聚在鉤頭後也能重新散開，不會疊成一片。
+const IMP_MIN_SEP := 16.0
 var _imp_frames: Array[Texture2D] = [
 	preload("res://assets/fishing/ImpAnim/F_Imp_0.png"),
 	preload("res://assets/fishing/ImpAnim/F_Imp_1.png"),
@@ -599,8 +602,11 @@ func _pop(text: String, col: Color) -> void:
 func _move_items(delta: float) -> void:
 	var tip := _hook_pos()
 	var line_out := hook_state != Hook.SWING
+	var imps := []          # 這幀場上的小惡魔（散開判定用，最多 4 隻）
 	for it in items:
 		it.phase += delta
+		if it.kind == Kind.IMP:
+			imps.append(it)
 		if it.vx == 0.0:
 			continue
 
@@ -621,6 +627,25 @@ func _move_items(delta: float) -> void:
 			it.pos.x = WATER_R - half
 			it.vx = -absf(it.vx)
 		it.pos.y = clampf(it.pos.y, SURFACE_Y + 14.0, WATER_B - 6.0)
+
+	# 小惡魔互斥：兩兩比較，距離小於 IMP_MIN_SEP 就沿連線各推一半 ——
+	# 追鉤頭擠成一團之後線一收就會重新四散，任何時候都不會重疊。
+	for i in imps.size():
+		for j in range(i + 1, imps.size()):
+			var a: Item = imps[i]
+			var b: Item = imps[j]
+			var d := b.pos - a.pos
+			var dist := d.length()
+			if dist >= IMP_MIN_SEP:
+				continue
+			var push: Vector2 = d / maxf(dist, 0.001) * (IMP_MIN_SEP - dist) * 0.5
+			a.pos -= push
+			b.pos += push
+	# 推開可能把彼此推出水域邊界，補一次夾住
+	for imp: Item in imps:
+		imp.pos.x = clampf(imp.pos.x,
+			WATER_L + imp.size.x * 0.5, WATER_R - imp.size.x * 0.5)
+		imp.pos.y = clampf(imp.pos.y, SURFACE_Y + 14.0, WATER_B - 6.0)
 
 
 # ── 繪製 ────────────────────────────────────────────────
@@ -796,7 +821,7 @@ func _draw_diamond_flash(it: Item) -> void:
 	if fmod(it.phase, 0.4) >= 0.2:
 		return
 	var s := it.size.x
-	var col := Color(Palette.TEXT, 0.85)
+	var col := Color(Palette.MOON_LIGHT, 0.85)
 	draw_line(it.pos + Vector2(-s * 0.2, 0), it.pos + Vector2(s * 0.2, 0), col, 0.5)
 	draw_line(it.pos + Vector2(0, -s * 0.2), it.pos + Vector2(0, s * 0.2), col, 0.5)
 	draw_circle(it.pos, s * 0.05, col)
@@ -912,25 +937,14 @@ func _draw_hud() -> void:
 		tsize = int(12.0 + (1.0 - fmod(time_left, 1.0)) * 4.0)
 	draw_string(font, Vector2(25, 37), "%d:%02d" % [secs / 60, secs % 60],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
-	# 中：分數（滾動中的值）。背景框在 1920×1080 設計座標 (768,70)、
-	# 文字 baseline (990,92)，除以 4 到邏輯畫面（同 launcher 慣例）。
+	# 右：分數（滾動中的值）。背景框右緣對齊原 DEPTH 的右邊界（480-12），
+	# 只動 X、Y 不變（框 17.5／文字 34.0）。背景框在 1920×1080 設計座標
+	# (768,70)、文字 baseline (990,92)，除以 4 到邏輯畫面（同 launcher 慣例）。
 	var fsize := s_score_frame.get_size() / 4.0
-	draw_texture_rect(s_score_frame, Rect2(192.0, 17.5, fsize.x, fsize.y), false)
-	draw_string(font, Vector2(215.0, 34.0), "%06d" % int(round(_score_shown)),
+	var fx := SCREEN.x - 12.0 - fsize.x
+	draw_texture_rect(s_score_frame, Rect2(fx, 17.5, fsize.x, fsize.y), false)
+	draw_string(font, Vector2(fx + 23.0, 34.0), "%06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.LUNA)
-	# 鉤子深度（水面下幾 px）
-	var depth := int(maxf(0.0, _hook_pos().y - SURFACE_Y))
-	draw_string(font, Vector2(0, 35), "DEPTH %03d" % depth,
-		HORIZONTAL_ALIGNMENT_RIGHT, SCREEN.x - 12, 12, Palette.LUNA)
-
-	# 月光能量剩餘次數：右下三顆月亮
-	for i in MOON_USES:
-		var c := Vector2(432 + i * 14, 244)
-		if i < moon_left:
-			draw_circle(c, 5.0, Palette.MOON)
-			draw_circle(c + Vector2(-2, -1), 4.0, Palette.NIGHT)
-		else:
-			draw_circle(c, 5.0, Palette.FAR)
 
 	if _pop_timer > 0.0:
 		# 飄字：越接近消失越往上飄

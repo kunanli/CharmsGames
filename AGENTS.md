@@ -50,7 +50,8 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    **PRESS ANY BUTTON TO START** 提示（亮滅二值閃爍、週期 1.2 秒亮 0.7 秒，
    與待機的 CLICK TO PLAY 同款；起名 overlay 與待機畫面不畫這行）：
    按**任意鍵**（方向鍵／A／B／空格／字母鍵……都可以）→ 起名開局；
-   唯二的例外是 **A＋B 同時按住 3 秒** → 進入**管理員密碼界面**
+   例外有三：**Y**＝投幣（見「投幣系統」段）、**A＋B 同時按住 3 秒** → 進入
+   **管理員密碼界面**
    （見下，2026-08 取代舊的 START／RANKING 大按鈕與 R／F3 入口 ——
    舊按鈕矩形需求 (60,590)+720×390、`TITLE_START_BTN`／`TITLE_RANKING_BTN`
    常量與自繪按鈕已全部拆除，美術對位不需要了）。
@@ -142,8 +143,10 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   垂直排列（第一行視覺中心 Y≈190、行距 72px），每行三欄左對齊、60px：
   **排名 1ST./2ND./…**（X≈370）／**玩家名字**（X≈620）／**分數**（X≈1255）。
   進入面板時**逐行交錯顯現**（淡入＋從左滑入，每行錯開 0.1 秒，只播一次）。
-  **畫面最底部是當前玩家的成績行**（GOLD 高亮，同樣排名／名字／分數格式；
-  排名是本局實際名次、可能 >10）—— 不管本局有沒有進前 10 都會顯示。
+  **畫面最底部是當前玩家的成績行**（MOON_LIGHT 高亮，同樣排名／名字／
+  分數格式；排名是本局實際名次、可能 >10）—— 不管本局有沒有進前 10
+  都會顯示。**配色（2026-09 企劃指定）**：前十名行文字 = MOON（#A0DCFF）、
+  大標題與底部當前玩家行 = MOON_LIGHT（#90FFFF，色盤為此新增的第 21 色）。
 - **清除功能在管理員一級標題**（2026-08 從排行榜面板搬過來，面板一律只讀、
   玩家端沒有清除入口）：一級標題選中某款後按 **B** 進該款的清除選單
   （`ui/admin_clear_menu.gd`，Modal Overlay，開著時標題層不處理任何按鍵）。
@@ -163,8 +166,9 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   **CLEAR LEADERBOARD／UNLIMITED COINS**，↑ ↓ 選擇、A 執行、B/ESC 回一級
   （選擇狀態保留）。**UNLIMITED COINS** 按 A 切換 ON/OFF（ON/OFF 畫在名字
   右側），狀態跨執行保存 —— `shared/settings.gd`（class_name Settings，
-  `user://settings.cfg`）；專案目前沒有投幣系統，未來投幣／開始遊戲邏輯
-  用 `Settings.is_unlimited_coins()` 讀取。**CLEAR LEADERBOARD** 按 A 進三級
+  `user://settings.cfg`）；投幣系統已實裝（2026-09，見「投幣系統」段），
+  開局閘門統一透過 `CoinManager.is_unlimited_coins()` 轉讀這裡的狀態。
+  **CLEAR LEADERBOARD** 按 A 進三級
   清除選單：**CLEAR TODAY／CLEAR LAST 24 HOURS／CLEAR ALL DATA**，↑ ↓ 選擇、
   A **執行**（無二次確認）、B/ESC 回二級，執行完顯示 SCORE DATA CLEARED
   提示並留在二級。**清除統一走 `LeaderboardManager.clear_all_games_records(
@@ -191,6 +195,37 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
 
 ---
 
+## 投幣系統（2026-09）
+
+街機代幣：**Y＝投幣**、開一局吃一枚幣；管理員 SETTING 的 UNLIMITED COINS
+切「無限投幣」繞過消耗。
+
+- **檔案分工**：`shared/coin_manager.gd`（class_name CoinManager，靜態單例
+  同 CurrentPlayerSession；`get_coins／add_coin／consume_coin／has_coin／
+  is_unlimited_coins`。幣量只存記憶體、啟動歸 0、不設上限 —— 投幣是實體
+  行為；要跨執行保存的只有 UNLIMITED 開關，那在 Settings）；launcher 是
+  唯一動幣量的人（Y 接線、開局閘門、Coin UI 畫在 `_draw_coin_ui`），
+  三款小遊戲不知道投幣存在。
+- **開局閘門在 `_launch()`**（排在 NOT BUILT 判斷之後，沒建置的款不白吃
+  幣）：`consume_coin()` 一次做完檢查＋扣幣 —— 無限 ON 永遠放行且**不扣
+  幣**；OFF 時餘額 ≥ `START_COST`（暫定 1）才扣一枚放行。放行 →
+  `UI_confirm.wav` → 起名；擋下 → 左下角 Coin 圖抖動 0.4 秒＋
+  `UI_Coin_None.wav`，留在二級。取消起名**不退幣**（規格未要求退幣）。
+- **二級標題左下角 Coin UI**（只掛 GAME_TITLE NORMAL —— IDLE 待機不畫
+  UI、起名 overlay 不畫）：`assets/UI/Coin.png` 原圖 1312×1199，_ready()
+  一次 LANCZOS 降到 12×12（1920×1080 設計 48×48、位置 (32,1000)）再畫，
+  右側 12px 狀態文字：無限 ON 顯示「∞」／OFF 顯示「餘額/需求」（如 0/1）。
+  抖動位移只走繪製層、倒數歸零自動停。
+- **Y 接線**：InputMap action **`coin_insert`**（project.godot `[input]`，
+  實體 Y 鍵），launcher 用 `InputEventKey.is_action_pressed()` 讀。Y 吃掉
+  事件、不觸發起名；無限 ON 也照常 +1 並播 `coin_push.wav`（實體投幣的
+  聲音，規格允許；關掉 ON 後先前投的幣仍在）。IDLE 待機中按 Y ＝喚醒＋
+  投幣。
+- **音效**集中在 AudioManager `SFX_PATHS`：`coin_push`（投幣）／
+  `ui_coin_none`（幣不夠）／`ui_confirm`（成功進起名）。
+
+---
+
 ## 硬規則（違反這些會造成實際問題）
 
 - **邏輯畫面固定 480×270**，一格 tile 16px，4 倍整數放大顯示。所有座標都以這個為準，不要改。
@@ -198,7 +233,7 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
 - **格子座標一律 `Vector2i`，像素座標一律 `Vector2`**。兩者用各遊戲自己的 `cell_center()` 轉換。混用是這個專案最容易出的 bug。
 - **不要引入外部套件或 addon**。
 - **不要用物理碰撞（CharacterBody2D 等）做格子移動**。已經用純數學判斷實作，改用物理會造成卡牆角與抖動。
-- **只用 `shared/palette.gd` 的 20 色**，不自行新增中間色。唯一被允許的變化是對既有色套 alpha，例如 `Color(Palette.NIGHT, 0.82)`。需要新色請先跟企劃討論再加進色盤。
+- **只用 `shared/palette.gd` 的 21 色**（原 20 色＋2026-09 企劃指定的 MOON_LIGHT），不自行新增中間色。唯一被允許的變化是對既有色套 alpha，例如 `Color(Palette.NIGHT, 0.82)`。需要新色請先跟企劃討論再加進色盤。
 - **HUD 文字一律用英文**。全專案文字統一用 `assets/fonts/PixelFont.ttf`（x10y12pxDenkiChipHangul，10×12 像素網格）：`launcher.gd` 的 `_ready()` 把它設成 `ThemeDB.fallback_font`，所有 `draw_string` 一次生效（引擎內建預設字型已不用）。文字維持英文 —— 這支字體只含部分漢字（640 個 CJK），中英混排的像素對齊也不可靠。字體原生渲染尺寸是 12px，新增文字尺寸時優先取 12 的整數倍（12／24），非整數倍會讓像素網格對不齊。
 - **畫面位移（震動、鏡頭偏移）只能走繪製層，絕對不要寫進 `position`**。`player.gd` / `cat.gd` 每幀都用 `position` 算移動與 9px 碰撞判定，位移寫進去會被修正掉、過格時被清空，還會動到判定。用 `draw_set_transform()`，有子節點的就包一層容器節點（Seeker 的 `_world`）。
 
@@ -219,10 +254,12 @@ res://
 │   ├── fishing/fishing.gd  CharmsFishing：黃金礦工式垂釣（單檔）
 │   └── catch/catch.gd      CharmsCatch：接珠寶躲炸彈（單檔）
 ├── shared/
-│   ├── palette.gd          20 色共用色盤（class_name Palette）
+│   ├── palette.gd          21 色共用色盤（class_name Palette；原 20 色＋MOON_LIGHT）
 │   ├── juice.gd            全畫面：震動／鏡頭偏移／視差／頓格（class_name Juice）
 │   ├── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
 │   ├── ready_go.gd         開場 READY 動畫：實例化 Ready_go.tscn、淡入淡出、播完自行釋放（class_name ReadyGo）
+│   ├── audio_manager.gd    音訊管理器（Autoload；BGM／SFX 路徑集中在 BGM_PATHS／SFX_PATHS）
+│   ├── coin_manager.gd     投幣系統：餘額與開局閘門（class_name CoinManager，靜態單例）
 │   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS，user://settings.cfg）
 ├── ui/
 │   ├── game_over.gd        局終 Game Over 動畫（只淡入淡出文字，背景＝暫停定格的遊戲場景）
@@ -467,7 +504,7 @@ GDD 有明確規格。這是 Seeker 現在最缺的東西 —— **整局都是�
 
 - `Guides/CharmsSeeker.docx`、`CharmsFishing.docx`、`CharmsCatch.docx` — **三份 GDD，規格的最終權威**
 - `Guides/art-spec-charms-seeker.md` — 美術素材規格書（尺寸、幀數、命名、交付順序）
-- `Guides/charms-palette.png` — 鎖定的 20 色共用色盤，程式端對應 `shared/palette.gd`
+- `Guides/charms-palette.png` — 鎖定的 20 色共用色盤，程式端對應 `shared/palette.gd`（程式端另有 2026-09 企劃指定的 MOON_LIGHT，共 21 色）
 - `Guides/godot-charms-seeker-guide.md` — M1 的建置紀錄（檔案路徑是重組前的舊版，結構以本檔為準）
 - `tools/sim/README.md` — 平衡模擬腳本的用法與同步紀律
 

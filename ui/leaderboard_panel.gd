@@ -18,9 +18,11 @@ extends Node2D
 #       排名 1ST./2ND./…（X≈370）、玩家名字（X≈620）、分數（X≈1255）。
 #   - 進入面板時**逐行交錯顯現**：淡入＋從左滑入，每行錯開 ROW_STAGGER 秒，
 #     只播一次；底部當前玩家行最後顯現。
-#   - 畫面最底部是**當前玩家**的成績行（GOLD 高亮，同樣排名／名字／分數
-#     格式；排名是本局實際名次，可能 >10）—— 不管本局有沒有進前 10
-#     都會顯示。
+#   - 畫面最底部是**當前玩家**的成績行（MOON_LIGHT 高亮，同樣排名／
+#     名字／分數格式；排名是本局實際名次，可能 >10）—— 不管本局有沒有
+#     進前 10 都會顯示。
+#   - 配色（2026-09 企劃指定）：前十名行文字 = MOON（#A0DCFF），
+#     大標題與底部當前玩家行 = MOON_LIGHT（#90FFFF，色盤新增色）。
 #
 # 按鍵：
 #   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱）
@@ -123,7 +125,7 @@ func _draw() -> void:
 	if t["alpha"] > 0.0:
 		_center(font, "YOUR SCORE",
 			TITLE_CENTER_Y + font.get_ascent(TITLE_SIZE) / 2.0,
-			TITLE_SIZE, Color(Palette.GOLD, t["alpha"]))
+			TITLE_SIZE, Color(Palette.MOON_LIGHT, t["alpha"]))
 
 	if _total == 0:
 		var e := _reveal(ROW_DELAY)
@@ -147,7 +149,7 @@ func _draw_rows(font: Font) -> void:
 			continue
 		var r: LeaderboardRecord = _records[i]
 		var y := ROW_CENTER_Y + font.get_ascent(ROW_FONT) / 2.0 + i * ROW_PITCH
-		var col := Color(Palette.TEXT, e["alpha"])
+		var col := Color(Palette.MOON, e["alpha"])
 		var dx: float = e["dx"]
 		draw_string(font, Vector2(RANK_X + dx, y), _ordinal(i + 1),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
@@ -157,13 +159,13 @@ func _draw_rows(font: Font) -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
 
 
-## 底部當前玩家行：最後顯現、GOLD 高亮。排名是本局的實際名次
+## 底部當前玩家行：最後顯現、MOON_LIGHT 高亮。排名是本局的實際名次
 ## （可能 >10；找不到記錄時顯示 -- 兜底）。
 func _draw_player_row(font: Font) -> void:
 	var e := _reveal(_player_delay())
 	if e["alpha"] <= 0.0:
 		return
-	var col := Color(Palette.GOLD, e["alpha"])
+	var col := Color(Palette.MOON_LIGHT, e["alpha"])
 	var dx: float = e["dx"]
 	var rank_text := _ordinal(_rank) if _rank > 0 else "--"
 	draw_string(font, Vector2(RANK_X + dx, PLAYER_BASELINE), rank_text,

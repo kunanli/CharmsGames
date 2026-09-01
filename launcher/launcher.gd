@@ -6,7 +6,10 @@ extends Node2D
 #     B 開當前選中遊戲的排行榜清除選單、A 確認）
 #   → GAME_TITLE（二級標題＝該款全屏影片背景，無按鈕、底部一行閃爍的
 #     PRESS ANY BUTTON TO START 提示：按**任意鍵** → 起名開局；A／B 例外 —— 兩個一起按住 3 秒 →
-#     管理員密碼界面，提前鬆開＝普通按鍵 → 起名）
+#     管理員密碼界面，提前鬆開＝普通按鍵 → 起名。開局一律過投幣閘門：
+#     Y＝投幣（InputMap coin_insert，不觸發起名）；幣不夠（且非無限投幣）
+#     → 左下角 Coin 圖抖動＋UI_Coin_None、留在二級，夠 → 扣幣＋UI_confirm
+#     → 起名。幣量與閘門在 CoinManager，UI 畫在本檔 _draw_coin_ui）
 #   → NAME_INPUT → PLAYING
 #   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #   一級標題選中 SETTING 按 A → SETTING（二級：CLEAR LEADERBOARD /
@@ -153,6 +156,21 @@ const START_PROMPT_PERIOD := 1.2
 const START_PROMPT_ON_SECONDS := 0.7
 
 
+## ── 投幣 UI（二級標題左下角，2026-09）────
+## Coin 圖與幣量文字：1920×1080 設計座標 (32, 1000) 起、48×48（÷4 = 邏輯
+## (8, 250) 起、12×12）。Coin.png 原圖 1312×1199，全專案最近鄰取樣，
+## 百倍縮小直接畫會糊成一團 —— _ready() 裡用 Image LANCZOS 一次降採樣
+## 到 12×12 再畫。
+const COIN_SOURCE: Texture2D = preload("res://assets/UI/Coin.png")
+const COIN_UI_POS := Vector2(32.0, 1000.0) / 4.0
+const COIN_UI_SIZE := Vector2(48.0, 48.0) / 4.0
+const COIN_UI_TEXT_GAP := 4.0    # 狀態文字與 Coin 圖右緣的間距（邏輯 px）
+
+## 幣不夠被擋下時 Coin 圖的水平抖動：總時長與振幅（邏輯 px，畫面上 ×4）。
+const COIN_SHAKE_SECONDS := 0.4
+const COIN_SHAKE_AMPLITUDE := 2.0
+
+
 var mode := Mode.MENU
 var game: Node2D = null       # 目前正在玩的那一款，沒在玩時為 null
 var active_index := -1        # 目前這局是哪一款（排行榜重開要用）
@@ -175,6 +193,8 @@ var _idle_prompt_elapsed := 0.0   # CLICK TO PLAY 閃爍相位（秒），進待
 var _start_prompt_elapsed := 0.0  # 底部 PRESS ANY BUTTON TO START 閃爍相位（秒），進二級時歸零
 var _title_stream_cache: Dictionary = {}  # game index → VideoStream；載入失敗記 null 不重試
 var _idle_stream_cache: Dictionary = {}   # game index → VideoStream；載入失敗記 null 不重試
+var _coin_tex: Texture2D = null   # 投幣 UI 的 Coin 圖（_ready 降到 12×12；解不開時用原圖）
+var _coin_shake_time := 0.0       # 幣不夠的 Coin 圖抖動剩餘秒數（>0 時每幀重繪）
 var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
 var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = UNLIMITED COINS
 var clear_index := 0          # 三級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
@@ -224,6 +244,17 @@ func _ready() -> void:
 	_idle_timer.connect("timeout", Callable(self, "_on_idle_timer_timeout"))
 	add_child(_idle_timer)
 
+	# 投幣 UI 的 Coin 圖：原圖太大（1312×1199），載入時一次 LANCZOS 縮到
+	# 顯示尺寸 12×12（設計 48×48 ÷4）。素材解不開（get_image 失敗）時退回
+	# 原圖直接畫 —— 與「素材未進場不當機」的慣例一致；兩者皆不可用時
+	# _draw_coin_ui 只畫文字。
+	var coin_img: Image = COIN_SOURCE.get_image()
+	if coin_img != null:
+		coin_img.resize(int(COIN_UI_SIZE.x), int(COIN_UI_SIZE.y), Image.INTERPOLATE_LANCZOS)
+		_coin_tex = ImageTexture.create_from_image(coin_img)
+	else:
+		_coin_tex = COIN_SOURCE
+
 	queue_redraw()
 
 
@@ -232,6 +263,10 @@ func _process(delta: float) -> void:
 		_notice_timer -= delta
 		if _notice_timer <= 0.0:
 			_notice = ""
+		queue_redraw()
+	if _coin_shake_time > 0.0:
+		# 幣不夠的 Coin 圖抖動：倒數到 0 自動停（_draw 的偏移同步歸 0）。
+		_coin_shake_time = maxf(_coin_shake_time - delta, 0.0)
 		queue_redraw()
 	if mode == Mode.GAME_TITLE and not _title_idle:
 		# 二級標題（NORMAL）：背景影片每幀更新＋底部提示的閃爍相位，都要每幀重繪。
@@ -267,10 +302,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	# IDLE（待機）：二級標題的正常互動全部停止。↑↓←→／A／B 其中一個
 	# **按下** → 只喚醒、輸入被吃掉（不進起名、不進 A／B 長按判定）；
-	# 其餘按鍵（含 keyup）一律忽略。
+	# Y ＝投幣：喚醒並照常投一枚幣（實體投幣隨時都收）；其餘按鍵
+	# （含 keyup）一律忽略。
 	if mode == Mode.GAME_TITLE and _title_idle:
 		if key.pressed and key.keycode in TITLE_IDLE_WAKE_KEYS:
 			_wake_from_title_idle()
+		elif key.pressed and _is_coin_insert(key):
+			_wake_from_title_idle()
+			_insert_coin()
 		return
 
 	# keyup 只用於二級標題的 A／B 長按判定：兩個鍵沒按住滿 3 秒就鬆開
@@ -353,15 +392,18 @@ func _unhandled_key_input(event: InputEvent) -> void:
 					mode = Mode.SETTING
 					queue_redraw()
 		Mode.GAME_TITLE:
-			# 有效街機輸入（↑↓←→／A／B）重設 10 秒待機計時；其他鍵不重設
-			# （字母／空白等照舊進起名流程）。NORMAL 時這些鍵也會照常觸發
-			# 起名／長按判定 —— 只有 IDLE 喚醒那一次輸入會被攔截。
-			if key.keycode in TITLE_IDLE_WAKE_KEYS:
+			# 有效街機輸入（↑↓←→／A／B）與投幣（Y）重設 10 秒待機計時；
+			# 其他鍵不重設（字母／空白等照舊進起名流程）。NORMAL 時這些鍵
+			# 也會照常觸發起名／長按判定 —— 只有 IDLE 喚醒那一次輸入會被攔截。
+			if key.keycode in TITLE_IDLE_WAKE_KEYS or _is_coin_insert(key):
 				_idle_timer.start()
-			# 任意鍵 → 起名開局。A／B 例外：按下後先等長按判定（_process 裡
-			# 兩個一起按住 3 秒 → 管理員密碼界面；提前鬆開 → keyup 分支
-			# 當普通按鍵進起名）。
-			if key.keycode == KEY_A or key.keycode == KEY_B:
+			# Y ＝投幣：吃掉事件，不觸發起名（幣量 +1＋coin_push 音效）。
+			if _is_coin_insert(key):
+				_insert_coin()
+			# 任意鍵 → 起名開局（閘門見 _launch）。A／B 例外：按下後先等長按
+			# 判定（_process 裡兩個一起按住 3 秒 → 管理員密碼界面；提前鬆開 →
+			# keyup 分支當普通按鍵進起名 —— 一樣要過 _launch 的投幣閘門）。
+			elif key.keycode == KEY_A or key.keycode == KEY_B:
 				_ab_hold_active = true
 				_ab_hold_time = 0.0
 			else:
@@ -388,11 +430,19 @@ func _enter_game_title(index: int) -> void:
 
 func _launch(index: int) -> void:
 	var entry: Dictionary = GAMES[index]
-	_leave_title_idle()         # 離開二級標題：待機計時與影片全部停掉
-
 	if not _built[index]:
 		_show_notice("%s NOT BUILT YET" % entry["title"], Palette.WARN)
 		return
+
+	# 投幣閘門（規格：先擋幣再進起名）：無限投幣 ON 直接放行且不扣幣；
+	# OFF 時餘額夠 START_COST 才扣一枚放行。不夠 → Coin 圖抖動＋
+	# UI_Coin_None，留在二級標題、不進起名。閘門排在 NOT BUILT 之後，
+	# 沒建置的款項不會白吃玩家一枚幣。
+	if not CoinManager.consume_coin():
+		_start_coin_shake()
+		return
+	AudioManager.play_sfx("ui_confirm")   # 只有成功進入起名／開局才播
+	_leave_title_idle()         # 離開二級標題：待機計時與影片全部停掉
 
 	if not CurrentPlayerSession.is_active():
 		# 第一次進遊戲：先輸入名字，輸入成功才真正開局
@@ -400,6 +450,31 @@ func _launch(index: int) -> void:
 		_open_name_input()
 		return
 	_start_game(index)
+
+
+# ── 投幣（二級標題 Y，InputMap action「coin_insert」＝實體 Y 鍵）────
+
+## 這顆按鍵事件是不是「投幣」。action 被人從 project.godot 的 [input]
+## 拿掉時安全回 false，不讓 is_action_pressed 刷錯誤。
+func _is_coin_insert(key: InputEventKey) -> bool:
+	return InputMap.has_action("coin_insert") and key.is_action_pressed("coin_insert")
+
+
+## Y 投一枚幣：幣量 +1、刷新左下角顯示、播 coin_push。無限投幣 ON 也
+## 照常累計與播音（實體投幣的聲音，規格允許；ON/OFF 只影響開局扣不扣）。
+## 不設投幣上限。
+func _insert_coin() -> void:
+	CoinManager.add_coin()
+	AudioManager.play_sfx("coin_push")
+	queue_redraw()
+
+
+## 幣不夠被 _launch 擋下：Coin 圖抖 COIN_SHAKE_SECONDS 秒＋UI_Coin_None。
+## 抖動結束自動恢復正常（_process 倒數歸零，偏移在 _draw 同步回 0）。
+func _start_coin_shake() -> void:
+	_coin_shake_time = COIN_SHAKE_SECONDS
+	AudioManager.play_sfx("ui_coin_none")
+	queue_redraw()
 
 
 ## 標題層的短提示（NOT BUILT／載入失敗／清除成功），停留 NOTICE_TIME 秒。
@@ -814,6 +889,7 @@ func _draw() -> void:
 		_draw_title_background()
 		if mode == Mode.GAME_TITLE:
 			_draw_start_prompt()
+			_draw_coin_ui()   # 左下角投幣顯示（只掛在二級標題 NORMAL）
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 
@@ -942,3 +1018,34 @@ func _draw_idle_prompt() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.NIGHT)
 	draw_string(font, Vector2(0, y), "CLICK TO PLAY",
 		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
+
+
+## 二級標題左下角的投幣顯示：Coin 圖（12×12，1920×1080 設計 48×48）＋
+## 右側狀態文字 —— 無限投幣 ON 顯示「∞」、OFF 顯示「餘額/需求」（如 0/1，
+## 需求 = CoinManager.START_COST）。文字底影與 PRESS ANY BUTTON 同款雙層
+## 畫法，亮色影片上也看得清。幣不夠被擋下時整組水平抖動（位移只在繪製
+## 層，見 _coin_shake_offset）。只由 _draw 的 GAME_TITLE NORMAL 分支呼叫
+## （IDLE 待機與起名 overlay 不畫，待機畫面不該有 UI、起名時幣已扣完）。
+func _draw_coin_ui() -> void:
+	var shake := Vector2(_coin_shake_offset(), 0.0)
+	if _coin_tex != null:
+		draw_texture_rect(_coin_tex, Rect2(COIN_UI_POS + shake, COIN_UI_SIZE), false)
+	var font := ThemeDB.fallback_font
+	var text := "∞" if CoinManager.is_unlimited_coins() \
+		else "%d/%d" % [CoinManager.get_coins(), CoinManager.START_COST]
+	# 文字基線對齊圖示底緣（圖示 250..262，基線 260），尺寸 12 = 像素字體
+	# 原生 12px 的整數倍，網格對得齊。
+	var pos := Vector2(COIN_UI_POS.x + COIN_UI_SIZE.x + COIN_UI_TEXT_GAP,
+		COIN_UI_POS.y + COIN_UI_SIZE.y - 2.0) + shake
+	draw_string(font, pos + Vector2(0.0, 1.0), text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.NIGHT)
+	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.GOLD)
+
+
+## 幣不夠抖動的水平位移：振幅隨剩餘時間線性衰減的正弦，倒數到 0 時
+## 正好回到 0，不會停在偏移上（位移只進 draw，不碰任何節點 position）。
+func _coin_shake_offset() -> float:
+	if _coin_shake_time <= 0.0:
+		return 0.0
+	return COIN_SHAKE_AMPLITUDE * (_coin_shake_time / COIN_SHAKE_SECONDS) \
+		* sin(_coin_shake_time * 60.0)

@@ -24,8 +24,9 @@ const BGM_PATHS := {
 	"CATCH": BGM_DIR + "BGM_CATCH.mp3",
 }
 
-## SFX 名稱 → 路徑（三款各三支）。UI 音效（ui_confirm／ui_select）已接入
-## 各選單界面；coin_push 保留待未來投幣系統實裝。
+## SFX 名稱 → 路徑（三款各三支）。UI 音效已接入各選單界面：
+## ui_confirm／ui_select 給選單；ui_coin_none（幣不夠被擋）與 coin_push
+## （投幣）給 2026-09 的投幣系統（launcher 二級標題）。
 const SFX_PATHS := {
 	# Catch
 	"catch_boom": SFX_DIR + "CATCH/catch_boom.wav",
@@ -39,10 +40,11 @@ const SFX_PATHS := {
 	"maze_pickup_heart": SFX_DIR + "MAZE/maze_pickup_heart.mp3",
 	"maze_pickup_perl": SFX_DIR + "MAZE/maze_pickup_perl.mp3",
 	"maze_player_hurt": SFX_DIR + "MAZE/maze_player_hurt.mp3",
-	# UI（預留，尚未接線）
+	# UI
 	"ui_confirm": "res://assets/audio/UI/UI_confirm.wav",
 	"ui_select": "res://assets/audio/UI/UI_select.wav",
 	"coin_push": "res://assets/audio/UI/coin_push.wav",
+	"ui_coin_none": "res://assets/audio/UI/UI_Coin_None.wav",
 }
 
 const SFX_POOL_SIZE := 8
