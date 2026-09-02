@@ -249,6 +249,7 @@ res://
 │   ├── seeker/             CharmsSeeker：迷宮追逐（小精靈）
 │   │   ├── seeker.gd       主程式與狀態機
 │   │   ├── maze.gd         迷宮資料（class_name Maze）
+│   │   ├── maze_tiler.gd   邏輯迷宮 → TileMap 牆體自動拼接（class_name MazeTiler）
 │   │   ├── player.gd       露娜的格子移動（class_name Player）
 │   │   └── cat.gd          暗影猫追逐 AI（class_name Cat）
 │   ├── fishing/fishing.gd  CharmsFishing：黃金礦工式垂釣（單檔）
@@ -413,6 +414,29 @@ python3 tools/sim/catch_sim.py
   同一套規則：有庫存全亮、空位暗色（alpha 0.22）、用掉的那顆播 1 秒「放大
   1.25 倍＋淡出」—— `_moon_fade`/`_moon_fade_slot` 鏡像 `_heart_fade` 的寫法，
   觸發點在 `_activate_moon()` 的 `moon_stock -= 1` 之後。
+- **迷宮牆體已改由邏輯地圖自動鋪成 TileMap（2026-09，`maze_tiler.gd`
+  已接入 `seeker.gd`）**：把「哪格是牆」的邏輯地圖（`Maze.walls` 字典或
+  ASCII `#`/`.` 文字）鋪成兩層 TileMapLayer —— **MazeBase**（基礎橫／縱牆）
+  ＋ **MazeCorner**（90° 轉角疊加層），TileSet 直接沿用
+  `assets/seeker/Map/TileMap/tile_maze.tscn` 裡那顆（80×80 tile、單一
+  atlas source 0；素材圖實為 4×5 格 320×400，只有 8 格有內容，其餘是空格）。
+  邏輯格 15px、素材格 80px，所以圖層 root 的 scale = `cell_px/80 = 0.1875`、
+  位置 `Maze.ORIGIN`。拼接只看牆格四鄰（**出界視為走道**）：上下皆走道 →
+  橫向帶（左端／中間1/2 按座標奇偶交替／右端）；左右皆走道 → 縱向帶
+  （頂部／中間／底部）；橫縱都延續的格（90° 轉角、T 形、十字、實心矩形塊的
+  每一格）→ MazeBase 疊橫向 tile（右鄰是牆用左端、左鄰是牆用右端、兩側皆牆
+  用中間）＋ MazeCorner 疊「縱向牆中間1」。**孤立 1×1 牆塊沒有素材可表現**
+  —— `build()` 會把它收進回傳的 missing 清單，邏輯地圖要避開。碰撞照舊以
+  `Maze.walls` 為準，這兩層純視覺、不產生物理。規則驗證：
+  `python tools/sim/maze_tiler_sim.py`（含 tile_maze.tscn 示範地圖的回還原）。
+  **Seeker 接入方式**：`_ready()` 建圖層後鋪 `maze.walls` **減去外框格**
+  （外框照舊由 S_MAP 的彩繪邊框承擔，想全 tile 化把 `inner_walls` 換成
+  `maze.walls` 即可）；Logo 牆格有鋪 tile，`S_Hinder_logo.png` 品牌圖改掛
+  `_logo_view` Sprite2D 疊在 tile 上（貼圖大半是半透明，底下要有牆）；
+  舊的 `S_Hinder.png` 佔位拉伸已拆除。TileMap 是子節點會蓋過 `_draw`，
+  所以結算壓暗／CAUGHT!／收尾暗角／石化閃邊搬進子節點 `_overlay`
+  （排在 tile／Logo 之後、`_world` 之前，層級與舊版完全一致）；
+  牆層與 `_world` 每幀吃同一個 `world_offset()`，震動不脫格。
 
 ### CharmsFishing（黃金礦工）
 

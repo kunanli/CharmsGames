@@ -65,6 +65,11 @@ var _prev_skill := false      # A 鍵的邊緣偵測
 # 露娜與貓是子節點，draw_set_transform() 管不到它們，所以需要一個真的容器
 # 節點來承載位移 —— 而且**不能**把位移寫進它們的 position，那是移動邏輯
 # 與 9px 碰撞判定在用的值。
+# 牆體（TileMap）、品牌 Logo、狀態覆蓋層也是子節點，排在 _world 之前：
+# 牆畫在角色下面，狀態覆蓋層畫在牆上面、角色下面 —— 跟原本 _draw 的順序一致。
+var _tiler_root: Node2D          # 迷宮牆體（maze_tiler.gd 生成的兩層 TileMapLayer）
+var _logo_view: Sprite2D         # 中央 Logo 牆的品牌貼圖（疊在 tile 牆上）
+var _overlay: Node2D             # 結算壓暗／CAUGHT!／收尾暗角／石化閃邊
 var _world: Node2D
 var _juice := Juice.new(Juice.ARCADE)
 var _fx := Fx.new()               # 粒子（見 shared/fx.gd）
@@ -75,7 +80,6 @@ var _moon_fade := 0.0             # 剛用掉的月光圖示淡出動畫剩餘�
 var _moon_fade_slot := -1         # 正在播動畫的月光格位
 
 var s_bg: Texture2D = preload("res://assets/seeker/Map/S_MAP.png")
-var s_hinder: Texture2D = preload("res://assets/seeker/Map/S_Hinder.png")
 var s_perl: Texture2D = preload("res://assets/seeker/S_Perl.png")
 var s_moon: Texture2D = preload("res://assets/seeker/S_Moon.png")
 var s_logo: Texture2D = preload("res://assets/seeker/Map/S_Hinder_logo.png")
@@ -88,6 +92,36 @@ func _ready() -> void:
 	maze = Maze.new()
 	# 貼圖縮小畫到螢幕，必須用最近鄰保持像素顆粒（線性濾波會糊）
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+
+	# 迷宮牆體：邏輯地圖（maze.walls）→ TileMap 自動拼接（maze_tiler.gd）。
+	# 外框格不鋪 —— S_MAP 的彩繪邊框照舊當外框；障礙塊與 Logo 牆鋪 tile。
+	# 想整座迷宮都改用 tile，把 inner_walls 換成 maze.walls 直接傳進 build()。
+	var tiler := MazeTiler.create_layers(self, Maze.ORIGIN, Maze.CELL_SIZE.x)
+	_tiler_root = tiler.root
+	var inner_walls := {}
+	for c: Vector2i in maze.walls:
+		var on_frame := c.x == 0 or c.y == 0 \
+			or c.x == Maze.COLS - 1 or c.y == Maze.ROWS - 1
+		if not on_frame:
+			inner_walls[c] = true
+	var missing := MazeTiler.build(tiler.base, tiler.corner, inner_walls,
+		Maze.COLS, Maze.ROWS)
+	if not missing.is_empty():
+		push_warning("MazeTiler：%d 個牆格沒有對應素材 %s" % [missing.size(), missing])
+
+	# 品牌 Logo 疊在 tile 牆上面（貼圖大半是半透明，底下要有牆）。
+	# 原本畫在 _draw 裡會被 TileMap 圖層蓋住，改掛 Sprite2D，位移跟 _world 同步。
+	_logo_view = Sprite2D.new()
+	_logo_view.texture = s_logo
+	_logo_view.centered = false
+	_logo_view.scale = Vector2(Maze.LOGO_SIZE) * Maze.CELL_SIZE / Vector2(s_logo.get_size())
+	add_child(_logo_view)
+
+	# 結算壓暗、CAUGHT!、收尾暗角、石化閃邊原本畫在 _draw 尾端（牆之上），
+	# 搬進子節點 _overlay 才不會被 TileMap 蓋住；排在 _world 之前維持原層級。
+	_overlay = Node2D.new()
+	_overlay.draw.connect(_draw_overlay)
+	add_child(_overlay)
 
 	_world = Node2D.new()
 	_world.name = "World"
@@ -207,6 +241,11 @@ func _process(delta: float) -> void:
 
 	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
 	_world.position = _juice.world_offset()
+	# 牆與 Logo 跟 _world 吃同一個位移 —— 接觸雙方共用同一層，不會脫格
+	_tiler_root.position = Maze.ORIGIN + _juice.world_offset()
+	_logo_view.position = Maze.ORIGIN + Vector2(Maze.LOGO_TOP_LEFT) * Maze.CELL_SIZE \
+		+ _juice.world_offset()
+	_overlay.queue_redraw()
 	queue_redraw()
 
 
@@ -382,20 +421,15 @@ func _draw() -> void:
 	draw_set_transform(_juice.bg_offset())
 	_draw_backdrop()
 	draw_set_transform(_juice.world_offset())
-	# 牆與珍珠畫在這裡，露娜與貓則由 _world 容器位移；
-	# 兩者讀的是同一個 world_offset()，所以不會脫格。
+	# 珍珠畫在這裡；牆改由 _tiler_root 的 TileMap 圖層繪製，露娜與貓由
+	# _world 容器位移 —— 讀的都是同一個 world_offset()，所以不會脫格。
 	_draw_maze()
 	_fx.draw(self)                     # 粒子屬於 WORLD 層
 	draw_set_transform(Vector2.ZERO)
 	_draw_ui_frame()
 	_draw_hud()
-	_draw_urgency()
-	_draw_petrify_edge()
-
-	if state == State.DYING:
-		_draw_center_text("CAUGHT!", 130, 22, Palette.WARN)
-	elif state == State.RESULT:
-		_draw_result()
+	# 收尾暗角／石化閃邊／CAUGHT!／結算壓暗改畫在 _overlay（子節點，
+	# 疊在 tile 牆與 Logo 之上、露娜與貓之下），每幀在 _process 重畫。
 
 
 ## 視差層。迷宮的底是 S_MAP.png 全屏背景（1920×1080 美術出圖，4 倍設計稿），
@@ -423,32 +457,14 @@ func _draw_ui_frame() -> void:
 
 
 func _draw_maze() -> void:
-	var o := Maze.ORIGIN
-	# 迷宮外框不再自己畫邊框，由全螢幕 UI 邊框圖（_draw_ui_frame）取代
-	# 暫時用 S_Hinder.png 拉伸填滿每一塊當示意圖，正式障礙美術進場後再換
-	for b in Maze.BLOCKS:
-		var r := Rect2(o + Vector2(b.position) * Maze.CELL_SIZE,
-			Vector2(b.size) * Maze.CELL_SIZE)
-		draw_texture_rect(s_hinder, r, false)
-
+	# 牆體（障礙塊＋中央 Logo 牆）由 _tiler_root 的 TileMap 圖層繪製，
+	# 迷宮外框由 S_MAP 的彩繪邊框承擔；Logo 貼圖在 _logo_view。這裡只畫道具。
 	for c in maze.items:
 		var center := maze.cell_center(c)
 		if maze.items[c] == Maze.ITEM_MOON:
 			_draw_centered_texture(s_moon, center, ITEM_SHOW)
 		else:
 			_draw_centered_texture(s_perl, center, ITEM_SHOW)
-
-	_draw_logo()
-
-
-## 中央 Logo 牆：5×2 格的障礙（maze.gd 的 LOGO_TOP_LEFT / LOGO_SIZE 已列入 walls）。
-## 貼圖 300×125 拉伸蓋滿整面牆，跟牆完全同尺寸，不會蓋到隔壁格。
-func _draw_logo() -> void:
-	if s_logo == null:
-		return
-	var top_left := Maze.ORIGIN + Vector2(Maze.LOGO_TOP_LEFT) * Maze.CELL_SIZE
-	var size := Vector2(Maze.LOGO_SIZE) * Maze.CELL_SIZE
-	draw_texture_rect(s_logo, Rect2(top_left, size), false)
 
 
 ## 場上道具（星塵珍珠／月光能量）的顯示尺寸：兩張都是 220×220 美術圖，
@@ -530,9 +546,25 @@ func _draw_hud() -> void:
 				HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
 
 
+## 狀態覆蓋層（畫在 _overlay 上）：收尾暗角、石化閃邊、被抓提示、結算壓暗。
+## 這幾樣得疊在 TileMap 牆與 Logo 之上，又要在露娜與貓之下 —— 本來畫在
+## _draw 尾端就夠，牆改成子節點後必須跟著升成子節點才不被蓋住。
+func _draw_overlay() -> void:
+	_draw_urgency(_overlay)
+	_draw_petrify_edge(_overlay)
+	if state == State.DYING:
+		_draw_center_text(_overlay, "CAUGHT!", 130, 22, Palette.WARN)
+	elif state == State.RESULT:
+		# 半透明遮罩，讓迷宮沉下去 —— GAME OVER／TIME UP 文字與分數由
+		# launcher 的 Game Over 動畫層畫（ui/game_over.gd），這裡只負責
+		# 壓暗背景（遊戲節點會保留到動畫播完，見 launcher._open_game_over）。
+		# 用色盤的最深夜色壓半透明，不是自己調一個新的深藍
+		_overlay.draw_rect(Rect2(0, 0, 480, 270), Color(Palette.NIGHT, 0.82))
+
+
 ## 最後 10 秒的收尾張力：畫面四周壓一圈越來越深的暗角。
 ## 純粹是氛圍，不擋視線 —— 迷宮的可視範圍完全沒被吃掉。
-func _draw_urgency() -> void:
+func _draw_urgency(on: CanvasItem) -> void:
 	if state != State.PLAYING or time_left > 10.0:
 		return
 	var k := (10.0 - time_left) / 10.0        # 0 → 1
@@ -540,26 +572,18 @@ func _draw_urgency() -> void:
 	var col := Color(Palette.NIGHT, 0.10 + k * 0.28)
 	for i in int(band):
 		var a := col.a * (1.0 - float(i) / band)
-		draw_rect(Rect2(i, i, 480 - i * 2, 270 - i * 2), Color(Palette.NIGHT, a), false, 1.0)
+		on.draw_rect(Rect2(i, i, 480 - i * 2, 270 - i * 2), Color(Palette.NIGHT, a), false, 1.0)
 
 
 ## 石化剩 2 秒時畫面邊緣閃爍提示（GDD 的 UI 需求）
-func _draw_petrify_edge() -> void:
+func _draw_petrify_edge(on: CanvasItem) -> void:
 	if petrify_left <= 0.0 or petrify_left > PETRIFY_WARN:
 		return
 	if fmod(petrify_left, 0.24) >= 0.12:
 		return
 	var col := Color(Palette.MOON, 0.75)
 	for i in 3:
-		draw_rect(Rect2(i, i, 480 - i * 2, 270 - i * 2), col, false, 1.0)
-
-
-func _draw_result() -> void:
-	# 半透明遮罩，讓迷宮沉下去 —— GAME OVER／TIME UP 文字與分數由
-	# launcher 的 Game Over 動畫層畫（ui/game_over.gd），這裡只負責
-	# 壓暗背景（遊戲節點會保留到動畫播完，見 launcher._open_game_over）。
-	# 用色盤的最深夜色壓半透明，不是自己調一個新的深藍
-	draw_rect(Rect2(0, 0, 480, 270), Color(Palette.NIGHT, 0.82))
+		on.draw_rect(Rect2(i, i, 480 - i * 2, 270 - i * 2), col, false, 1.0)
 
 
 func _draw_heart(center: Vector2, size: Vector2, alpha: float) -> void:
@@ -576,6 +600,6 @@ func _draw_moon(center: Vector2, size: Vector2, alpha: float) -> void:
 		Color(1, 1, 1, alpha))
 
 
-func _draw_center_text(text: String, y: float, size: int, col: Color) -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(0, y), text,
+func _draw_center_text(on: CanvasItem, text: String, y: float, size: int, col: Color) -> void:
+	on.draw_string(ThemeDB.fallback_font, Vector2(0, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, 480, size, col)
