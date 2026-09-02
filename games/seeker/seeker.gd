@@ -24,6 +24,7 @@ const ROUND_TIME := 60.0      # 一局的秒數
 const READY_TIME := ReadyGo.FADE_SECONDS + ReadyGo.ANIM_SECONDS + 0.05
 const DYING_TIME := 1.2       # 被抓到後的停頓秒數
 const CATCH_DIST := 9.0       # 碰撞判定距離（px），約半格多一點
+const CATCH_TIME_PENALTY := 5.0   # 被抓另扣幾秒生存時間（2026-09 企劃）
 const START_LIVES := 3
 
 # ── 月光能量與石化（M4）─────────────────────────────────
@@ -68,6 +69,8 @@ var _prev_skill := false      # A 鍵的邊緣偵測
 # 牆體（TileMap）、品牌 Logo、狀態覆蓋層也是子節點，排在 _world 之前：
 # 牆畫在角色下面，狀態覆蓋層畫在牆上面、角色下面 —— 跟原本 _draw 的順序一致。
 var _tiler_root: Node2D          # 迷宮牆體（maze_tiler.gd 生成的兩層 TileMapLayer）
+var _cave_view: Sprite2D         # 貓窩（2×2 建築貼圖，疊在迷宮上）
+var _cave_base := Vector2.ZERO   # 貓窩貼圖的靜止基準點（_ready 算好，不會再變）
 var _logo_view: Sprite2D         # 中央 Logo 牆的品牌貼圖（疊在 tile 牆上）
 var _overlay: Node2D             # 結算壓暗／CAUGHT!／收尾暗角／石化閃邊
 var _world: Node2D
@@ -80,6 +83,7 @@ var _moon_fade := 0.0             # 剛用掉的月光圖示淡出動畫剩餘�
 var _moon_fade_slot := -1         # 正在播動畫的月光格位
 
 var s_bg: Texture2D = preload("res://assets/seeker/Map/S_MAP.png")
+var s_cave: Texture2D = preload("res://assets/seeker/Map/S_Cat_Cave.png")
 var s_perl: Texture2D = preload("res://assets/seeker/S_Perl.png")
 var s_moon: Texture2D = preload("res://assets/seeker/S_Moon.png")
 var s_logo: Texture2D = preload("res://assets/seeker/Map/S_Hinder_logo.png")
@@ -94,21 +98,42 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 	# 迷宮牆體：邏輯地圖（maze.walls）→ TileMap 自動拼接（maze_tiler.gd）。
-	# 外框格不鋪 —— S_MAP 的彩繪邊框照舊當外框；Logo 牆格也不鋪 —— 僅保留
-	# 品牌圖本身。想整座迷宮都改用 tile，把 inner_walls 換成 maze.walls。
+	# 外框格不鋪 —— S_MAP 的彩繪邊框照舊當外框；Logo 牆格與貓窩格也不鋪 ——
+	# 各自用美術貼圖呈現。想整座迷宮都改用 tile，把 inner_walls 換成 maze.walls。
 	var tiler := MazeTiler.create_layers(self, Maze.ORIGIN, Maze.CELL_SIZE.x)
 	_tiler_root = tiler.root
 	var logo_rect := Rect2i(Maze.LOGO_TOP_LEFT, Maze.LOGO_SIZE)
+	var cave_rect := Rect2i(maze.cave_rect.position, Maze.CAVE_SIZE)
 	var inner_walls := {}
 	for c: Vector2i in maze.walls:
 		var skip := c.x == 0 or c.y == 0 or c.x == Maze.COLS - 1 or c.y == Maze.ROWS - 1 \
-			or logo_rect.has_point(c)
+			or logo_rect.has_point(c) or cave_rect.has_point(c)
 		if not skip:
 			inner_walls[c] = true
 	var missing := MazeTiler.build(tiler.base, tiler.corner, inner_walls,
 		Maze.COLS, Maze.ROWS)
 	if not missing.is_empty():
 		push_warning("MazeTiler：%d 個牆格沒有對應素材 %s" % [missing.size(), missing])
+
+	# 貓窩：2×2 建築貼圖（貓窩格不鋪 tile，跟 Logo 同一套規則）。等比縮放後
+	# 再放大 1.2 倍（36px ≈ 2.4 格）—— 剛好蓋滿 4 個牆格並外溢到窩邊，
+	# 讀起來是一棟多格建築而不是一個方塊；外溢處正是貓出生的環位，
+	# 貓看起來就是從窩裡鑽出來的。centered 對到窩的中心，位移跟 _world 同步。
+	_cave_view = Sprite2D.new()
+	_cave_view.texture = s_cave
+	var cave_fit := minf(
+		Maze.CAVE_SIZE.x * Maze.CELL_SIZE.x / s_cave.get_size().x,
+		Maze.CAVE_SIZE.y * Maze.CELL_SIZE.y / s_cave.get_size().y)
+	_cave_view.scale = Vector2(cave_fit, cave_fit) * 1.2
+	# 在 _ready 就把貼圖擺到窩的正中央（_process 只再疊震動偏移）——
+	# 就算每幀的更新線出狀況，貼圖也不會停留在原點 (0,0) 變成「左上角幽靈」。
+	# 窩中心 = ORIGIN + (窩左上格 + 半個窩) × 格寬，格座標必須乘 CELL_SIZE。
+	_cave_base = Maze.ORIGIN + (Vector2(maze.cave_rect.position) \
+		+ Vector2(Maze.CAVE_SIZE) * 0.5) * Maze.CELL_SIZE
+	_cave_view.position = _cave_base
+	# 除錯用（確認貓窩位置正常後可刪）：一眼看出跑的版本裡貓窩落在哪
+	print("[Cave] rect=", maze.cave_rect, " base=", _cave_base)
+	add_child(_cave_view)
 
 	# 品牌 Logo：牆格不鋪 tile，貼圖照原比例（寬 5 格、高 31.25px）畫在
 	# Logo 牆列的正中央。仍用 Sprite2D 疊在圖層上、位移跟 _world 同步。
@@ -127,12 +152,12 @@ func _ready() -> void:
 	_world.name = "World"
 	add_child(_world)
 
-	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來。
-	# 出生格繞著中央 Logo 牆排（左、右、下，Maze.CAT_HOMES），登場時間
-	# 錯開 0 / 2.5 / 5 秒，不然三隻會同時撲過來，開場就沒得玩。
-	_spawn_cat(Cat.Kind.CHASER, Maze.CAT_HOMES[0], 0.0)
-	_spawn_cat(Cat.Kind.AMBUSHER, Maze.CAT_HOMES[1], 2.5)
-	_spawn_cat(Cat.Kind.WANDERER, Maze.CAT_HOMES[2], 5.0)
+	# 三隻貓都從貓窩正下方的洞口出現（maze.cat_spawn_cell()），登場時間
+	# 錯開 0 / 2.5 / 5 秒先後鑽出來，不然三隻會同時撲出來，開場就沒得玩。
+	var spawn := maze.cat_spawn_cell()
+	_spawn_cat(Cat.Kind.CHASER, spawn, 0.0)
+	_spawn_cat(Cat.Kind.AMBUSHER, spawn, 2.5)
+	_spawn_cat(Cat.Kind.WANDERER, spawn, 5.0)
 
 	# 露娜最後 add —— 子節點後加的畫在上面，玩家動畫疊在暗影猫之上，
 	# 被抓時貼在貓身上播的 getcaught 才不會被貓蓋住
@@ -246,10 +271,12 @@ func _process(delta: float) -> void:
 
 	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
 	_world.position = _juice.world_offset()
-	# 牆與 Logo 跟 _world 吃同一個位移 —— 接觸雙方共用同一層，不會脫格。
-	# Logo 用 LOGO_CELL（中心錨點）對位：centered=true，貼圖中心 = 牆列中心。
+	# 牆、貓窩與 Logo 跟 _world 吃同一個位移 —— 接觸雙方共用同一層，不會脫格。
+	# Logo 用 LOGO_CELL（中心錨點）對位：centered=true，貼圖中心 = 牆列中心；
+	# 貓窩同理對到窩的中心。
 	_tiler_root.position = Maze.ORIGIN + _juice.world_offset()
 	_logo_view.position = maze.cell_center(Maze.LOGO_CELL) + _juice.world_offset()
+	_cave_view.position = _cave_base + _juice.world_offset()
 	_overlay.queue_redraw()
 	queue_redraw()
 
@@ -380,6 +407,9 @@ func _on_player_bumped(d: Vector2i) -> void:
 func _lose_life() -> void:
 	AudioManager.play_sfx("maze_player_hurt")   # 被暗影猫抓住扣命
 	lives -= 1
+	# 被抓同時扣 5 秒生存時間（2026-09 企劃）。扣到 0 的話，重生回到
+	# PLAYING 的那一幀就會時間到、立刻結算 —— 懲罰可能直接終局。
+	time_left = maxf(0.0, time_left - CATCH_TIME_PENALTY)
 	# 剛失去的那顆愛心播「1 秒放大 1.5 倍＋淡出」（格位 = 少掉後的 lives）
 	_heart_fade = 1.0
 	_heart_fade_slot = lives

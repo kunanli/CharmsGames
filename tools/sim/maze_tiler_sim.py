@@ -42,8 +42,8 @@ LOGO_TOP_LEFT, LOGO_SIZE = (8, 6), (5, 1)
 # maze.gd 隨機生成的常數副本（_generate_blocks，改了 .gd 要一起改）
 PLAYER_START = (10, 10)
 MOON_CELLS = [(1, 1), (COLS - 2, 1), (1, ROWS - 2), (COLS - 2, ROWS - 2)]
-CAT_HOMES = [(7, 5), (13, 5), (11, 7)]
-PROTECTED = [PLAYER_START] + MOON_CELLS + CAT_HOMES
+PROTECTED = [PLAYER_START] + MOON_CELLS   # 貓出生格在貓窩四周，由間隔規則保證
+CAVE_SIZE = (2, 2)
 LOGO_RECT = (LOGO_TOP_LEFT[0], LOGO_TOP_LEFT[1], LOGO_SIZE[0], LOGO_SIZE[1])
 GEN_TOTAL_AREA, GEN_MAX_BLOCKS = 40, 18
 GEN_SHAPES = [(2, 1), (3, 1), (4, 1)]   # 一律 1 行或 1 列的長條
@@ -158,10 +158,15 @@ def reachable(wall_set):
     return len(seen) == COLS * ROWS - len(wall_set)
 
 
-def gen_blocks(rng):
-    """整團生成；64 次重抽都失敗回 None（GDScript 端退回固定 BLOCKS）。"""
+def gen_layout(rng):
+    """整團生成：先貓窩（2×2），再長條；64 次重抽都失敗回 None。
+    回傳 (cave, bars)，cave/bars 都是 (x, y, w, h)。"""
     for _ in range(64):
         placed = [LOGO_RECT]
+        cave = place_random(rng, CAVE_SIZE, placed, PROTECTED)
+        if cave is None:
+            continue                 # 貓窩擺不下去（理論上不會），整團重抽
+        placed.append(cave)
         area, stuck = 0, False
         while area < GEN_TOTAL_AREA - 4 and len(placed) - 1 < GEN_MAX_BLOCKS:
             shape = GEN_SHAPES[rng.randrange(len(GEN_SHAPES))]
@@ -174,7 +179,7 @@ def gen_blocks(rng):
             placed.append(r)
             area += shape[0] * shape[1]
         if not stuck and area >= GEN_TOTAL_AREA - 4 and reachable(walls_of(placed)):
-            return placed[1:]
+            return cave, placed[2:]
     return None
 
 
@@ -371,12 +376,13 @@ def main():
     areas, block_counts = [], []
     for seed in range(300):
         rng = random.Random(seed)
-        blocks = gen_blocks(rng)
-        if blocks is None:
+        layout = gen_layout(rng)
+        if layout is None:
             check(False, f"seed {seed} 生成失敗（64 次重抽都不通）")
             gen_ok = False
             break
-        wall_set = walls_of(blocks + [LOGO_RECT])
+        cave, blocks = layout
+        wall_set = walls_of([LOGO_RECT, cave] + blocks)
         for bx, by, bw, bh in blocks:    # 不會有 1×1（tile 素材畫不出）
             if bw == 1 and bh == 1:
                 check(False, f"seed {seed} 生出 1×1 塊 {(bx, by)}")
@@ -392,8 +398,12 @@ def main():
         if any(c in wall_set for c in ring):   # 最外圈走道永遠淨空
             check(False, f"seed {seed} 最外圈走道被佔")
             gen_ok = False
-        if any(bw == 1 and bh == 1 for _, _, bw, bh in blocks):
-            check(False, f"seed {seed} 生出 1×1 塊")
+        cx, cy, cw, ch = cave
+        cave_ring = [(x, y) for x in range(cx - 1, cx + cw + 1)
+                     for y in range(cy - 1, cy + ch + 1)
+                     if not (cx <= x < cx + cw and cy <= y < cy + ch)]
+        if any(c in wall_set for c in cave_ring):
+            check(False, f"seed {seed} 貓窩 {cave[:2]} 四周被佔（貓沒地方出現）")
             gen_ok = False
         if any(min(bw, bh) != 1 for _, _, bw, bh in blocks):
             check(False, f"seed {seed} 生出多行多列的塊（只准 1 行或 1 列）")
@@ -408,21 +418,29 @@ def main():
         areas.append(sum(b[2] * b[3] for b in blocks))
         block_counts.append(len(blocks))
     if gen_ok:
-        check(True, "300 個 seed：生成成功、無 1×1、保護格淨空、鋪滿、全連通")
+        check(True, "300 個 seed：生成成功、無 1×1、保護格淨空、外圈淨空、"
+                    "貓窩四周淨空、鋪滿、全連通")
         print(f"  障礙面積 min/avg/max = {min(areas)}/{sum(areas) / len(areas):.1f}/{max(areas)}"
               f"（舊固定地圖 40），塊數 {min(block_counts)}~{max(block_counts)}")
 
     # 印一版實際生成的地圖（固定 seed，方便對照討論；遊戲內每局重抽）
     rng = random.Random(1)
-    blocks = gen_blocks(rng)
-    wall_set = walls_of(blocks + [LOGO_RECT])
+    cave, blocks = gen_layout(rng)
+    wall_set = walls_of([LOGO_RECT, cave] + blocks)
     result, missing = build(wall_set, COLS, ROWS)
-    print(f"\n  seed=1 生成的地圖（{len(blocks)} 個障礙塊、"
-          f"面積 {sum(b[2] * b[3] for b in blocks)}）邏輯圖：")
+    cx, cy = cave[0], cave[1]
+    spawn = (cx, cy + CAVE_SIZE[1])   # 貓窩正下方一格（三隻共用）
+    print(f"\n  seed=1 生成的地圖（貓窩在 {cave[:2]}、貓出生格 {spawn}、"
+          f"{len(blocks)} 個長條、面積 {sum(b[2] * b[3] for b in blocks)}）邏輯圖：")
     for y in range(ROWS):
         row = ""
         for x in range(COLS):
-            row += "#" if (x, y) in wall_set else "."
+            if cave[0] <= x < cave[0] + cave[2] and cave[1] <= y < cave[1] + cave[3]:
+                row += "C"               # 貓窩
+            elif (x, y) in wall_set:
+                row += "#"
+            else:
+                row += "."
         print(f"    {row}")
     print_grid(result, missing, COLS, ROWS, "對應的 TileMap 鋪設")
 

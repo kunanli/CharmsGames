@@ -78,7 +78,7 @@ const FRAME_BOXES := {
 	],
 }
 
-var facing := Vector2i.DOWN   # 最後的移動方向（源圖角色朝左，向右移動時水平鏡像）
+var facing := Vector2i.DOWN   # 最後的橫向移動方向（源圖角色朝左，向右移動時水平鏡像；上下移動不變）
 var _anim_time := 0.0
 var _view: Node2D
 var _anim: AnimatedSprite2D
@@ -157,7 +157,8 @@ func _update_anim(delta: float) -> void:
 			_update_flip_scale()   # 撞牆擠壓照常衰減，不會卡在變形裡
 			return
 	if dir != Vector2i.ZERO:
-		facing = dir
+		if dir.x != 0:
+			facing = dir   # 只有橫向移動才改面向：上下移動保持原本的左右朝向
 		if _anim.animation != ANIM_WALK:
 			_to_walk()
 		_anim_time += delta
@@ -166,8 +167,8 @@ func _update_anim(delta: float) -> void:
 		var f := int(_anim_time * fps) % count
 		if f != _anim.frame:
 			_anim.frame = f
-	elif want != Vector2i.ZERO:
-		facing = want   # 頂著牆按方向鍵時也轉向
+	elif want != Vector2i.ZERO and want.x != 0:
+		facing = want   # 頂著牆按左右方向鍵時也轉向（按上下不變）
 	else:
 		_anim_time = 0.0
 		if _anim.frame != 0:

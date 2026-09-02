@@ -34,11 +34,12 @@ const MOON_CELLS: Array[Vector2i] = [
 # 露娜的出生格
 const PLAYER_START := Vector2i(10, 10)
 
-# 三隻暗影貓的出生格（seeker.gd 的 _spawn_cat 用）。隨機生成會保護這幾格
-# 淨空，貓不會生在牆裡 —— 資料只有這一份，要改位置改這裡。
-const CAT_HOMES: Array[Vector2i] = [
-	Vector2i(7, 5), Vector2i(13, 5), Vector2i(11, 7),
-]
+# 貓窩：2×2 格的建築，每局隨機位置（_generate_blocks 先抽牠，長條與它
+# 至少隔一格）。貓不再有固定出生格 —— 三隻都從貓窩正下方的走道格出現
+# （見 cat_spawn_cell()）。
+const CAVE_SIZE := Vector2i(2, 2)
+# 生成失敗時的後備貓窩位置（與固定 BLOCKS、Logo 都保持間隔，理論上用不到）
+const FALLBACK_CAVE := Rect2i(2, 9, 2, 2)
 
 # ── 隨機生成（2026-09）：中央 Logo 牆固定，其餘障礙每局重抽 ──
 # 規則沿用原本的走道保證，並守住 TileMap 素材的表現力邊界：
@@ -71,6 +72,7 @@ const ITEM_MOON := 2
 var walls: Dictionary = {}   # Vector2i -> true
 var items: Dictionary = {}   # Vector2i -> ITEM_BEAN / ITEM_MOON
 var open_cells: Array[Vector2i] = []   # 所有走道格，建好就不再變動
+var cave_rect := Rect2i()    # 貓窩左上角格（_generate_blocks 每局抽，size 恆為 CAVE_SIZE）
 var _rng := RandomNumberGenerator.new()
 
 
@@ -80,6 +82,10 @@ func _init(rng_seed: int = -1) -> void:
 		_rng.seed = rng_seed
 	else:
 		_rng.randomize()
+	# 先把貓窩落到後備位置：之後無論 _build_walls／_generate_blocks 發生什麼
+	# （包含被執行期錯誤打斷），cave_rect 都不會停在空值 (0,0)——
+	# 貼圖不會被畫到迷宮左上角、貓也不會生在框上。
+	cave_rect = FALLBACK_CAVE
 	_build_walls()
 	_collect_open_cells()
 	reset_items()
@@ -94,29 +100,49 @@ func _build_walls() -> void:
 	for y in ROWS:
 		walls[Vector2i(0, y)] = true
 		walls[Vector2i(COLS - 1, y)] = true
-	# 障礙塊：這局隨機生成（失敗會退回固定的 BLOCKS）
+	# 障礙長條：這局隨機生成（失敗會退回固定的 BLOCKS，貓窩退回 FALLBACK_CAVE）
 	for b in _generate_blocks():
 		for x in range(b.position.x, b.position.x + b.size.x):
 			for y in range(b.position.y, b.position.y + b.size.y):
 				walls[Vector2i(x, y)] = true
+	# 貓窩：2×2 建築（_generate_blocks 順便抽出位置），也是障礙
+	for x in range(cave_rect.position.x, cave_rect.position.x + CAVE_SIZE.x):
+		for y in range(cave_rect.position.y, cave_rect.position.y + CAVE_SIZE.y):
+			walls[Vector2i(x, y)] = true
 	# 中央 Logo 牆：品牌圖要一直顯示，不能讓角色踩過去
 	for x in range(LOGO_TOP_LEFT.x, LOGO_TOP_LEFT.x + LOGO_SIZE.x):
 		for y in range(LOGO_TOP_LEFT.y, LOGO_TOP_LEFT.y + LOGO_SIZE.y):
 			walls[Vector2i(x, y)] = true
 
 
-## 隨機長出這局的障礙：形狀從 GEN_SHAPES 抽（1 行或 1 列的長條，
-## 隨機翻轉方向）。放置規則：與已放的長條、Logo 牆至少隔一格；
-## 一律與外框隔 1 格；不壓住受保護格（四角月光、露娜出生格、貓出生格）。
-## 每團生成完用 BFS 驗證所有走道連通，不通就整團重抽；
-## 64 次都失敗才退回固定的 BLOCKS。
+## 貓的出生格：貓窩正下方那一格（seeker.gd 的 _spawn_cat 用，三隻共用，
+## 靠 0 / 2.5 / 5 秒的登場延遲先後出現）。長條跟貓窩至少隔一格，
+## 這格保證是走道。
+func cat_spawn_cell() -> Vector2i:
+	return Vector2i(cave_rect.position.x, cave_rect.position.y + CAVE_SIZE.y)
+
+
+## 隨機長出這局的地形：先抽貓窩（2×2 建築），再抽 1 行或 1 列的長條
+## （隨機翻轉方向）。放置規則：彼此、與 Logo 牆至少隔一格；一律與外框
+## 隔 1 格；不壓住受保護格（四角月光、露娜出生格）。每團生成完用 BFS
+## 驗證所有走道連通，不通就整團重抽；64 次都失敗才退回固定的 BLOCKS
+## （貓窩退回 FALLBACK_CAVE）。
+## 回傳長條清單；貓窩寫進成員 cave_rect（_build_walls 要用）。
 func _generate_blocks() -> Array[Rect2i]:
+	# 先落到後備位置再開始抽：就算下面被執行期錯誤打斷，貓窩也會停在
+	# 合法位置（FALLBACK_CAVE），不會出現「窩貼在左上角、貓生在框上」。
+	cave_rect = FALLBACK_CAVE
 	var logo_rect := Rect2i(LOGO_TOP_LEFT, LOGO_SIZE)
+	# 保護格：露娜出生格與四角月光。貓的出生格在貓窩四周，長條本來就跟
+	# 貓窩至少隔一格，那些格保證淨空，不用另外保護。
 	var protected: Array[Vector2i] = [PLAYER_START]
 	protected.append_array(MOON_CELLS)
-	protected.append_array(CAT_HOMES)
 	for attempt in 64:
 		var placed: Array[Rect2i] = [logo_rect]
+		var cave := _place_random(CAVE_SIZE, placed, protected)
+		if cave.size == Vector2i.ZERO:
+			continue                 # 貓窩擺不下去（理論上不會），整團重抽
+		placed.append(cave)
 		var area := 0
 		var stuck := false
 		while area < GEN_TOTAL_AREA - 4 and placed.size() - 1 < GEN_MAX_BLOCKS:
@@ -131,8 +157,10 @@ func _generate_blocks() -> Array[Rect2i]:
 			area += shape.x * shape.y
 		if not stuck and area >= GEN_TOTAL_AREA - 4 \
 				and _all_open_reachable(placed):
-			return placed.slice(1)                   # 第 0 個是 Logo 牆，不回傳
+			cave_rect = cave
+			return placed.slice(2)   # 前兩個是 Logo 牆與貓窩，只回傳長條
 	push_warning("Maze 隨機生成連續失敗，退回固定障礙地圖")
+	cave_rect = FALLBACK_CAVE
 	return BLOCKS
 
 
