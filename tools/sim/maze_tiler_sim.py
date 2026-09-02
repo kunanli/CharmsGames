@@ -37,7 +37,16 @@ TILE_NAME = {
 COLS, ROWS = 22, 14
 BLOCKS = [(3, 2, 3, 2), (10, 2, 2, 2), (13, 2, 4, 2), (3, 6, 4, 2),
           (19, 4, 2, 2), (16, 6, 2, 2), (7, 9, 3, 1), (13, 9, 3, 1)]
-LOGO_TOP_LEFT, LOGO_SIZE = (8, 5), (5, 2)
+LOGO_TOP_LEFT, LOGO_SIZE = (8, 6), (5, 1)
+
+# maze.gd 隨機生成的常數副本（_generate_blocks，改了 .gd 要一起改）
+PLAYER_START = (10, 10)
+MOON_CELLS = [(1, 1), (COLS - 2, 1), (1, ROWS - 2), (COLS - 2, ROWS - 2)]
+CAT_HOMES = [(7, 5), (13, 5), (11, 7)]
+PROTECTED = [PLAYER_START] + MOON_CELLS + CAT_HOMES
+LOGO_RECT = (LOGO_TOP_LEFT[0], LOGO_TOP_LEFT[1], LOGO_SIZE[0], LOGO_SIZE[1])
+GEN_TOTAL_AREA, GEN_MAX_BLOCKS = 40, 18
+GEN_SHAPES = [(2, 1), (3, 1), (4, 1)]   # 一律 1 行或 1 列的長條
 
 FAILURES = []
 
@@ -107,6 +116,82 @@ def parse_ascii(text):
                 walls.add((x, rows))
         rows += 1
     return walls, cols, rows
+
+
+# ── maze.gd _generate_blocks 的規則副本 ──────────────────
+
+def place_random(rng, shape, placed, protected):
+    """隨機抽位置放 shape；一律與外框隔 1 格、與已放塊（含 Logo）至少隔一格、
+    不壓保護格。"""
+    for _ in range(200):
+        x = rng.randint(2, COLS - 2 - shape[0])
+        y = rng.randint(2, ROWS - 2 - shape[1])
+        exp = (x - 1, y - 1, shape[0] + 2, shape[1] + 2)
+
+        def hits(o):
+            return not (exp[0] + exp[2] <= o[0] or o[0] + o[2] <= exp[0]
+                        or exp[1] + exp[3] <= o[1] or o[1] + o[3] <= exp[1])
+
+        if any(hits(o) for o in placed):
+            continue
+        if any(x <= p[0] < x + shape[0] and y <= p[1] < y + shape[1]
+               for p in protected):
+            continue
+        return (x, y, shape[0], shape[1])
+    return None
+
+
+def reachable(wall_set):
+    """從露娜出生格 BFS，每一格走道都要連得到。"""
+    if PLAYER_START in wall_set:
+        return False
+    seen = {PLAYER_START}
+    stack = [PLAYER_START]
+    while stack:
+        cx, cy = stack.pop()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (cx + dx, cy + dy)
+            if 0 <= n[0] < COLS and 0 <= n[1] < ROWS \
+                    and n not in wall_set and n not in seen:
+                seen.add(n)
+                stack.append(n)
+    return len(seen) == COLS * ROWS - len(wall_set)
+
+
+def gen_blocks(rng):
+    """整團生成；64 次重抽都失敗回 None（GDScript 端退回固定 BLOCKS）。"""
+    for _ in range(64):
+        placed = [LOGO_RECT]
+        area, stuck = 0, False
+        while area < GEN_TOTAL_AREA - 4 and len(placed) - 1 < GEN_MAX_BLOCKS:
+            shape = GEN_SHAPES[rng.randrange(len(GEN_SHAPES))]
+            if shape[0] != shape[1] and rng.random() < 0.5:
+                shape = (shape[1], shape[0])
+            r = place_random(rng, shape, placed, PROTECTED)
+            if r is None:
+                stuck = True
+                break
+            placed.append(r)
+            area += shape[0] * shape[1]
+        if not stuck and area >= GEN_TOTAL_AREA - 4 and reachable(walls_of(placed)):
+            return placed[1:]
+    return None
+
+
+def walls_of(placed):
+    """外框 + placed 全部格子（第 0 個是 Logo 牆）→ 走道格集合。"""
+    wall_set = set()
+    for x in range(COLS):
+        wall_set.add((x, 0))
+        wall_set.add((x, ROWS - 1))
+    for y in range(ROWS):
+        wall_set.add((0, y))
+        wall_set.add((COLS - 1, y))
+    for bx, by, bw, bh in placed:
+        for x in range(bx, bx + bw):
+            for y in range(by, by + bh):
+                wall_set.add((x, y))
+    return wall_set
 
 
 # ── tile_maze.tscn 的 tile_data 解碼（Godot format 2，每格 3 個 int32）──
@@ -244,6 +329,13 @@ def main():
         base, ov = result[c]
         check(not ov and base in (T_H_LEFT, T_H_MID1, T_H_MID2, T_H_RIGHT),
               f"3×1 障礙塊 {c} 是純橫向帶（{TILE_NAME[base]}），無轉角疊加")
+    # 5×1 的中央 Logo 牆：整行是純橫向帶（遊戲裡這行不鋪 tile，僅畫品牌圖）
+    logo_ok = True
+    for x in range(LOGO_TOP_LEFT[0], LOGO_TOP_LEFT[0] + LOGO_SIZE[0]):
+        base, ov = result[(x, LOGO_TOP_LEFT[1])]
+        if ov or base not in (T_H_LEFT, T_H_MID1, T_H_MID2, T_H_RIGHT):
+            logo_ok = False
+    check(logo_ok, "5×1 Logo 牆是純橫向帶（左右端+中間），無轉角疊加")
     print_grid(result, missing, COLS, ROWS, "遊戲迷宮鋪設結果")
 
     print("\n== 5. 邊界案例 ==")
@@ -272,6 +364,67 @@ def main():
     check(base in (T_H_MID1, T_H_MID2) and ov, "十字中心 = 橫向中間 + Corner 疊加")
     base, ov = result[(2, 0)]
     check(base == T_V_TOP and not ov, "十字上端 = 縱向頂部（死路端點）")
+
+    print("\n== 6. 隨機生成（maze.gd _generate_blocks 的規則副本）==")
+    import random
+    gen_ok = True
+    areas, block_counts = [], []
+    for seed in range(300):
+        rng = random.Random(seed)
+        blocks = gen_blocks(rng)
+        if blocks is None:
+            check(False, f"seed {seed} 生成失敗（64 次重抽都不通）")
+            gen_ok = False
+            break
+        wall_set = walls_of(blocks + [LOGO_RECT])
+        for bx, by, bw, bh in blocks:    # 不會有 1×1（tile 素材畫不出）
+            if bw == 1 and bh == 1:
+                check(False, f"seed {seed} 生出 1×1 塊 {(bx, by)}")
+                gen_ok = False
+        for p in PROTECTED:              # 保護格淨空
+            if p in wall_set:
+                check(False, f"seed {seed} 保護格 {p} 被壓住")
+                gen_ok = False
+        ring = [(x, 1) for x in range(1, COLS - 1)] \
+             + [(x, ROWS - 2) for x in range(1, COLS - 1)] \
+             + [(1, y) for y in range(1, ROWS - 1)] \
+             + [(COLS - 2, y) for y in range(1, ROWS - 1)]
+        if any(c in wall_set for c in ring):   # 最外圈走道永遠淨空
+            check(False, f"seed {seed} 最外圈走道被佔")
+            gen_ok = False
+        if any(bw == 1 and bh == 1 for _, _, bw, bh in blocks):
+            check(False, f"seed {seed} 生出 1×1 塊")
+            gen_ok = False
+        if any(min(bw, bh) != 1 for _, _, bw, bh in blocks):
+            check(False, f"seed {seed} 生出多行多列的塊（只准 1 行或 1 列）")
+            gen_ok = False
+        result, missing = build(wall_set, COLS, ROWS)
+        if missing:
+            check(False, f"seed {seed} 有 {len(missing)} 格鋪不出來：{missing}")
+            gen_ok = False
+        if not reachable(wall_set):
+            check(False, f"seed {seed} 走道不連通")
+            gen_ok = False
+        areas.append(sum(b[2] * b[3] for b in blocks))
+        block_counts.append(len(blocks))
+    if gen_ok:
+        check(True, "300 個 seed：生成成功、無 1×1、保護格淨空、鋪滿、全連通")
+        print(f"  障礙面積 min/avg/max = {min(areas)}/{sum(areas) / len(areas):.1f}/{max(areas)}"
+              f"（舊固定地圖 40），塊數 {min(block_counts)}~{max(block_counts)}")
+
+    # 印一版實際生成的地圖（固定 seed，方便對照討論；遊戲內每局重抽）
+    rng = random.Random(1)
+    blocks = gen_blocks(rng)
+    wall_set = walls_of(blocks + [LOGO_RECT])
+    result, missing = build(wall_set, COLS, ROWS)
+    print(f"\n  seed=1 生成的地圖（{len(blocks)} 個障礙塊、"
+          f"面積 {sum(b[2] * b[3] for b in blocks)}）邏輯圖：")
+    for y in range(ROWS):
+        row = ""
+        for x in range(COLS):
+            row += "#" if (x, y) in wall_set else "."
+        print(f"    {row}")
+    print_grid(result, missing, COLS, ROWS, "對應的 TileMap 鋪設")
 
     print()
     if FAILURES:

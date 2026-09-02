@@ -40,8 +40,6 @@ const HOLD_ALPHA := 0.45        # 還沒登場時的半透明程度
 var maze: Maze
 var kind: Kind = Kind.CHASER
 var speed := 60.0
-var body_col := Palette.CAT
-var fill_col := Color(0, 0, 0, 0)   # 只有遊蕩貓有填色
 var home_cell := Vector2i.ZERO      # 出生格，每次重生都回到這裡
 var release_delay := 0.0            # 出生後等幾秒才動，用來錯開三隻貓的登場
 
@@ -58,31 +56,77 @@ var _wander_cell := Vector2i.ZERO   # 遊蕩貓目前晃去哪
 var _wander_timer := 0.0
 var _rng := RandomNumberGenerator.new()
 
-var s_enemy1: Texture2D = preload("res://assets/seeker/S_Enemy1.png")
-var s_enemy2: Texture2D = preload("res://assets/seeker/S_Enemy2.png")
+# ─────────────────────────────────────────────
+# 動畫：S_Cat.tscn（畫師交付的 chase 動畫，8 幀 @9fps、240×184 畫布）。
+# 三種個性共用同一套貼圖與動畫（2026-09 企劃指定）。
+# 動畫不自己播 —— 由 _process 用場景定義的 fps 手動推幀：
+# set_process(false) 凍結貓時畫面也凍住，跟狀態機的慣例一致。
+# FRAME_BOXES 是每幀的角色包圍盒（alpha>32，在 240×184 畫布上量的），
+# 用於「內容中心對齊節點原點」的歸一化 —— 貓浮在格子中央（中心錨點），
+# 跟露娜的腳底錨點不同。畫師改圖時這 8 個數字要重測。
+# ─────────────────────────────────────────────
+const CAT_SCENE := preload("res://assets/AnimationScene/S_Cat.tscn")
+const ANIM_CHASE := &"chase"
+## 顯示尺寸：內容最長邊縮放到 26px（約 1.7 格；2026-09 企劃要求比原 30px
+## 調小一點）。碰撞判定用格子中心距離（9px），畫多大都不影響判定。
+const SHOW_SIZE := 26.0
+const FRAME_BOXES: Array[Rect2] = [
+	Rect2(46, 44, 136, 112),   # S_Cat_Chase_1
+	Rect2(42, 40, 148, 116),   # S_Cat_Chase_2
+	Rect2(42, 56, 132, 100),   # S_Cat_Chase_3
+	Rect2(50, 28, 140, 112),   # S_Cat_Chase_4
+	Rect2(42, 56, 140, 100),   # S_Cat_Chase_5
+	Rect2(42, 56, 148, 100),   # S_Cat_Chase_6
+	Rect2(42, 44, 132, 112),   # S_Cat_Chase_7
+	Rect2(50, 28, 140, 112),   # S_Cat_Chase_8
+]
+
+var _view: Node2D
+var _anim: AnimatedSprite2D
+var _show_scale := 1.0
+var _anim_time := 0.0
+var _face_right := false            # 源圖貓朝左，向右移動時水平鏡像
 
 
-## 設定個性。速度與外觀都跟著個性走，讓玩家一眼認得出是哪一隻。
-##
-## 顏色只能從色盤的三個暗影猫紫挑（美術規格書第三條，不准自己調中間色），
-## 所以三隻的辨識度主要靠亮度與剪影，不是靠色相。反正玩家真正用來定位
-## 威脅的是那雙黃眼睛 —— 那是全畫面唯一的暖色，三隻都有。
+func _ready() -> void:
+	_view = CAT_SCENE.instantiate()
+	_anim = _view.get_node("AnimatedSprite2D") as AnimatedSprite2D
+	_anim.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var max_dim := 0.0
+	for b in FRAME_BOXES:
+		max_dim = maxf(max_dim, b.size.x)
+		max_dim = maxf(max_dim, b.size.y)
+	_show_scale = SHOW_SIZE / max_dim
+	# 縮放必須在第一幀就設好 —— 沒設的話會以 240×184 原尺寸畫出巨無霸暗影猫。
+	_anim.scale = Vector2(_show_scale, _show_scale)
+	_anim.pause()                      # 幀由 _process 手動推進（見 _update_visual）
+	_anim.frame_changed.connect(_apply_frame_anchor)
+	_apply_frame_anchor()
+	add_child(_view)
+
+
+## 幀歸一化：每幀的角色內容中心對到節點原點（貓的中心錨點）。
+func _apply_frame_anchor() -> void:
+	var b: Rect2 = FRAME_BOXES[_anim.frame % FRAME_BOXES.size()]
+	var ts: Vector2 = _anim.sprite_frames.get_frame_texture(ANIM_CHASE, _anim.frame).get_size()
+	_anim.offset = Vector2(
+		ts.x * 0.5 - b.get_center().x,
+		ts.y * 0.5 - b.get_center().y)
+
+
+## 設定個性。三種貓速度不同，外觀共用同一套 S_Cat.tscn 的 chase 動畫
+## （2026-09 企劃指定三隻同貼圖，畫面上的辨識目前只能靠行為）。
 func configure(k: Kind, home: Vector2i, delay: float) -> void:
 	kind = k
 	home_cell = home
 	release_delay = delay
-	fill_col = Color(0, 0, 0, 0)
 	match kind:
 		Kind.CHASER:
 			speed = 60.0
-			body_col = Palette.CAT        # 身體主色：基準款，穩穩跟在屁股後面
 		Kind.AMBUSHER:
 			speed = 66.0
-			body_col = Palette.CAT_GLOW   # 最亮的紫：最快，負責抄前面
 		Kind.WANDERER:
 			speed = 54.0
-			body_col = Palette.CAT        # 最慢，靠填滿暗部色做出「潛伏」的重量感
-			fill_col = Palette.CAT_DARK
 
 
 func setup(m: Maze, start_cell: Vector2i) -> void:
@@ -102,6 +146,10 @@ func setup(m: Maze, start_cell: Vector2i) -> void:
 	visible = true
 	_rng.randomize()
 	modulate.a = HOLD_ALPHA if _hold > 0.0 else 1.0
+	_face_right = false
+	_anim_time = 0.0
+	_anim.frame = 0
+	_apply_frame_anchor()
 
 
 # ── 石化與擊碎（M4）──────────────────────────────────────
@@ -184,15 +232,16 @@ func _process(delta: float) -> void:
 	if maze == null:
 		return
 
-	# 碎掉了：倒數重生（重生規則見 _revive）
+	# 碎掉了：倒數重生（重生規則見 _revive）。visible 已關，視覺不用更新
 	if status == Status.BROKEN:
 		revive_left -= delta
 		if revive_left <= 0.0:
 			_revive()
 		return
 
-	# 石化：站著不動當靶子
+	# 石化：站著不動當靶子。動畫凍住，但石化色要繼續呼吸／閃白
 	if status == Status.PETRIFIED:
+		_update_visual(delta)
 		return
 
 	# 登場前在出生格待命，畫面上以半透明表示還沒啟動
@@ -200,11 +249,13 @@ func _process(delta: float) -> void:
 		_hold -= delta
 		if _hold <= 0.0:
 			modulate.a = 1.0
+		_update_visual(delta)
 		return
 
 	if dir == Vector2i.ZERO:
 		dir = _choose_dir()
 		if dir == Vector2i.ZERO:
+			_update_visual(delta)
 			return
 
 	var target := maze.cell_center(cell + dir)
@@ -217,6 +268,37 @@ func _process(delta: float) -> void:
 		dir = _choose_dir()
 	else:
 		position += to_target.normalized() * step
+
+	_update_visual(delta)
+
+
+## 視覺更新：chase 推幀、依橫向移動方向鏡像、石化色。
+func _update_visual(delta: float) -> void:
+	if status == Status.PETRIFIED:
+		# 半透明藍白緩慢呼吸（美術規格書 3.2）；剩 2 秒改成閃白版本
+		var t := Time.get_ticks_msec() / 1000.0
+		var col := Palette.MOON
+		var alpha := 0.55 + sin(t * 4.0) * 0.15
+		if petrify_ending:
+			col = Palette.TEXT
+			alpha = 1.0 if fmod(t, 0.24) < 0.12 else 0.35
+		_anim.self_modulate = Color(col, alpha)
+		return                 # 石化凍結：不推幀、不轉向
+	_anim.self_modulate = Color.WHITE
+	# 橫向移動時照方向鏡像：源圖貓朝左，向右走要翻面。
+	# 用 scale.x 負號繞原點鏡像（跟露娜同一套）—— 內容中心歸一化在 x=0，
+	# 鏡像原地翻面，逐幀的歸一化 offset 也會跟著一起翻。
+	if dir.x != 0:
+		_face_right = dir.x > 0
+	_anim_time += delta
+	var fps := _anim.sprite_frames.get_animation_speed(ANIM_CHASE)
+	var f := int(_anim_time * fps) % FRAME_BOXES.size()
+	if f != _anim.frame:
+		_anim.frame = f
+	var flip := -1.0 if _face_right else 1.0
+	var want_scale := Vector2(_show_scale * flip, _show_scale)
+	if _anim.scale != want_scale:
+		_anim.scale = want_scale
 
 
 func _choose_dir() -> Vector2i:
@@ -255,53 +337,3 @@ func _clamp_cell(c: Vector2i) -> Vector2i:
 ## 曼哈頓距離（單位是格），只用來判斷遊蕩貓要不要撲上去
 func _cell_dist(a: Vector2i, b: Vector2i) -> int:
 	return absi(a.x - b.x) + absi(a.y - b.y)
-
-
-func _draw() -> void:
-	if status == Status.BROKEN:
-		return
-
-	# Placeholder：三個個性用不同亮度與剪影，之後換成 Sprite2D + 像素素材
-	if status == Status.PETRIFIED:
-		_draw_petrified()
-		return
-
-	_draw_enemy_texture(Color.WHITE)
-
-
-## 石化：半透明藍白緩慢閃爍（美術規格書 3.2）。
-## 剩 2 秒改成閃白版本，讓玩家知道時間快到了。
-func _draw_petrified() -> void:
-	var t := Time.get_ticks_msec() / 1000.0
-	var body := Palette.MOON
-	var alpha := 0.55 + sin(t * 4.0) * 0.15          # 緩慢呼吸
-	if petrify_ending:
-		body = Palette.TEXT                           # 閃白
-		alpha = 1.0 if fmod(t, 0.24) < 0.12 else 0.35
-	_draw_enemy_texture(Color(body, alpha))
-
-
-## 顯示尺寸：2 格（30×30，CELL_SIZE × 2）。素材是 50×50 的 8 倍大圖，
-## 不變形地塞進 30×30 的框裡 —— 比一格大才有體積感，跟露娜（16×32）同級。
-## 碰撞判定用的是格子中心距離（9px），畫多大都不影響判定，純視覺。
-func _draw_enemy_texture(modulate_color: Color) -> void:
-	var texture := s_enemy2 if kind == Kind.WANDERER else s_enemy1
-	if texture == null:
-		return
-	var src := texture.get_size()
-	var show := Maze.CELL_SIZE * 2.0
-	var s := minf(show.x / src.x, show.y / src.y)
-	var dst := Rect2(-src.x * s * 0.5, -src.y * s * 0.5, src.x * s, src.y * s)
-	draw_texture_rect(texture, dst, false, modulate_color)
-
-
-## 個性的剪影特徵。石化時要跟著換成石化色，不然會露出原本的紫色。
-func _draw_accent(col: Color) -> void:
-	match kind:
-		Kind.AMBUSHER:
-			# 額前一對尖角，暗示牠會抄你前面
-			draw_line(Vector2(-6, -7), Vector2(-4, -10), col, 1.0)
-			draw_line(Vector2(6, -7), Vector2(4, -10), col, 1.0)
-		Kind.WANDERER:
-			# 身後拖一條尾巴，看起來就是在閒晃
-			draw_line(Vector2(7, 3), Vector2(11, 0), col, 1.0)

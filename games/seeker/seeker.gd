@@ -28,7 +28,7 @@ const START_LIVES := 3
 
 # ── 月光能量與石化（M4）─────────────────────────────────
 const MOON_STOCK_MAX := 2     # HUD 最多囤幾個（GDD）
-const PETRIFY_TIME := 8.0     # 啟動後石化幾秒
+const PETRIFY_TIME := 5.0     # 啟動後石化幾秒（2026-09 企劃：8 秒改 5 秒）
 const PETRIFY_WARN := 2.0     # 剩幾秒開始閃爍提示
 # 同一次石化內連續擊碎的分數，超過四隻就維持 400
 const SCORE_BREAK: Array[int] = [50, 100, 200, 400]
@@ -94,27 +94,27 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 	# 迷宮牆體：邏輯地圖（maze.walls）→ TileMap 自動拼接（maze_tiler.gd）。
-	# 外框格不鋪 —— S_MAP 的彩繪邊框照舊當外框；障礙塊與 Logo 牆鋪 tile。
-	# 想整座迷宮都改用 tile，把 inner_walls 換成 maze.walls 直接傳進 build()。
+	# 外框格不鋪 —— S_MAP 的彩繪邊框照舊當外框；Logo 牆格也不鋪 —— 僅保留
+	# 品牌圖本身。想整座迷宮都改用 tile，把 inner_walls 換成 maze.walls。
 	var tiler := MazeTiler.create_layers(self, Maze.ORIGIN, Maze.CELL_SIZE.x)
 	_tiler_root = tiler.root
+	var logo_rect := Rect2i(Maze.LOGO_TOP_LEFT, Maze.LOGO_SIZE)
 	var inner_walls := {}
 	for c: Vector2i in maze.walls:
-		var on_frame := c.x == 0 or c.y == 0 \
-			or c.x == Maze.COLS - 1 or c.y == Maze.ROWS - 1
-		if not on_frame:
+		var skip := c.x == 0 or c.y == 0 or c.x == Maze.COLS - 1 or c.y == Maze.ROWS - 1 \
+			or logo_rect.has_point(c)
+		if not skip:
 			inner_walls[c] = true
 	var missing := MazeTiler.build(tiler.base, tiler.corner, inner_walls,
 		Maze.COLS, Maze.ROWS)
 	if not missing.is_empty():
 		push_warning("MazeTiler：%d 個牆格沒有對應素材 %s" % [missing.size(), missing])
 
-	# 品牌 Logo 疊在 tile 牆上面（貼圖大半是半透明，底下要有牆）。
-	# 原本畫在 _draw 裡會被 TileMap 圖層蓋住，改掛 Sprite2D，位移跟 _world 同步。
+	# 品牌 Logo：牆格不鋪 tile，貼圖照原比例（寬 5 格、高 31.25px）畫在
+	# Logo 牆列的正中央。仍用 Sprite2D 疊在圖層上、位移跟 _world 同步。
 	_logo_view = Sprite2D.new()
 	_logo_view.texture = s_logo
-	_logo_view.centered = false
-	_logo_view.scale = Vector2(Maze.LOGO_SIZE) * Maze.CELL_SIZE / Vector2(s_logo.get_size())
+	_logo_view.scale = Vector2.ONE * (Maze.LOGO_SIZE.x * Maze.CELL_SIZE.x / s_logo.get_size().x)
 	add_child(_logo_view)
 
 	# 結算壓暗、CAUGHT!、收尾暗角、石化閃邊原本畫在 _draw 尾端（牆之上），
@@ -127,17 +127,19 @@ func _ready() -> void:
 	_world.name = "World"
 	add_child(_world)
 
+	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來。
+	# 出生格繞著中央 Logo 牆排（左、右、下，Maze.CAT_HOMES），登場時間
+	# 錯開 0 / 2.5 / 5 秒，不然三隻會同時撲過來，開場就沒得玩。
+	_spawn_cat(Cat.Kind.CHASER, Maze.CAT_HOMES[0], 0.0)
+	_spawn_cat(Cat.Kind.AMBUSHER, Maze.CAT_HOMES[1], 2.5)
+	_spawn_cat(Cat.Kind.WANDERER, Maze.CAT_HOMES[2], 5.0)
+
+	# 露娜最後 add —— 子節點後加的畫在上面，玩家動畫疊在暗影猫之上，
+	# 被抓時貼在貓身上播的 getcaught 才不會被貓蓋住
 	player = Player.new()
 	_world.add_child(player)
 	player.ate.connect(_on_player_ate)
 	player.bumped.connect(_on_player_bumped)
-
-	# 直追的先出場，預判的稍後補上形成夾擊，遊蕩的最後才放出來。
-	# 出生格繞著中央 Logo 牆排（左、右、下），登場時間錯開 0 / 2.5 / 5 秒，
-	# 不然三隻會同時撲過來，開場就沒得玩。
-	_spawn_cat(Cat.Kind.CHASER, Vector2i(7, 5), 0.0)
-	_spawn_cat(Cat.Kind.AMBUSHER, Vector2i(13, 5), 2.5)
-	_spawn_cat(Cat.Kind.WANDERER, Vector2i(11, 7), 5.0)
 
 	_start_round()
 
@@ -198,6 +200,9 @@ func _enter_dying() -> void:
 	state = State.DYING
 	state_timer = DYING_TIME
 	player.set_process(false)
+	# 被抓動畫（getcaught）：角色節點凍住了，幀由 _run_state 的 DYING 分支代推；
+	# 播完停在最後一幀，重生時 reset_direction() 切回 walk
+	player.play_oneshot(&"getcaught")
 	for cat in cats:
 		cat.set_process(false)
 
@@ -241,10 +246,10 @@ func _process(delta: float) -> void:
 
 	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
 	_world.position = _juice.world_offset()
-	# 牆與 Logo 跟 _world 吃同一個位移 —— 接觸雙方共用同一層，不會脫格
+	# 牆與 Logo 跟 _world 吃同一個位移 —— 接觸雙方共用同一層，不會脫格。
+	# Logo 用 LOGO_CELL（中心錨點）對位：centered=true，貼圖中心 = 牆列中心。
 	_tiler_root.position = Maze.ORIGIN + _juice.world_offset()
-	_logo_view.position = Maze.ORIGIN + Vector2(Maze.LOGO_TOP_LEFT) * Maze.CELL_SIZE \
-		+ _juice.world_offset()
+	_logo_view.position = maze.cell_center(Maze.LOGO_CELL) + _juice.world_offset()
 	_overlay.queue_redraw()
 	queue_redraw()
 
@@ -274,8 +279,9 @@ func _run_state(delta: float) -> void:
 			else:
 				_resolve_contact()
 		State.DYING:
-			# 露娜閃爍，然後重新開始或結束
-			player.visible = fmod(state_timer, 0.24) < 0.12
+			# getcaught 動畫播一次（節點凍住，這裡代推幀），播完停在最後一幀。
+			# 原本在這裡做的露娜閃爍由動畫取代 —— 閃爍會把動畫眨得一斷一斷。
+			player.tick_anim(delta)
 			state_timer -= delta
 			if state_timer <= 0.0:
 				if lives > 0:
@@ -516,8 +522,8 @@ func _draw_hud() -> void:
 			_draw_heart(c, heart_size, 0.22)
 
 	# 右下角：珍珠進度
-	draw_string(font, Vector2(0, 254), "BEANS %d/%d" % [beans_eaten, beans_total],
-		HORIZONTAL_ALIGNMENT_RIGHT, 464, 8, Palette.TEXT_DIM)
+	#draw_string(font, Vector2(0, 254), "BEANS %d/%d" % [beans_eaten, beans_total],
+	#	HORIZONTAL_ALIGNMENT_RIGHT, 464, 8, Palette.TEXT_DIM)
 
 	# 左下角：囤著的月光能量（最多 2 個）。S_Moon.png（220×220 美術圖縮到
 	# 14px 顯示）—— 跟右上的愛心同一套規則：有庫存全亮、空位畫成暗色、
@@ -534,16 +540,16 @@ func _draw_hud() -> void:
 		else:
 			_draw_moon(c, moon_size, 0.22)
 	if moon_stock > 0 and petrify_left <= 0.0:
-		draw_string(font, Vector2(56, 252), "PRESS A",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.MOON)
+		draw_string(font, Vector2(30, 250), "PRESS A",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.CAT)
 
 	# 石化倒數與連擊
 	if petrify_left > 0.0:
 		draw_string(font, Vector2(0, 55), "PETRIFIED %.1f" % petrify_left,
-			HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.MOON)
+			HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.CAT_DARK)
 		if break_chain > 0:
 			draw_string(font, Vector2(0, 46), "BREAK x%d" % break_chain,
-				HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
+				HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.BG)
 
 
 ## 狀態覆蓋層（畫在 _overlay 上）：收尾暗角、石化閃邊、被抓提示、結算壓暗。

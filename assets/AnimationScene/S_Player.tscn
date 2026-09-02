@@ -1,44 +1,106 @@
 [gd_scene format=3 uid="uid://c8hpmnyxquqr1"]
 
-[ext_resource type="Texture2D" uid="uid://cc2538u1efdtx" path="res://assets/seeker/playerAnim/walk/S_P_Walk_1.png" id="1_khsks"]
-[ext_resource type="Texture2D" uid="uid://d3cb4poxc0mkr" path="res://assets/seeker/playerAnim/walk/S_P_Walk_2.png" id="2_ycd4w"]
-[ext_resource type="Texture2D" uid="uid://b6s184q0x420c" path="res://assets/seeker/playerAnim/walk/S_P_Walk_3.png" id="3_vawpc"]
-[ext_resource type="Texture2D" uid="uid://bwhri5n350mp6" path="res://assets/seeker/playerAnim/walk/S_P_Walk_4.png" id="4_dnfbg"]
-[ext_resource type="Texture2D" uid="uid://cdqta5r4w555t" path="res://assets/seeker/playerAnim/walk/S_P_Walk_5.png" id="5_qm11f"]
-[ext_resource type="Texture2D" uid="uid://inywhdykl7nn" path="res://assets/seeker/playerAnim/walk/S_P_Walk_6.png" id="6_ap7vv"]
-[ext_resource type="Texture2D" uid="uid://bhr3gq5b07u8n" path="res://assets/seeker/playerAnim/walk/S_P_Walk_7.png" id="7_m4v3b"]
-[ext_resource type="Texture2D" uid="uid://cxf0egd0fhi74" path="res://assets/seeker/playerAnim/walk/S_P_Walk_8.png" id="8_hg47p"]
+[ext_resource type="Texture2D" uid="uid://cfgo7cot3lpak" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_1.png" id="1_edk50"]
+[ext_resource type="Texture2D" uid="uid://br4q24idjshtf" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_2.png" id="2_fk1gg"]
+[ext_resource type="Texture2D" uid="uid://ka4jg2fqj6h7" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_3.png" id="3_cyg8u"]
+[ext_resource type="Texture2D" uid="uid://d3lplt1saii87" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_4.png" id="4_x7e5r"]
+[ext_resource type="Texture2D" uid="uid://j5hi8s34q0fd" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_5.png" id="5_2kxvf"]
+[ext_resource type="Texture2D" uid="uid://dvyglmmb05umq" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_6.png" id="6_o6k0x"]
+[ext_resource type="Texture2D" uid="uid://cjhrvytsi30u5" path="res://assets/seeker/playerAnim/GirlGetCaught/S_Girl_Getcaught_7.png" id="7_2si6t"]
+[ext_resource type="Texture2D" uid="uid://dih78fntngspl" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_1.png" id="8_d3cgn"]
+[ext_resource type="Texture2D" uid="uid://wf2kx05f6lv0" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_2.png" id="9_0neri"]
+[ext_resource type="Texture2D" uid="uid://capn6sk8sta3m" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_3.png" id="10_qe3x5"]
+[ext_resource type="Texture2D" uid="uid://bv6e5lnmgpxuf" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_4.png" id="11_51m23"]
+[ext_resource type="Texture2D" uid="uid://dsngr2tovb3a1" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_5.png" id="12_tw46k"]
+[ext_resource type="Texture2D" uid="uid://cfkk364vc6wdm" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_6.png" id="13_asknp"]
+[ext_resource type="Texture2D" uid="uid://bma5xn7ddm7xy" path="res://assets/seeker/playerAnim/GirlHitWall/S_Girl_HitWall_7.png" id="14_p5k80"]
+[ext_resource type="Texture2D" uid="uid://ckfl2u4ljy6vs" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_0.png" id="15_q0nn3"]
+[ext_resource type="Texture2D" uid="uid://cfghoykyt61py" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_1.png" id="16_bwyqb"]
+[ext_resource type="Texture2D" uid="uid://kf7w51yx4siw" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_2.png" id="17_0i7n7"]
+[ext_resource type="Texture2D" uid="uid://iq17fmq82wfx" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_3.png" id="18_ldlq6"]
+[ext_resource type="Texture2D" uid="uid://m43y581i1067" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_4.png" id="19_ulddk"]
+[ext_resource type="Texture2D" uid="uid://b727qmdjufldv" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_5.png" id="20_fw2ve"]
+[ext_resource type="Texture2D" uid="uid://2rmyt77ktm1u" path="res://assets/seeker/playerAnim/GirlRun/S_Girl_Run_6.png" id="21_hixpd"]
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_wvhbo"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("1_khsks")
+"texture": ExtResource("1_edk50")
 }, {
 "duration": 1.0,
-"texture": ExtResource("2_ycd4w")
+"texture": ExtResource("2_fk1gg")
 }, {
 "duration": 1.0,
-"texture": ExtResource("3_vawpc")
+"texture": ExtResource("3_cyg8u")
 }, {
 "duration": 1.0,
-"texture": ExtResource("4_dnfbg")
+"texture": ExtResource("4_x7e5r")
 }, {
 "duration": 1.0,
-"texture": ExtResource("5_qm11f")
+"texture": ExtResource("5_2kxvf")
 }, {
 "duration": 1.0,
-"texture": ExtResource("6_ap7vv")
+"texture": ExtResource("6_o6k0x")
 }, {
 "duration": 1.0,
-"texture": ExtResource("7_m4v3b")
+"texture": ExtResource("7_2si6t")
+}],
+"loop": 1,
+"name": &"getcaught",
+"speed": 9.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("8_d3cgn")
 }, {
 "duration": 1.0,
-"texture": ExtResource("8_hg47p")
+"texture": ExtResource("9_0neri")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_qe3x5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_51m23")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_tw46k")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_asknp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_p5k80")
+}],
+"loop": 1,
+"name": &"hitwall",
+"speed": 9.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("15_q0nn3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_bwyqb")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_0i7n7")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_ldlq6")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_ulddk")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_fw2ve")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_hixpd")
 }],
 "loop": 1,
 "name": &"walk",
-"speed": 10.0
+"speed": 9.0
 }]
 
 [node name="SPlayer" type="Node2D" unique_id=1892157184]
@@ -46,6 +108,4 @@ animations = [{
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1847871107]
 sprite_frames = SubResource("SpriteFrames_wvhbo")
 animation = &"walk"
-frame_progress = 0.9084438
-
-[node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=1441491958]
+frame_progress = 0.4936093

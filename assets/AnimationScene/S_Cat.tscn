@@ -1,0 +1,49 @@
+[gd_scene format=3 uid="uid://dlpkoy333kbua"]
+
+[ext_resource type="Texture2D" uid="uid://drnf1kr054ais" path="res://assets/seeker/CatAnim/S_Cat_Chase_1.png" id="1_1sg7u"]
+[ext_resource type="Texture2D" uid="uid://ce1hggr0fwawk" path="res://assets/seeker/CatAnim/S_Cat_Chase_2.png" id="2_7hfm8"]
+[ext_resource type="Texture2D" uid="uid://cac3ef3txjudh" path="res://assets/seeker/CatAnim/S_Cat_Chase_3.png" id="3_3v4hf"]
+[ext_resource type="Texture2D" uid="uid://cfkikdm35nwoy" path="res://assets/seeker/CatAnim/S_Cat_Chase_4.png" id="4_6fhwc"]
+[ext_resource type="Texture2D" uid="uid://7ij5doaqf2dv" path="res://assets/seeker/CatAnim/S_Cat_Chase_5.png" id="5_7phjx"]
+[ext_resource type="Texture2D" uid="uid://culwjp862j37u" path="res://assets/seeker/CatAnim/S_Cat_Chase_6.png" id="6_7v80l"]
+[ext_resource type="Texture2D" uid="uid://dtp031g5gddc0" path="res://assets/seeker/CatAnim/S_Cat_Chase_7.png" id="7_i0vva"]
+[ext_resource type="Texture2D" uid="uid://cvkbyjw8oxeir" path="res://assets/seeker/CatAnim/S_Cat_Chase_8.png" id="8_igflf"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_wvhbo"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_1sg7u")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_7hfm8")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_3v4hf")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_6fhwc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_7phjx")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_7v80l")
+}, {
+"duration": 1.0,
+"texture": ExtResource("7_i0vva")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_igflf")
+}],
+"loop": 1,
+"name": &"chase",
+"speed": 9.0
+}]
+
+[node name="Cat" type="Node2D" unique_id=1984547965]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1066913077]
+sprite_frames = SubResource("SpriteFrames_wvhbo")
+animation = &"chase"
+frame_progress = 0.31120816
