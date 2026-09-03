@@ -51,6 +51,12 @@ const LINE_MAX := 205.0
 const EXTEND_SPEED := 150.0
 const RETRACT_EMPTY := 210.0               # 空鉤回收速度
 
+# 鉤頭貼圖（F_Hook.png，100×100）：繩結點在貼圖 (55.5, 13)、鉤身往下延伸。
+# 顯示 20×20；擺動時以繩結點為軸隨 angle 旋轉（見 _draw_line_and_hook）。
+const HOOK_SIZE := Vector2(20.0, 20.0)
+const HOOK_ROPE := Vector2(55.5, 13.0)
+const LINE_COLOR := Color("ff81f3")        # 釣線顏色（勾中瞬間閃白）
+
 # ── 月光能量 ────────────────────────────────────────────
 const MOON_USES := 3
 const MOON_BOOST := 3.0                    # 勾到寶物時收線 ×3
@@ -80,6 +86,13 @@ const RESPAWN_KINDS := {
 	Kind.CLOUD: ANY,
 	Kind.IMP: ANY,
 }
+
+# 左下／右下角固定出現的 4 顆鑽石（一邊 2 顆），出生點在**畫面角落的
+# 300×500 區域內隨機**（需求以 1920×1080 設計座標給定，程式 ÷4 = 邏輯
+# 75×125，區域錨在螢幕左下／右下角）。先於隨機物件放置，之後的
+# _spawn_one 會自動避開。區域大部分在鉤子的可及錐之外（LINE_MAX 205），
+# 只有靠內側的一小片撈得到 —— 想整區可撈得加大 LINE_MAX 或縮小區域。
+const CORNER_DIAMOND_REGION := Vector2(75.0, 125.0)
 
 
 ## 水下的一個物件。小惡魔會橫向游動、放線時主動靠近鉤子，其餘固定不動。
@@ -171,6 +184,7 @@ var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
 var s_luna: Texture2D = preload("res://assets/fishing/F_Luna.png")
+var s_hook: Texture2D = preload("res://assets/fishing/F_Hook.png")
 var _textures := {
 	Kind.DIAMOND: preload("res://assets/fishing/F_Diamond_s.png"),
 	Kind.CHARM: preload("res://assets/fishing/F_Charm_s.png"),
@@ -181,9 +195,6 @@ var _textures := {
 ## 小惡魔的游泳動畫：7 幀循環（ImpAnim/F_Imp_0~6.png，200×200）。
 ## 顯示尺寸沿用 _item_sizes 的 16×16（新幀內容占比與舊 220×220 貼圖一致）。
 const IMP_ANIM_FPS := 8.0
-## 小惡魔之間的最小間距（px）：靠得更近就沿兩心連線互相推開，
-## 聚在鉤頭後也能重新散開，不會疊成一片。
-const IMP_MIN_SEP := 16.0
 var _imp_frames: Array[Texture2D] = [
 	preload("res://assets/fishing/ImpAnim/F_Imp_0.png"),
 	preload("res://assets/fishing/ImpAnim/F_Imp_1.png"),
@@ -303,12 +314,41 @@ func _reset_hook() -> void:
 func _populate() -> void:
 	items.clear()
 	_respawns.clear()
+	_spawn_corner_diamonds()   # 左下／右下角的固定鑽石先佔位，隨機物件會避開
 	# 帶最窄的先放：寶珠的中層帶只有 46px 高，被鑽石佔走就生不出來；
 	# 鑽石帶（中/深層）大得多，放後面容錯高。
 	_spawn_many(Kind.CHARM, 4, MID)                        # 中層
 	_spawn_many(Kind.DIAMOND, 6, Vector2(MID.x, DEEP.y))   # 中／深層
 	_spawn_many(Kind.CLOUD, 8, ANY)                        # 任意層
 	_spawn_many(Kind.IMP, 4, ANY)                          # 任意層，會游動
+
+
+## 左下／右下角各 2 顆的固定配額鑽石：在角落 300×500（設計座標）的區域內
+## 隨機出生（見 CORNER_DIAMOND_REGION）。不走 _spawn_one —— 不檢查
+## 「鉤得到」（區域大半在可及錐外，是刻意的擺設）；盡量不跟已放的物件
+## 重疊，40 次還找不到就照放（寧可疊也不要少一顆）。因為多半撈不到，
+## 也不進重生流程；被撈走的隨機鑽石照舊在原水層補。
+func _spawn_corner_diamonds() -> void:
+	var top := SCREEN.y - CORNER_DIAMOND_REGION.y
+	for side: float in [-1.0, 1.0]:          # -1 = 左下角、+1 = 右下角
+		for _i in 2:
+			var it := Item.new()
+			it.kind = Kind.DIAMOND
+			it.size = _defs[Kind.DIAMOND]["size"]
+			var half := it.size.x * 0.5
+			var x_lo: float = WATER_L + half
+			var x_hi: float = CORNER_DIAMOND_REGION.x
+			if side > 0.0:
+				x_lo = SCREEN.x - CORNER_DIAMOND_REGION.x
+				x_hi = WATER_R - half
+			for _try in 40:
+				it.pos = Vector2(
+					_rng.randf_range(x_lo, x_hi),
+					_rng.randf_range(top, WATER_B - half))
+				if not _overlaps(it, 0.0):
+					break
+			it.phase = _rng.randf() * TAU
+			items.append(it)
 
 
 func _spawn_many(kind: int, count: int, band: Vector2) -> void:
@@ -604,11 +644,8 @@ func _pop(text: String, col: Color) -> void:
 func _move_items(delta: float) -> void:
 	var tip := _hook_pos()
 	var line_out := hook_state != Hook.SWING
-	var imps := []          # 這幀場上的小惡魔（散開判定用，最多 4 隻）
 	for it in items:
 		it.phase += delta
-		if it.kind == Kind.IMP:
-			imps.append(it)
 		if it.vx == 0.0:
 			continue
 
@@ -629,25 +666,8 @@ func _move_items(delta: float) -> void:
 			it.pos.x = WATER_R - half
 			it.vx = -absf(it.vx)
 		it.pos.y = clampf(it.pos.y, SURFACE_Y + 14.0, WATER_B - 6.0)
-
-	# 小惡魔互斥：兩兩比較，距離小於 IMP_MIN_SEP 就沿連線各推一半 ——
-	# 追鉤頭擠成一團之後線一收就會重新四散，任何時候都不會重疊。
-	for i in imps.size():
-		for j in range(i + 1, imps.size()):
-			var a: Item = imps[i]
-			var b: Item = imps[j]
-			var d := b.pos - a.pos
-			var dist := d.length()
-			if dist >= IMP_MIN_SEP:
-				continue
-			var push: Vector2 = d / maxf(dist, 0.001) * (IMP_MIN_SEP - dist) * 0.5
-			a.pos -= push
-			b.pos += push
-	# 推開可能把彼此推出水域邊界，補一次夾住
-	for imp: Item in imps:
-		imp.pos.x = clampf(imp.pos.x,
-			WATER_L + imp.size.x * 0.5, WATER_R - imp.size.x * 0.5)
-		imp.pos.y = clampf(imp.pos.y, SURFACE_Y + 14.0, WATER_B - 6.0)
+	# 小惡魔之間沒有碰撞體積：互相穿過、可以重疊。不要加兩兩推開的
+	# 排擠邏輯 —— 反向游的兩隻會互相頂住卡死（2026-09 試玩踩過）。
 
 
 # ── 繪製 ────────────────────────────────────────────────
@@ -833,14 +853,18 @@ func _draw_diamond_flash(it: Item) -> void:
 
 func _draw_line_and_hook() -> void:
 	var tip := _hook_pos()
-	# 星光釣線：亮青白 1px。勾中的瞬間整條線閃一次白（GDD 指定）。
-	var line_col: Color = Palette.TEXT if _line_flash > 0.0 else Palette.MOON
+	# 釣線：粉紫 1px。勾中的瞬間整條線閃一次白（GDD 指定）。
+	var line_col: Color = Palette.TEXT if _line_flash > 0.0 else LINE_COLOR
 	var line_w := 2.0 if _line_flash > 0.0 else 1.0
 	draw_line(LINE_ORIGIN, tip, line_col, line_w)
-	# 鉤頭是小星星
-	draw_circle(tip, 2.5, Palette.TEXT)
-	draw_rect(Rect2(tip.x - 3.5, tip.y - 0.5, 7, 1), Palette.MOON)
-	draw_rect(Rect2(tip.x - 0.5, tip.y - 3.5, 1, 7), Palette.MOON)
+	# 鉤頭貼圖：繩結點對齊線頭、以繩結點為軸隨擺動角旋轉（鉤身延伸方向
+	# 永遠跟線同向）。angle 0 = 鉤身朝正下、正值往右；Godot 2D 正角是
+	# 順時針，與 angle 的方向定義相反，所以取 -angle。
+	if s_hook != null:
+		var s := HOOK_SIZE.x / s_hook.get_width()
+		draw_set_transform(_juice.world_offset() + tip, -angle, Vector2.ONE)
+		draw_texture_rect(s_hook, Rect2(-HOOK_ROPE * s, HOOK_SIZE), false)
+		draw_set_transform(_juice.world_offset())   # 還原 WORLD 層變換
 	# 掛在鉤上的獵物。位置在 _extend()/_retract() 更新，
 	# **不要在這裡改** —— _draw() 裡改遊戲狀態的話，鏡頭位移會被寫進
 	# carried.pos 再被 _retract() 讀回去，讓獵物的真實位置被污染。

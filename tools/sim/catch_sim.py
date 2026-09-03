@@ -23,13 +23,15 @@ SPAWN_Y, KILL_Y = -10.0, 270.0    # 漏接線＝判定框底邊＝螢幕最底
 START_LIVES, SHIELD_TIME, MOON_MAX = 3, 8.0, 3
 COMBO_STEP, COMBO_MAX = 5, 5
 ROUND_TIME, PHASE_LEN, CHARM_EVERY = 60.0, 15.0, 15.0
-# 掉落物數量翻倍（2026-09 企劃）：gap 減半、max_on 翻倍、炸彈比例對折。
-# 連炸彈一起翻倍的話 AI 存活率 68%→19%、平均局長 56s→45s（見第 6 節）。
+# 掉落物數量翻倍（2026-09 企劃）：gap 減半、max_on 翻倍；炸彈比例＝原值
+# ×0.65（密度 +30%，不到翻倍）。第 4 段（45-60s）企劃追加末段加壓：
+# gap 再 ÷1.3，有價物與炸彈各 +30%。連炸彈一起翻倍的話 AI 存活率
+# 68%→19%、平均局長 56s→45s（見第 6 節）。
 PHASES = [
-    dict(speed=60.0,  max_on=4,  bomb=0.05,  cm=1.0, gap=(0.8, 1.1)),
-    dict(speed=80.0,  max_on=6,  bomb=0.10,  cm=1.0, gap=(0.7, 1.0)),
-    dict(speed=100.0, max_on=8,  bomb=0.15,  cm=1.0, gap=(0.6, 0.9)),
-    dict(speed=120.0, max_on=10, bomb=0.175, cm=2.0, gap=(0.5, 0.75)),
+    dict(speed=60.0,  max_on=4,  bomb=0.065,  cm=1.0, gap=(0.8, 1.1)),
+    dict(speed=80.0,  max_on=6,  bomb=0.13,   cm=1.0, gap=(0.7, 1.0)),
+    dict(speed=100.0, max_on=8,  bomb=0.195,  cm=1.0, gap=(0.6, 0.9)),
+    dict(speed=120.0, max_on=10, bomb=0.2275, cm=2.0, gap=(0.385, 0.575)),
 ]
 JEWEL, STARDUST, CHARM, BOMB, MOON = range(5)
 BASE = {JEWEL: 50, STARDUST: 100, CHARM: 300, BOMB: 0, MOON: 0}
@@ -67,6 +69,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
     drops, lane_last = [], [LANE_MIN_GAP] * LANES
     spawn_t, charm_t = 0.6, CHARM_EVERY
     vs = vc = 0
+    vs_ph3 = 0                         # 末段（45-60s）生成的有價物數
     best_mult, frozen, at_wall, walls = 1, 0.0, False, 0
     bombs = 0
 
@@ -80,7 +83,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         return b
 
     def do_spawn(kind, ph):
-        nonlocal vs
+        nonlocal vs, vs_ph3
         cand = [i for i in range(LANES) if lane_last[i] >= LANE_MIN_GAP]
         if not cand:
             return False
@@ -100,6 +103,8 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         lane_last[ln] = 0.0
         if kind not in (BOMB, MOON):
             vs += 1
+            if pi == 3:
+                vs_ph3 += 1
         return True
 
     while t_left > 0 and lives > 0:
@@ -218,7 +223,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         drops = keep
     return dict(score=score, vs=vs, vc=vc, bm=best_mult, walls=walls,
                 frozen=frozen, survived=t_left <= 0,
-                bombs=bombs, t_played=ROUND_TIME - t_left)
+                bombs=bombs, t_played=ROUND_TIME - t_left, vs_ph3=vs_ph3)
 
 
 def report(label, rounds=120, **kw):
@@ -246,7 +251,10 @@ def main():
     ok(cur["mean_mult"] > a["mean_mult"] + 0.2,
        f"生成間隔綁落速時平均最高倍率 ×{a['mean_mult']:.2f}，"
        f"現行 ×{cur['mean_mult']:.2f} —— 「同屏上限是上限不是目標」")
-    ok(cur["capture"] > a["capture"] + 10,
+    # 2026-09 末段加壓後，現行第 4 段 gap（0.385~0.575）已與「綁落速」的
+    # 參照（末段 0.275~0.525）趨同甚至反超，接取率差距從 14 個點縮到約 9，
+    # 門檻從 +10 放寬到 +5。倍率斷言（上一條）才是這節的主斷言。
+    ok(cur["capture"] > a["capture"] + 5,
        f"接取率 {a['capture']:.0f}% → {cur['capture']:.0f}%")
     # 長按 ×2.5 後 AI 幾乎全屏可達，可及性約束的邊際價值被高速度稀釋
     # （關掉約束 ×2.59，門檻從 +0.4 放寬到 +0.3）。2026-09 掉落物翻倍後
@@ -283,24 +291,34 @@ def main():
     print("  原因是結構性的：凍結時整個 _run_state 跳過，time_left 也不減。")
 
     print("\n== 6. 掉落物數量翻倍（2026-09 企劃）==")
-    # 企劃要求掉落物數量翻倍：gap 減半＋max_on 翻倍後，有價物 28.6→61.7 顆/局。
-    # 但炸彈也跟著翻倍會讓 AI 存活率 68%→19%、平均局長 56s→45s —— 局提前結束，
-    # 總掉落數與分數反而縮水（中位 3900→3400）。所以炸彈比例對折（0.10→0.05 等），
-    # 炸彈密度（生成率 × 比例）維持不變，死亡數與局長也不變。這裡鎖住四個結果：
-    # 有價物翻倍、炸彈密度不變、局長不縮水、存活率不崩。
-    rs = [play(s) for s in range(120)]
+    # 企劃要求掉落物數量翻倍：gap 減半＋max_on 翻倍後，有價物 28.6→約 56 顆/局。
+    # 炸彈密度設為原值的 1.3 倍（比例 ×0.65）—— 企劃拍板炸彈「增多 30%、
+    # 不用翻倍」。連炸彈一起翻倍會讓 AI 存活率 68%→19%、平均局長 56s→45s，
+    # 局提前結束，總掉落數與分數反而縮水；1.3 倍時炸彈 2.1→約 2.6 顆/局、
+    # 死亡 1.7→約 2.1 次、存活率約 50%。這裡鎖住四個結果：有價物翻倍、
+    # 炸彈顯著多於原密度但遠低於翻倍、局長不大幅縮水、存活率不崩。
+    #
+    # 末段加壓（企劃追加）：第 4 段（45-60s）gap 再 ÷1.3、炸彈比例不動，
+    # 有價物與炸彈各 +30%（段內有價物 12.7→約 16.5 顆、炸彈 3.6→約 4.7 顆）。
+    # 末段統計用 300 局：早死的局玩不到末段（vs_ph3 每局 sd≈10.7、min=0），
+    # 120 局的 se 高達 1.0，斷言會貼線誤報。
+    rs = [play(s) for s in range(300)]
     vs = st.mean(r["vs"] for r in rs)
     vc = st.mean(r["vc"] for r in rs)
     bombs = st.mean(r["bombs"] for r in rs)
     t_played = st.mean(r["t_played"] for r in rs)
     surv = 100 * st.mean(r["survived"] for r in rs)
+    vs_ph3 = st.mean(r["vs_ph3"] for r in rs)
     cap = 100 * vc / vs
     print(f"  每局有價物 {vs:.1f} 顆（翻倍前 28.6）、接到 {vc:.1f}、接取率 {cap:.0f}%")
-    print(f"  每局炸彈 {bombs:.1f} 顆（翻倍前 2.1）、平均局長 {t_played:.1f}s、存活率 {surv:.0f}%")
-    ok(55.0 <= vs, f"有價物 {vs:.1f} ≥ 55 —— 確實翻倍")
-    ok(1.0 <= bombs <= 3.5, f"炸彈 {bombs:.1f} 落在 1.0~3.5 —— 密度沒跟著翻倍")
-    ok(t_played >= 53.0, f"平均局長 {t_played:.1f}s ≥ 53 —— 局不會提前結束")
-    ok(surv >= 50.0, f"存活率 {surv:.0f}% ≥ 50% —— 難度沒有失控")
+    print(f"  每局炸彈 {bombs:.1f} 顆（翻倍前 2.1，翻倍會是約 3.3）、"
+          f"平均局長 {t_played:.1f}s、存活率 {surv:.0f}%")
+    print(f"  末段（45-60s）有價物 {vs_ph3:.1f} 顆（加壓前 12.7）")
+    ok(50.0 <= vs, f"有價物 {vs:.1f} ≥ 50 —— 確實翻倍（炸彈變多會占掉一點生成預算）")
+    ok(2.2 <= bombs <= 3.1, f"炸彈 {bombs:.1f} 落在 2.2~3.1 —— +30% 密度，不是原密度也不是翻倍")
+    ok(t_played >= 50.0, f"平均局長 {t_played:.1f}s ≥ 50 —— 局不會提前結束（炸彈翻倍會縮到 45s）")
+    ok(surv >= 35.0, f"存活率 {surv:.0f}% ≥ 35% —— 難度上升但沒有失控（炸彈翻倍會崩到 19%）")
+    ok(14.5 <= vs_ph3, f"末段有價物 {vs_ph3:.1f} ≥ 14.5 —— 45-60s 段內確實 +30%（加壓前 12.7）")
 
     print()
     if FAILED:

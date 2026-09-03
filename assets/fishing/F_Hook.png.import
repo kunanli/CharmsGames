@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cei6713xxvp4y"
-path="res://.godot/imported/S_Hinder.png-c1c7080e364789521c837f5dbcd9fdb6.ctex"
+uid="uid://b8guhebx13nsa"
+path="res://.godot/imported/F_Hook.png-89869da9d54e9302138f19e003af37a1.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/seeker/Map/S_Hinder.png"
-dest_files=["res://.godot/imported/S_Hinder.png-c1c7080e364789521c837f5dbcd9fdb6.ctex"]
+source_file="res://assets/fishing/F_Hook.png"
+dest_files=["res://.godot/imported/F_Hook.png-89869da9d54e9302138f19e003af37a1.ctex"]
 
 [params]
 

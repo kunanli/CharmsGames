@@ -37,12 +37,9 @@ extends Node2D
 # Modal Overlay，見「清除功能」段落）。
 # 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_input 註解）。
 #
-# 二級標題另有「待機」狀態（IDLE，2026-08 新增）：進二級起 10 秒無操作
-# 計時，↑↓←→／A／B 任一輸入重設計時；連續 10 秒無輸入 → 隱藏標題圖、
-# 播放該款的待機影片（VideoStreamPlayer loop，節點本身隱藏、畫面由
-# _draw() 手繪：等比例縮放置中＋中央閃爍 CLICK TO PLAY），任一有效輸入
-# 喚醒（該輸入被吃掉，不觸發起名）。影片路徑在 GAMES 的 idle_video 欄位
-# （引擎內建 VideoStreamPlayer 只吃 Ogg Theora，MP4 素材要先轉 .ogv）。
+# 二級標題沒有待機功能（2026-09 移除原「10 秒無操作 → 播待機影片＋
+# 中央閃爍 CLICK TO PLAY」整段；GAMES 的 idle_video 欄位一併拆除，
+# assets/title/IdleVideo/ 素材自此不使用、檔案留著不刪）。
 #
 # 遊戲不是場景，是「掛在臨時 Node2D 上的腳本」：
 #   load(path) → Node2D.new() → set_script() → add_child()
@@ -78,7 +75,6 @@ const GAMES := [
 		"title_image": preload("res://assets/title/Title_Maze.jpg"),
 		"title_video": "res://assets/title/TItleVideo/Title_Maze.ogv",
 		"naming_image": preload("res://assets/title/Naming/Name_Charmsseeker.png"),
-		"idle_video": "res://assets/title/IdleVideo/CharmsSeeker_Idle.ogv",
 	},
 	{
 		"id": "fishing",
@@ -90,7 +86,6 @@ const GAMES := [
 		"title_image": preload("res://assets/title/Title_Fishing.jpg"),
 		"title_video": "res://assets/title/TItleVideo/Title_Fishing.ogv",
 		"naming_image": preload("res://assets/title/Naming/Name_Charmsfishing.png"),
-		"idle_video": "res://assets/title/IdleVideo/CharmsFishing_Idle.ogv",
 	},
 	{
 		"id": "catch",
@@ -102,7 +97,6 @@ const GAMES := [
 		"title_image": preload("res://assets/title/Title_Catch.jpg"),
 		"title_video": "res://assets/title/TItleVideo/Title_Catch.ogv",
 		"naming_image": preload("res://assets/title/Naming/Name_CharmsCatch.png"),
-		"idle_video": "res://assets/title/IdleVideo/CharmsCatch_Idle.ogv",
 	},
 ]
 
@@ -147,22 +141,8 @@ const CLEAR_RULES := [
 ## （不足 3 秒就鬆開＝普通按鍵，照樣進入起名流程。）
 const AB_HOLD_SECONDS := 3.0
 
-## 二級標題待機（IDLE）：連續這個秒數沒有任何有效輸入（↑↓←→／A／B）→
-## 隱藏標題圖、全屏播放該款待機影片；任一有效輸入喚醒（輸入被吃掉）。
-const TITLE_IDLE_SECONDS := 10.0
-
-## 待機計時與喚醒認定的有效街機輸入（與二級標題正常流程用的同一組按鍵，
-## 見 _unhandled_input 的分層註解）。待機狀態下只有這幾個鍵能喚醒，
-## 喚醒的那一次輸入不會繼續觸發二級標題原本的操作。
-## 手柄 A／B 不吃 keycode，由 _is_wake_input 的 action 判斷補上。
-const TITLE_IDLE_WAKE_KEYS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_A, KEY_S]
-
-## 待機畫面中央 CLICK TO PLAY 的閃爍週期（秒）與每週期亮著的時長。
-const IDLE_PROMPT_PERIOD := 1.2
-const IDLE_PROMPT_ON_SECONDS := 0.7
-
 ## 二級標題底部 PRESS ANY BUTTON TO START 的閃爍週期（秒）與每週期亮著的
-## 時長。與待機的 CLICK TO PLAY 同款：亮滅二值閃爍。
+## 時長。亮滅二值閃爍。
 const START_PROMPT_PERIOD := 1.2
 const START_PROMPT_ON_SECONDS := 0.7
 
@@ -206,14 +186,9 @@ var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _ab_hold_active := false  # 二級標題：A／B 有被按下，等待長按判定（提前鬆開＝普通按鍵）
 var _ab_hold_time := 0.0      # A＋B 同時按住的累計秒數（滿 AB_HOLD_SECONDS 進管理員密碼）
 var _stick_nav_dir := 0       # 手柄左搖杆垂直推量（0 中立／-1 上／1 下）：管理員界面 ↑↓ 選擇的邊沿觸發狀態
-var _title_idle := false      # 二級標題待機狀態：true = IDLE（在播待機影片）、false = NORMAL
 var _title_video: VideoStreamPlayer = null   # 二級標題背景影片（NORMAL 與起名 overlay 的底層）
-var _idle_video: VideoStreamPlayer = null
-var _idle_timer: Timer = null
-var _idle_prompt_elapsed := 0.0   # CLICK TO PLAY 閃爍相位（秒），進待機時歸零
 var _start_prompt_elapsed := 0.0  # 底部 PRESS ANY BUTTON TO START 閃爍相位（秒），進二級時歸零
 var _title_stream_cache: Dictionary = {}  # game index → VideoStream；載入失敗記 null 不重試
-var _idle_stream_cache: Dictionary = {}   # game index → VideoStream；載入失敗記 null 不重試
 var _coin_tex: Texture2D = null   # 投幣 UI 的 Coin 圖（_ready 降到 12×12；解不開時用原圖）
 var _coin_shake_time := 0.0       # 幣不夠的 Coin 圖抖動剩餘秒數（>0 時每幀重繪）
 var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
@@ -234,10 +209,10 @@ func _ready() -> void:
 	for entry in GAMES:
 		_built.append(ResourceLoader.exists(entry["script"]))
 
-	# 二級標題背景影片（NORMAL 與起名 overlay 的底層）：與待機影片同款做法
-	# —— VideoStreamPlayer 只負責播放、**節點本身隱藏**（它是 Control，
-	# expand=false 時會用自己的尺寸把影片畫在角落），畫面統一由 _draw() 的
-	# _draw_title_background() 手繪（等比例縮放置中）。
+	# 二級標題背景影片（NORMAL 與起名 overlay 的底層）：VideoStreamPlayer
+	# 只負責播放、**節點本身隱藏**（它是 Control，expand=false 時會用自己的
+	# 尺寸把影片畫在角落），畫面統一由 _draw() 的 _draw_title_background()
+	# 手繪（等比例縮放置中）。
 	_title_video = VideoStreamPlayer.new()
 	_title_video.name = "TitleVideo"
 	_title_video.autoplay = false      # 不自動播放：進二級標題才 play()
@@ -245,25 +220,6 @@ func _ready() -> void:
 	_title_video.visible = false       # 節點不自己畫，畫面全走 launcher._draw()
 	_title_video.connect("finished", Callable(self, "_on_title_video_finished"))
 	add_child(_title_video)
-
-	# 二級標題待機（IDLE）：VideoStreamPlayer 只負責播放，**節點本身隱藏**
-	# （它是 Control，expand=false 時會用自己的尺寸把影片畫在角落、stop()
-	# 後還會殘留最後一幀 —— 影片「不消失」的來源）；畫面統一由 _draw()
-	# 手繪：等比例縮放置中＋CLICK TO PLAY 閃爍。Timer 管 10 秒無操作計時。
-	_idle_video = VideoStreamPlayer.new()
-	_idle_video.name = "IdleVideo"
-	_idle_video.autoplay = false      # 不自動播放：進待機才 play()
-	_idle_video.loop = true           # 無縫循環（_on_idle_video_finished 是保險）
-	_idle_video.visible = false       # 節點不自己畫，畫面全走 launcher._draw()
-	_idle_video.connect("finished", Callable(self, "_on_idle_video_finished"))
-	add_child(_idle_video)
-
-	_idle_timer = Timer.new()
-	_idle_timer.name = "IdleTimer"
-	_idle_timer.one_shot = true
-	_idle_timer.wait_time = TITLE_IDLE_SECONDS
-	_idle_timer.connect("timeout", Callable(self, "_on_idle_timer_timeout"))
-	add_child(_idle_timer)
 
 	# 投幣 UI 的 Coin 圖：原圖太大（1312×1199），載入時一次 LANCZOS 縮到
 	# 顯示尺寸 12×12（設計 48×48 ÷4）。素材解不開（get_image 失敗）時退回
@@ -289,20 +245,13 @@ func _process(delta: float) -> void:
 		# 幣不夠的 Coin 圖抖動：倒數到 0 自動停（_draw 的偏移同步歸 0）。
 		_coin_shake_time = maxf(_coin_shake_time - delta, 0.0)
 		queue_redraw()
-	if mode == Mode.GAME_TITLE and not _title_idle:
-		# 二級標題（NORMAL）：背景影片每幀更新＋底部提示的閃爍相位，都要每幀重繪。
+	if mode == Mode.GAME_TITLE:
+		# 二級標題：背景影片每幀更新＋底部提示的閃爍相位，都要每幀重繪。
 		_start_prompt_elapsed += delta
 		queue_redraw()
 	elif mode == Mode.NAME_INPUT and _title_video.is_playing():
 		# 起名 overlay：背景影片每幀更新，畫面要跟著重繪。
 		queue_redraw()
-	if mode == Mode.GAME_TITLE and _title_idle:
-		# IDLE：每幀重繪讓待機影片畫面跟得上；不處理 A＋B 長按 ——
-		# 待機中正常互動全部停止（輸入層面見 _unhandled_input）。
-		# CLICK TO PLAY 的閃爍相位也在此累計。
-		_idle_prompt_elapsed += delta
-		queue_redraw()
-		return
 	if mode == Mode.GAME_TITLE and _ab_hold_active:
 		# 二級標題的管理員入口：A＋B 同時按住滿 AB_HOLD_SECONDS 秒 →
 		# 管理員密碼界面（不到 3 秒鬆開的話，放開分支會當普通按鍵進起名）。
@@ -335,18 +284,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				and _password_modal == null and _clear_modal == null \
 				and (mode == Mode.MENU or mode == Mode.SETTING or mode == Mode.SETTING_CLEAR):
 			_pad_stick_nav(stick.axis_value)
-		return
-
-	# IDLE（待機）：二級標題的正常互動全部停止。↑↓←→／街機 A／B 其中一個
-	# **按下** → 只喚醒、輸入被吃掉（不進起名、不進 A／B 長按判定）；
-	# 投幣（Y／手柄 View）＝喚醒並照常投一枚幣（實體投幣隨時都收）；
-	# 其餘按鍵（含放開）一律忽略。
-	if mode == Mode.GAME_TITLE and _title_idle:
-		if event.is_pressed() and _is_wake_input(event):
-			_wake_from_title_idle()
-		elif event.is_pressed() and _is_coin_insert(event):
-			_wake_from_title_idle()
-			_insert_coin()
 		return
 
 	# 放開事件只用於二級標題的 A／B 長按判定：兩顆鍵沒按住滿 3 秒就鬆開
@@ -441,12 +378,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				AudioManager.play_sfx("ui_select")
 				queue_redraw()
 		Mode.GAME_TITLE:
-			# 有效街機輸入（↑↓←→／A／B）與投幣（Y／手柄 View）重設 10 秒待機
-			# 計時；其他鍵不重設（字母／空白等照舊進起名流程）。NORMAL 時這些鍵
-			# 也會照常觸發起名／長按判定 —— 只有 IDLE 喚醒那一次輸入會被攔截。
-			if (key != null and key.keycode in TITLE_IDLE_WAKE_KEYS) \
-					or _is_arcade_a(event) or _is_arcade_b(event) or _is_coin_insert(event):
-				_idle_timer.start()
 			# Y／手柄 View ＝投幣：吃掉事件，不觸發起名（幣量 +1＋coin_push 音效）。
 			if _is_coin_insert(event):
 				_insert_coin()
@@ -472,14 +403,6 @@ func _is_arcade_a(event: InputEvent) -> bool:
 
 func _is_arcade_b(event: InputEvent) -> bool:
 	return ArcadeInput.pressed(event, ArcadeInput.ACTION_B)
-
-
-## 待機喚醒認定的有效輸入：方向鍵（鍵盤）＋街機 A／B（鍵盤 A·S／手柄 A·B）。
-func _is_wake_input(event: InputEvent) -> bool:
-	var key := event as InputEventKey
-	if key != null and key.keycode in TITLE_IDLE_WAKE_KEYS:
-		return true
-	return _is_arcade_a(event) or _is_arcade_b(event)
 
 
 ## 手柄左搖杆的垂直推量 → 管理員界面（一級清單／SETTING 二三級）的上下
@@ -520,7 +443,7 @@ func _enter_game_title(index: int) -> void:
 	_ab_hold_time = 0.0
 	_stick_nav_dir = 0
 	mode = Mode.GAME_TITLE
-	_begin_title_idle_watch()   # 進二級：開始 10 秒無操作計時
+	_begin_title()              # 進二級：啟動背景影片與標題 BGM
 	queue_redraw()
 
 
@@ -538,7 +461,6 @@ func _launch(index: int) -> void:
 		_start_coin_shake()
 		return
 	AudioManager.play_sfx("ui_confirm")   # 只有成功進入起名／開局才播
-	_leave_title_idle()         # 離開二級標題：待機計時與影片全部停掉
 
 	if not CurrentPlayerSession.is_active():
 		# 第一次進遊戲：先輸入名字，輸入成功才真正開局
@@ -674,7 +596,7 @@ func _on_panel_exit() -> void:
 	_ab_hold_active = false
 	_ab_hold_time = 0.0
 	mode = Mode.GAME_TITLE
-	_begin_title_idle_watch()   # 回二級：重新開始 10 秒無操作計時
+	_begin_title()              # 回二級：啟動背景影片與標題 BGM
 	queue_redraw()
 
 
@@ -768,7 +690,7 @@ func _on_name_cancelled() -> void:
 	_ab_hold_active = false
 	_ab_hold_time = 0.0
 	mode = Mode.GAME_TITLE      # 取消起名 → 回二級標題（不是一級）
-	_begin_title_idle_watch()   # 回二級：重新開始 10 秒無操作計時
+	_begin_title()              # 回二級：啟動背景影片與標題 BGM
 	queue_redraw()
 
 
@@ -777,7 +699,6 @@ func _on_name_cancelled() -> void:
 func _open_password_modal() -> void:
 	if _password_modal != null:
 		return
-	_leave_title_idle()         # 密碼彈窗開著不算二級標題正常畫面，先停待機
 	var modal := Node2D.new()
 	modal.name = "AdminPassword"
 	modal.set_script(load("res://ui/admin_password.gd"))
@@ -800,7 +721,7 @@ func _on_password_succeeded() -> void:
 ## ESC 取消：關彈窗，留在原二級標題。
 func _on_password_cancelled() -> void:
 	_close_password_modal()
-	_begin_title_idle_watch()   # 取消 → 留在二級，重新開始 10 秒無操作計時
+	_begin_title()              # 取消 → 留在二級
 
 
 func _close_password_modal() -> void:
@@ -811,7 +732,9 @@ func _close_password_modal() -> void:
 	_password_modal = null
 
 
-# ── 二級標題背景影片 ＋ 待機（IDLE：10 秒無操作 → 全屏待機影片；有效輸入喚醒）────
+# ── 二級標題背景影片 ────────────────────────
+# （2026-09 移除待機功能：原「10 秒無操作 → 播待機影片＋CLICK TO PLAY」
+# 的 _idle_video／_idle_timer／_enter/_wake/_leave_title_idle 等整段拆除。）
 
 ## 開始播放該款二級標題的背景影片（NORMAL 與起名 overlay 共用同一顆）。
 ## 素材沒進場（load 回 null）時不報錯 —— _draw 退回標題圖墊底。
@@ -829,83 +752,19 @@ func _start_title_video() -> void:
 	_title_video.play()
 
 
-## 進二級標題（NORMAL）：停掉待機影片、啟動背景影片、重開 10 秒無操作計時。
-## 進入二級標題的所有路徑（一級按 A／局終回二級／起名取消／遊戲中 ESC）都
-## 從這裡經過，所以標題 BGM 也在此切換；已在同一首時 AudioManager 自動略過。
-## 標題 BGM 循環播放（二級停留時間不定，不能放完就停）。
-func _begin_title_idle_watch() -> void:
-	_title_idle = false
-	_idle_video.stop()
-	_idle_timer.start()
+## 進二級標題：啟動背景影片、重置底部提示的閃爍相位。進入二級標題的所有
+## 路徑（一級按 A／局終回二級／起名取消／遊戲中 ESC）都從這裡經過，所以
+## 標題 BGM 也在此切換；已在同一首時 AudioManager 自動略過。標題 BGM
+## 循環播放（二級停留時間不定，不能放完就停）。
+func _begin_title() -> void:
 	_start_prompt_elapsed = 0.0
 	AudioManager.play_bgm("TITLE", true)
 	_start_title_video()
 
 
-## 離開二級標題：待機計時與待機影片停掉（起名／開局／密碼彈窗時用）。
-## 背景影片故意不停 —— 起名 overlay 與密碼彈窗底下都要透出它，真正離開
-## 二級（開局／回一級）時由 _start_game／_on_password_succeeded 停。
-func _leave_title_idle() -> void:
-	_title_idle = false
-	_idle_video.stop()
-	_idle_timer.stop()
-
-
-## 10 秒無有效輸入 → 進 IDLE：隱藏背景影片／文字、全屏播放該款待機影片。
-## 影片載入失敗（素材還沒進場）時照樣進 IDLE —— 畫面停在標題圖，
-## 輸入行為與有影片時一致，素材到位後自動生效。
-func _enter_title_idle() -> void:
-	if mode != Mode.GAME_TITLE or _title_idle:
-		return
-	if _password_modal != null or _clear_modal != null:
-		return                # 彈窗開著不進待機（保險，正常流程不會走到）
-	_title_idle = true
-	_title_video.stop()       # 待機影片接管背景
-	_ab_hold_active = false   # 清掉長按等待：進待機前的 A／B 按住不算數
-	_ab_hold_time = 0.0
-	_idle_prompt_elapsed = 0.0
-	var idx := active_index
-	if not _idle_stream_cache.has(idx):
-		_idle_stream_cache[idx] = load(GAMES[idx]["idle_video"])
-	var stream: VideoStream = _idle_stream_cache[idx]
-	if stream != null:
-		_idle_video.stream = stream
-		_idle_video.stream_position = 0.0
-		_idle_video.play()
-	queue_redraw()
-
-
-## IDLE → 玩家第一個有效輸入（↑↓←→／A／B）：停待機影片、恢復背景影片、
-## 重開 10 秒計時。這次輸入只負責喚醒 —— 呼叫端已 return，
-## 不會繼續觸發二級標題原本的操作。
-func _wake_from_title_idle() -> void:
-	_title_idle = false
-	_idle_video.stop()
-	_ab_hold_active = false
-	_ab_hold_time = 0.0
-	_idle_timer.start()
-	_start_prompt_elapsed = 0.0
-	_start_title_video()
-	queue_redraw()
-
-
-## 待機計時到 → 進 IDLE（彈窗開著或已離開二級標題時不動作）。
-func _on_idle_timer_timeout() -> void:
-	if mode != Mode.GAME_TITLE or _password_modal != null or _clear_modal != null:
-		return
-	_enter_title_idle()
-
-
-## 影片播完的保險：loop 正常時不會走到（finished 只在無縫循環失效時發）。
-func _on_idle_video_finished() -> void:
-	if _title_idle:
-		_idle_video.stream_position = 0.0
-		_idle_video.play()
-
-
-## 背景影片播完的保險（與待機影片同款，loop 正常時不會走到）。
+## 背景影片播完的保險（loop 正常時不會走到，finished 只在無縫循環失效時發）。
 func _on_title_video_finished() -> void:
-	if (mode == Mode.GAME_TITLE and not _title_idle) or mode == Mode.NAME_INPUT:
+	if mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT:
 		_title_video.stream_position = 0.0
 		_title_video.play()
 
@@ -931,7 +790,7 @@ func _close_game() -> void:
 	_ab_hold_active = false
 	_ab_hold_time = 0.0
 	mode = Mode.GAME_TITLE
-	_begin_title_idle_watch()   # 回二級：重新開始 10 秒無操作計時
+	_begin_title()              # 回二級：啟動背景影片與標題 BGM
 	queue_redraw()
 
 
@@ -973,28 +832,7 @@ func _draw() -> void:
 	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
 		# 二級標題背景同時是起名 overlay 的底層：NAME_INPUT 時底下要透得出它。
 		# 二級標題沒有任何按鈕 —— 按任意鍵即起名開局，底部有一行閃爍的
-		# PRESS ANY BUTTON TO START 提示（起名 overlay 與待機畫面不畫）。
-		# IDLE：不畫背景影片與提示（等同隱藏全部 UI/文字）。待機影片**等比例
-		# 縮放置中**（維持自身長寬比，多餘的邊用底色補，不拉伸變形）；影片
-		# 載入失敗時退回標題圖墊底。中央閃爍 CLICK TO PLAY 兩種情況都畫。
-		if mode == Mode.GAME_TITLE and _title_idle:
-			var video_texture: Texture2D = null
-			if _idle_video.stream != null:
-				video_texture = _idle_video.get_video_texture()
-			if video_texture != null and video_texture.get_size().x > 0.0:
-				var vw := video_texture.get_size().x
-				var vh := video_texture.get_size().y
-				var scale := minf(480.0 / vw, 270.0 / vh)
-				var w := vw * scale
-				var h := vh * scale
-				draw_rect(Rect2(0, 0, 480, 270), Palette.BG, true)   # 留邊底色
-				draw_texture_rect(video_texture,
-					Rect2((480.0 - w) / 2.0, (270.0 - h) / 2.0, w, h), false)
-			else:
-				var image: Texture2D = GAMES[active_index]["title_image"]
-				draw_texture_rect(image, Rect2(0, 0, 480, 270), false)
-			_draw_idle_prompt()
-			return
+		# PRESS ANY BUTTON TO START 提示（起名 overlay 不畫）。
 		_draw_title_background()
 		if mode == Mode.GAME_TITLE:
 			_draw_start_prompt()
@@ -1110,7 +948,7 @@ func _draw_title_background() -> void:
 
 
 ## 二級標題底部中央閃爍的 PRESS ANY BUTTON TO START（週期 START_PROMPT_PERIOD
-## 秒、每週期亮 START_PROMPT_ON_SECONDS 秒，與待機的 CLICK TO PLAY 同款）。
+## 秒、每週期亮 START_PROMPT_ON_SECONDS 秒：亮滅二值閃爍）。
 ## 文字與底影照當前款式取 TITLE_TEXT_COLORS 的配色，讓亮色影片上也能看清。
 ## 只由 _draw 的 GAME_TITLE 分支呼叫，閃爍相位在 _process 累計。
 func _draw_start_prompt() -> void:
@@ -1134,26 +972,12 @@ func _title_text_colors() -> Dictionary:
 	return TITLE_TEXT_COLORS.get(GAMES[active_index]["id"], fallback)
 
 
-## 待機畫面中央閃爍的 CLICK TO PLAY（週期 IDLE_PROMPT_PERIOD 秒、每週期亮
-## IDLE_PROMPT_ON_SECONDS 秒）。深色底影讓亮色影片上也能看清。只由 _draw
-## 的 IDLE 分支呼叫，閃爍相位在 _process 累計。
-func _draw_idle_prompt() -> void:
-	if fmod(_idle_prompt_elapsed, IDLE_PROMPT_PERIOD) >= IDLE_PROMPT_ON_SECONDS:
-		return
-	var font := ThemeDB.fallback_font
-	var y := 139.0
-	draw_string(font, Vector2(0, y + 1.0), "CLICK TO PLAY",
-		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.NIGHT)
-	draw_string(font, Vector2(0, y), "CLICK TO PLAY",
-		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
-
-
 ## 二級標題左下角的投幣顯示：Coin 圖（12×12，1920×1080 設計 48×48）＋
 ## 右側狀態文字 —— 無限投幣 ON 顯示「∞」、OFF 顯示「餘額/需求」（如 0/1，
 ## 需求 = CoinManager.START_COST）。文字底影與 PRESS ANY BUTTON 同款雙層
 ## 畫法，亮色影片上也看得清。幣不夠被擋下時整組水平抖動（位移只在繪製
-## 層，見 _coin_shake_offset）。只由 _draw 的 GAME_TITLE NORMAL 分支呼叫
-## （IDLE 待機與起名 overlay 不畫，待機畫面不該有 UI、起名時幣已扣完）。
+## 層，見 _coin_shake_offset）。只由 _draw 的 GAME_TITLE 分支呼叫
+## （起名 overlay 不畫 —— 起名時幣已扣完）。
 func _draw_coin_ui() -> void:
 	var shake := Vector2(_coin_shake_offset(), 0.0)
 	if _coin_tex != null:
