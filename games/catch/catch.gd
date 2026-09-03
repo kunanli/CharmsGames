@@ -151,9 +151,140 @@ var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
 var s_heart_ui: Texture2D = preload("res://assets/UI/HEART.png")
 
+# ── 露娜視覺：C_Player.tscn（畫師交付的動畫場景，AnimatedSprite2D 兩段動畫）
+#   Idle  待機循環（8 幀 @9fps）
+#   Hurt  接到炸彈扣命時播一次（3 幀 @6fps），播完回 Idle
+# 動畫不自己播 —— pause 後由 _process 用場景定義的 fps 手動推幀，
+# launcher 停掉遊戲節點（process_mode = DISABLED）時畫面才跟著凍。
+# luna_view 是純視覺子節點（z=-1），position 只當繪製錨點、不參與任何玩法判定，
+# 所以把鏡頭位移寫進它的 position 是安全的（跟 player/cat 那套不同）；
+# 背景因此搬到 _bg_view（z=-2）—— 子節點一律畫在父節點 _draw() 之後，
+# 背景留在父節點會蓋住玩家（fishing 同款結構）。
+const C_PLAYER_SCENE := preload("res://assets/AnimationScene/C_Player.tscn")
+## 顯示縮放：幀畫布 450×284、內容約 308×240，0.29 倍後約 89×70，
+## 與接取判定框 90×71（_body_size()，仍以 cc_person1 尺寸為準）視覺一致。
+const PLAYER_SCALE := 0.29
+## 每段動畫的錨點參考框（取第 0 幀，alpha>32 的內容包圍盒；畫師改圖要重測）。
+## 整段動畫共用這個框算 offset —— 所有幀同一畫布、內容位置一致，
+## 不做逐幀歸一化（同 fishing 的 P_REFS，逐幀錨定會跟著肢體擺動滑動）。
+const P_REFS := {
+	&"Idle": Rect2(57, 22, 308, 240),
+	&"Hurt": Rect2(58, 22, 308, 240),
+}
+enum PAnim { IDLE, HURT }
+const P_ANIM_NAMES := [&"Idle", &"Hurt"]
+
+var luna_view: Node2D = null
+var _bg_view: Node2D = null          # 背景層子節點（z=-2，見 _setup_views）
+var _anim: AnimatedSprite2D = null
+var _p_anim := PAnim.IDLE            # 目前播的動畫（見 PAnim）
+var _p_time := 0.0                   # 目前動畫累計時間（手動推幀用）
+var _p_oneshot := false              # Hurt 播放中（播完回 Idle）
+
 func _ready() -> void:
 	_rng.randomize()
+	_setup_views()
 	_start_round()
+
+
+## 場景接入：背景 BgView（z=-2）→ 玩家 luna_view（z=-1）→ 遊戲本體 _draw（z=0）。
+## 動畫場景結構不符（沒有 AnimatedSprite2D）時退回 cc_person1 靜態貼圖
+## （_draw_luna 的舊路徑，luna_view 保持 null），判定框不受影響。
+func _setup_views() -> void:
+	var bg := BgView.new()
+	bg.game = self
+	bg.name = "BgView"
+	bg.z_index = -2
+	add_child(bg)
+	_bg_view = bg
+
+	luna_view = C_PLAYER_SCENE.instantiate()
+	_anim = luna_view.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	if _anim == null:
+		luna_view.queue_free()
+		luna_view = null
+		return
+	_anim.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# 縮放必須在這裡就設好：READY 期間 _process 推幀前就會畫出第一幀，
+	# 沒設的話開場會以貼圖原尺寸（450×284）畫出一個巨無霸露娜。
+	_anim.scale = Vector2(PLAYER_SCALE, PLAYER_SCALE)
+	_anim.pause()                 # 幀由 _process 手動推（凍結時畫面才跟著凍）
+	luna_view.name = "LunaView"
+	luna_view.z_index = -1
+	add_child(luna_view)
+	_p_anim = PAnim.IDLE
+	_p_time = 0.0
+	_p_oneshot = false
+	_anim.animation = P_ANIM_NAMES[PAnim.IDLE]
+	_anim.frame = 0
+	_apply_frame_anchor()
+
+
+## 每幀：錨點對位（內容腳底貼 LUNA_Y、水平置中＋鏡頭位移）、擠壓變形、推幀。
+## 擠壓寫在 luna_view.scale（節點原點就是腳底錨點），跟舊 draw_set_transform
+## 以腳底為支點的縮放同效果；position 寫進子節點是安全的（純視覺，見上）。
+func _update_luna_view(delta: float) -> void:
+	if luna_view == null:
+		return
+	luna_view.position = Vector2(luna_x, LUNA_Y) + _juice.world_offset()
+	var sc := Vector2.ONE
+	if _luna_squash > 0.0:
+		sc = sc * Fx.squash(_luna_squash, _luna_axis)
+	if _catch_squash > 0.0:
+		sc = sc * Fx.squash(_catch_squash, Vector2.DOWN, 0.38)
+	luna_view.scale = sc
+	_tick_player_anim(delta)
+
+
+## 動畫狀態機（手動推幀，見 PAnim）：平時播 Idle 循環；
+## 接到炸彈扣命時 _play_oneshot(PAnim.HURT)，Hurt 播完自動回 Idle，
+## 期間不被 Idle 打斷。
+func _tick_player_anim(delta: float) -> void:
+	if _anim == null:
+		return
+	var anim_name: StringName = P_ANIM_NAMES[_p_anim]
+	var frames := _anim.sprite_frames.get_frame_count(anim_name)
+	_p_time += delta
+	var f := int(_p_time * _anim.sprite_frames.get_animation_speed(anim_name))
+	if _p_oneshot and f >= frames:
+		# Hurt 播完 → 回 Idle
+		_p_oneshot = false
+		_p_anim = PAnim.IDLE
+		_p_time = 0.0
+		anim_name = P_ANIM_NAMES[_p_anim]
+		_anim.animation = anim_name
+		f = 0
+	elif not _p_oneshot:
+		f %= frames
+	if _anim.frame != f:
+		_anim.frame = f
+	_apply_frame_anchor()
+
+
+## 觸發一次性動畫（Hurt）：立即中斷目前動畫，播完回 Idle。
+func _play_oneshot(anim: PAnim) -> void:
+	if _anim == null:
+		return
+	_p_anim = anim
+	_p_time = 0.0
+	_p_oneshot = true
+	_anim.animation = P_ANIM_NAMES[anim]
+	_anim.frame = 0
+	_apply_frame_anchor()
+
+
+## 動畫錨點：每段動畫共用一個 offset（由 P_REFS 參考框算出）——
+## 內容中心對到 x=0、內容底（腳底）對到 y=0，luna_view 的位置就是錨點。
+## 不做逐幀歸一化：畫師的幀都在同一畫布、內容位置一致（理由同 fishing）。
+## offset 是未縮放座標（scale 乘在整個節點上），錨點正好是 0 所以
+## 不需要腳底偏移項。
+func _apply_frame_anchor() -> void:
+	if _anim == null:
+		return
+	var anim_name: StringName = P_ANIM_NAMES[_p_anim]
+	var b: Rect2 = P_REFS[anim_name]
+	var ts: Vector2 = _anim.sprite_frames.get_frame_texture(anim_name, _anim.frame).get_size()
+	_anim.offset = Vector2(ts.x * 0.5 - b.get_center().x, ts.y * 0.5 - b.end.y)
 
 
 func _start_round() -> void:
@@ -185,6 +316,13 @@ func _start_round() -> void:
 	_heart_fade_slot = -1
 	_luna_squash = 0.0
 	_catch_squash = 0.0
+	_p_anim = PAnim.IDLE
+	_p_time = 0.0
+	_p_oneshot = false
+	if _anim != null:
+		_anim.animation = P_ANIM_NAMES[PAnim.IDLE]
+		_anim.frame = 0
+		_apply_frame_anchor()
 	state = State.READY
 	state_timer = READY_TIME
 	_round_sent = false
@@ -236,6 +374,9 @@ func _process(delta: float) -> void:
 		_pop_timer -= delta
 	if _flash > 0.0:
 		_flash -= delta
+	if _bg_view != null:
+		_bg_view.queue_redraw()        # 背景層每幀重繪（視差位移會變）
+	_update_luna_view(delta)
 	queue_redraw()
 
 
@@ -524,6 +665,7 @@ func _on_caught(d: Drop) -> void:
 				_pop("BLOCKED", Palette.MOON, d.pos)
 			else:
 				lives -= 1
+				_play_oneshot(PAnim.HURT)   # 接到炸彈扣命：受傷動畫播一次再回 Idle
 				# 剛失去的那顆愛心播「1 秒放大 1.5 倍＋淡出」（格位 = 少掉後的 lives）
 				_heart_fade = 1.0
 				_heart_fade_slot = lives
@@ -610,9 +752,9 @@ func _pop(text: String, col: Color, at: Vector2) -> void:
 # ── 繪製 ────────────────────────────────────────────────
 
 func _draw() -> void:
-	# 三層，每層一個位移（見 shared/juice.gd 的分層模型）
-	draw_set_transform(_juice.bg_offset())
-	_draw_bg_far()                     # 星星與屋頂剪影：視差層
+	# 三層（見 shared/juice.gd 的分層模型）：背景由 _bg_view（z=-2）畫、
+	# 玩家 luna_view 壓在 z=-1，其餘世界內容與 HUD 都在這層（z=0）——
+	# 子節點一律畫在父節點 _draw() 之後，背景留在這裡會被玩家蓋住。
 	draw_set_transform(_juice.world_offset())
 	for d in drops:
 		_draw_drop(d)
@@ -638,24 +780,6 @@ func _draw_ui_frame() -> void:
 	draw_texture_rect(s_ui_kuang, Rect2(0, 0, 480, 270), false)
 
 
-## 視差層：只有遠到不會跟任何東西接觸的元素。往外多畫 OVERDRAW 避免露出缺口。
-func _draw_bg_far() -> void:
-	var m := Juice.OVERDRAW
-	draw_rect(Rect2(-m, -m, SCREEN.x + m * 2.0, SCREEN.y + m * 2.0), Palette.BG)
-	# 星點
-	for i in 34:
-		var x := fmod(float(i) * 71.0, 474.0) + 3.0
-		var y := fmod(float(i) * 43.0, 190.0) + 6.0
-		draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
-	# 屋頂與樹林剪影：多跑一輪並往左移，補上多畫出來的那一圈
-	for i in 10:
-		var bx := float(i) * 56.0 - 8.0 - m
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(bx, 214), Vector2(bx + 28, 186), Vector2(bx + 56, 214)]), Palette.FAR)
-	# 背景圖原始尺寸是螢幕的整數倍（如 1920×1080），拉伸到邏輯螢幕 480×270
-	draw_texture_rect(bg_texture, Rect2(0, 0, SCREEN.x, SCREEN.y), false)
-
-
 func _draw_drop(d: Drop) -> void:
 	match d.kind:
 		Kind.JEWEL:
@@ -679,21 +803,22 @@ func _draw_drop_texture(texture: Texture2D, center: Vector2) -> void:
 
 func _draw_luna() -> void:
 	var cx := luna_x
-	# 人物與提籃融合成單一物件：撞邊界壓扁與接取彈跳（原提籃回饋）都作用在
-	# 同一張貼圖上。以腳底為支點縮放，人才不會浮起來；
-	# 兩種變形同幀並存時直接相乘疊加。
-	var world := _juice.world_offset()
-	var sc := Vector2.ONE
-	if _luna_squash > 0.0:
-		sc = sc * Fx.squash(_luna_squash, _luna_axis)
-	if _catch_squash > 0.0:
-		sc = sc * Fx.squash(_catch_squash, Vector2.DOWN, 0.38)
-	if sc != Vector2.ONE:
-		draw_set_transform(world + Vector2(cx, LUNA_Y), 0.0, sc)
-		_draw_luna_body(0.0, 0.0)
-		draw_set_transform(world)
-	else:
-		_draw_luna_body(cx, LUNA_Y)
+	# 人物由 luna_view 子節點（z=-1）負責（見 _update_luna_view）；
+	# 動畫場景缺失時退回 cc_person1 貼圖：撞邊界壓扁與接取彈跳都作用在
+	# 同一張貼圖上，以腳底為支點縮放，兩種變形同幀並存時相乘疊加。
+	if luna_view == null:
+		var world := _juice.world_offset()
+		var sc := Vector2.ONE
+		if _luna_squash > 0.0:
+			sc = sc * Fx.squash(_luna_squash, _luna_axis)
+		if _catch_squash > 0.0:
+			sc = sc * Fx.squash(_catch_squash, Vector2.DOWN, 0.38)
+		if sc != Vector2.ONE:
+			draw_set_transform(world + Vector2(cx, LUNA_Y), 0.0, sc)
+			_draw_luna_body(0.0, 0.0)
+			draw_set_transform(world)
+		else:
+			_draw_luna_body(cx, LUNA_Y)
 
 	# Combo 光圈：倍率越高圈越亮越大。原本倍率只是 HUD 上一個數字，
 	# 在遊戲區裡完全看不到，玩家不會「感覺」到自己正在連。
@@ -796,3 +921,30 @@ func _draw_result() -> void:
 func _center(text: String, y: float, size: int, col: Color) -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(0, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, size, col)
+
+
+## 背景層（z=-2）：玩家 luna_view 是子節點、畫在父節點 _draw() 之後，
+## 背景若留在父節點會蓋住玩家 —— 所以搬到這顆更低的子節點（fishing 同款）。
+## 內容與舊 _draw_bg_far 相同：視差層只放遠到不會跟任何東西接觸的元素，
+## 往外多畫 OVERDRAW 避免震動露出缺口。
+class BgView extends Node2D:
+	var game = null   # catch 節點；不型別，執行期取背景狀態
+	func _draw() -> void:
+		if game == null:
+			return
+		draw_set_transform(game._juice.bg_offset())
+		var m := Juice.OVERDRAW
+		draw_rect(Rect2(-m, -m, game.SCREEN.x + m * 2.0, game.SCREEN.y + m * 2.0), Palette.BG)
+		# 星點
+		for i in 34:
+			var x := fmod(float(i) * 71.0, 474.0) + 3.0
+			var y := fmod(float(i) * 43.0, 190.0) + 6.0
+			draw_rect(Rect2(x, y, 1, 1), Palette.PEARL)
+		# 屋頂與樹林剪影：多跑一輪並往左移，補上多畫出來的那一圈
+		for i in 10:
+			var bx := float(i) * 56.0 - 8.0 - m
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(bx, 214), Vector2(bx + 28, 186), Vector2(bx + 56, 214)]), Palette.FAR)
+		# 全屏背景圖拉伸到邏輯螢幕（CC_Bg.png 蓋掉程式底色與星點）
+		if game.bg_texture != null:
+			draw_texture_rect(game.bg_texture, Rect2(0, 0, game.SCREEN.x, game.SCREEN.y), false)

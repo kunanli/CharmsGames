@@ -195,7 +195,7 @@ var _imp_frames: Array[Texture2D] = [
 ]
 
 var _item_sizes := {
-	Kind.DIAMOND: Vector2(22, 22),
+	Kind.DIAMOND: Vector2(18, 18),
 	Kind.CHARM: Vector2(24, 24),
 	Kind.CLOUD: Vector2(38, 38),
 	Kind.IMP: Vector2(28, 28),

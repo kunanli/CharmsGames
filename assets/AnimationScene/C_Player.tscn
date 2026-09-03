@@ -1,0 +1,66 @@
+[gd_scene format=3 uid="uid://803w3dyh60o2"]
+
+[ext_resource type="Texture2D" uid="uid://hysu7adalbto" path="res://assets/catch/Anim/Hurt/C_Girl_Hurt_1.png" id="1_itysl"]
+[ext_resource type="Texture2D" uid="uid://cf8b4va817nop" path="res://assets/catch/Anim/Hurt/C_Girl_Hurt_3.png" id="2_hn7uw"]
+[ext_resource type="Texture2D" uid="uid://by3fg3qpbnmlw" path="res://assets/catch/Anim/Hurt/C_Girl_Hurt_2.png" id="3_ix03t"]
+[ext_resource type="Texture2D" uid="uid://csml7ssufvjn6" path="res://assets/catch/Anim/Idle/C_Girl_Idle_1.png" id="4_hdndp"]
+[ext_resource type="Texture2D" uid="uid://dhb0y7alo8c1e" path="res://assets/catch/Anim/Idle/C_Girl_Idle_2.png" id="5_4xv8p"]
+[ext_resource type="Texture2D" uid="uid://bobuq2n0ouim7" path="res://assets/catch/Anim/Idle/C_Girl_Idle_3.png" id="6_cfi7s"]
+[ext_resource type="Texture2D" uid="uid://pv1hdd8my0pw" path="res://assets/catch/Anim/Idle/C_Girl_Idle_4.png" id="7_h8r6h"]
+[ext_resource type="Texture2D" uid="uid://br0b21q635spl" path="res://assets/catch/Anim/Idle/C_Girl_Idle_5.png" id="8_pn7ag"]
+[ext_resource type="Texture2D" uid="uid://b4dothxmryxsm" path="res://assets/catch/Anim/Idle/C_Girl_Idle_6.png" id="9_frktu"]
+[ext_resource type="Texture2D" uid="uid://cn31bb8drhaf4" path="res://assets/catch/Anim/Idle/C_Girl_Idle_7.png" id="10_6k53w"]
+[ext_resource type="Texture2D" uid="uid://n1l3u14swlaw" path="res://assets/catch/Anim/Idle/C_Girl_Idle_8.png" id="11_vi3nc"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_wvhbo"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_itysl")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_hn7uw")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_ix03t")
+}],
+"loop": 0,
+"name": &"Hurt",
+"speed": 6.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("4_hdndp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_4xv8p")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_cfi7s")
+}, {
+"duration": 1.0,
+"texture": ExtResource("7_h8r6h")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_pn7ag")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_frktu")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_6k53w")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_vi3nc")
+}],
+"loop": 1,
+"name": &"Idle",
+"speed": 9.0
+}]
+
+[node name="Node2D" type="Node2D" unique_id=1094642895]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=76925054]
+sprite_frames = SubResource("SpriteFrames_wvhbo")
+animation = &"Idle"
+frame_progress = 0.09941997

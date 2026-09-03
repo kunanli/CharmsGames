@@ -155,14 +155,23 @@ const IDLE_PROMPT_ON_SECONDS := 0.7
 const START_PROMPT_PERIOD := 1.2
 const START_PROMPT_ON_SECONDS := 0.7
 
+## 二級標題 PRESS ANY BUTTON TO START 與投幣數字的每款配色（2026-09 企劃
+## 指定，跟各款標題影片的美術配色走）。只用在 launcher 標題層文字，不進
+## shared/palette.gd 的 21 色共用遊戲色盤；鍵＝GAMES 的 id。
+const TITLE_TEXT_COLORS := {
+	"seeker": {"text": Color("F349CC"), "shadow": Color("7207A0")},
+	"fishing": {"text": Color("4982F3"), "shadow": Color("2923D1")},
+	"catch": {"text": Color("A351F8"), "shadow": Color("4311B7")},
+}
+
 
 ## ── 投幣 UI（二級標題左下角，2026-09）────
-## Coin 圖與幣量文字：1920×1080 設計座標 (32, 1000) 起、48×48（÷4 = 邏輯
-## (8, 250) 起、12×12）。Coin.png 原圖 1312×1199，全專案最近鄰取樣，
+## Coin 圖與幣量文字：1920×1080 設計座標 (70, 940) 起、48×48（÷4 = 邏輯
+## (17.5, 235) 起、12×12）。Coin.png 原圖 1312×1199，全專案最近鄰取樣，
 ## 百倍縮小直接畫會糊成一團 —— _ready() 裡用 Image LANCZOS 一次降採樣
 ## 到 12×12 再畫。
 const COIN_SOURCE: Texture2D = preload("res://assets/UI/Coin.png")
-const COIN_UI_POS := Vector2(32.0, 1000.0) / 4.0
+const COIN_UI_POS := Vector2(70.0, 940.0) / 4.0
 const COIN_UI_SIZE := Vector2(48.0, 48.0) / 4.0
 const COIN_UI_TEXT_GAP := 4.0    # 狀態文字與 Coin 圖右緣的間距（邏輯 px）
 
@@ -724,12 +733,13 @@ func _start_title_video() -> void:
 ## 進二級標題（NORMAL）：停掉待機影片、啟動背景影片、重開 10 秒無操作計時。
 ## 進入二級標題的所有路徑（一級按 A／局終回二級／起名取消／遊戲中 ESC）都
 ## 從這裡經過，所以標題 BGM 也在此切換；已在同一首時 AudioManager 自動略過。
+## 標題 BGM 循環播放（二級停留時間不定，不能放完就停）。
 func _begin_title_idle_watch() -> void:
 	_title_idle = false
 	_idle_video.stop()
 	_idle_timer.start()
 	_start_prompt_elapsed = 0.0
-	AudioManager.play_bgm("TITLE")
+	AudioManager.play_bgm("TITLE", true)
 	_start_title_video()
 
 
@@ -993,17 +1003,27 @@ func _draw_title_background() -> void:
 
 ## 二級標題底部中央閃爍的 PRESS ANY BUTTON TO START（週期 START_PROMPT_PERIOD
 ## 秒、每週期亮 START_PROMPT_ON_SECONDS 秒，與待機的 CLICK TO PLAY 同款）。
-## 深色底影讓亮色影片上也能看清。只由 _draw 的 GAME_TITLE 分支呼叫，
-## 閃爍相位在 _process 累計。
+## 文字與底影照當前款式取 TITLE_TEXT_COLORS 的配色，讓亮色影片上也能看清。
+## 只由 _draw 的 GAME_TITLE 分支呼叫，閃爍相位在 _process 累計。
 func _draw_start_prompt() -> void:
 	if fmod(_start_prompt_elapsed, START_PROMPT_PERIOD) >= START_PROMPT_ON_SECONDS:
 		return
 	var font := ThemeDB.fallback_font
-	var y := 260.0
+	var colors := _title_text_colors()
+	var y := 245.0
 	draw_string(font, Vector2(0, y + 1.0), "PRESS ANY BUTTON TO START",
-		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.NIGHT)
-	draw_string(font, Vector2(0, y), "PRESS ANY BUTTON TO START",
-		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.GOLD)
+		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, colors["shadow"])
+	draw_string(font, Vector2(-1, y), "PRESS ANY BUTTON TO START",
+		HORIZONTAL_ALIGNMENT_CENTER, 480, 10, colors["text"])
+
+
+## 當前款式的標題文字配色：text 是主色、shadow 是底影。id 沒登記時退回
+## 原本的金字／深影（防禦，目前三款都有登記）。
+func _title_text_colors() -> Dictionary:
+	var fallback := {"text": Palette.GOLD, "shadow": Palette.NIGHT}
+	if active_index < 0 or active_index >= GAMES.size():
+		return fallback
+	return TITLE_TEXT_COLORS.get(GAMES[active_index]["id"], fallback)
 
 
 ## 待機畫面中央閃爍的 CLICK TO PLAY（週期 IDLE_PROMPT_PERIOD 秒、每週期亮
@@ -1033,13 +1053,15 @@ func _draw_coin_ui() -> void:
 	var font := ThemeDB.fallback_font
 	var text := "∞" if CoinManager.is_unlimited_coins() \
 		else "%d/%d" % [CoinManager.get_coins(), CoinManager.START_COST]
-	# 文字基線對齊圖示底緣（圖示 250..262，基線 260），尺寸 12 = 像素字體
+	# 文字基線對齊圖示底緣（圖示 235..247，基線 245），尺寸 12 = 像素字體
 	# 原生 12px 的整數倍，網格對得齊。
 	var pos := Vector2(COIN_UI_POS.x + COIN_UI_SIZE.x + COIN_UI_TEXT_GAP,
 		COIN_UI_POS.y + COIN_UI_SIZE.y - 2.0) + shake
+	# 幣量文字跟 PRESS ANY BUTTON 同一套每款配色（2026-09 企劃指定）。
+	var colors := _title_text_colors()
 	draw_string(font, pos + Vector2(0.0, 1.0), text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.NIGHT)
-	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.GOLD)
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, colors["shadow"])
+	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, colors["text"])
 
 
 ## 幣不夠抖動的水平位移：振幅隨剩餘時間線性衰減的正弦，倒數到 0 時

@@ -75,12 +75,17 @@ func _ready() -> void:
 
 
 ## 切換背景音樂。正在播同一首時直接略過（不重播、不從頭來）。
-func play_bgm(name: String) -> void:
+## loop＝是否循環播放；stream 是快取的共用資源，同一首永遠用同一種循環
+## 設定，直接寫回 stream 沒有副作用。
+func play_bgm(name: String, loop := false) -> void:
 	if name == _bgm_name and _bgm_player.playing:
 		return
 	var stream := _get_stream(BGM_PATHS.get(name, ""))
 	if stream == null:
 		return
+	# MP3／Ogg 匯入預設不循環（放完即停），循環與否在這裡依呼叫端要求設定。
+	if stream is AudioStreamMP3 or stream is AudioStreamOggVorbis:
+		stream.loop = loop
 	_bgm_player.stream = stream
 	_bgm_player.play()
 	_bgm_name = name
