@@ -7,10 +7,13 @@ extends Node2D
 # 正確 → succeeded（launcher 回一級管理員界面）；錯誤 → 清空重填。
 # 方向鍵以外不收任何字元，所以不需要遮蔽輸入。
 #
-# 按鍵（輸入優先級 Level 1，全吃）：
-#   ↑ ↓ ← →    輸入一位（超過 8 位不收）
+# 按鍵（輸入優先級 Level 1，全吃；街機 A／B 綁定見 shared/arcade_input.gd，
+# 手柄按鈕事件不進 _unhandled_key_input，本檔改走 _unhandled_input）：
+#   ↑ ↓ ← →    輸入一位（超過 8 位不收）；鍵盤方向鍵＋手柄左搖杆上下左右
+#               （搖桿過 ±0.5 死區輸入一位、推住不連發，與起名屏同一檔）
 #   B           刪除最後一位；沒輸入內容時等同 ESC（取消回二級）
-#   A           確認（未輸滿 8 位只給提示）
+#               （B＝鍵盤 S／手柄 B，2026-09 鍵盤 B 邏輯改到 S）
+#   A           確認（未輸滿 8 位只給提示；A＝鍵盤 A／手柄 A）
 #   ESC         取消 → cancelled（回二級標題，不回一級）
 #
 # launcher 在此節點存在期間不處理任何按鍵（見 launcher.gd 的
@@ -33,9 +36,17 @@ const DIR_CHARS := {
 	KEY_RIGHT: "→",
 }
 
+## 方向名稱 → 密碼位用的 KEY_* 鍵碼（手柄搖桿與鍵盤方向鍵共用同一管道）。
+const DIR_KEYS := {
+	"up": KEY_UP, "down": KEY_DOWN, "left": KEY_LEFT, "right": KEY_RIGHT,
+}
+
 const SCREEN := Vector2(480, 270)
 
 var _input: Array[int] = []   # 已輸入的方向（KEY_* 鍵碼，順序即輸入順序）
+var _dir_held := {            # 手柄左搖杆四方向的推住狀態（邊沿觸發用）
+	"up": false, "down": false, "left": false, "right": false,
+}
 var _error := ""
 var _error_timer := 0.0
 
@@ -48,25 +59,68 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
+	# 街機 A／B 走 InputMap action（鍵盤 A·S／手柄 A·B，見 shared/arcade_input.gd）；
+	# 密碼方向位吃鍵盤方向鍵＋手柄左搖杆（_stick_direction）；ESC 維持鍵盤。
+	# 滑鼠等事件不收。
 	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo:
+	var pad := event as InputEventJoypadButton
+	var stick := event as InputEventJoypadMotion
+	if key == null and pad == null and stick == null:
+		return
+	if key != null and (key.echo or not key.pressed):
 		return
 	get_viewport().set_input_as_handled()
 
-	match key.keycode:
-		KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT:
-			if _input.size() < PASSWORD_LEN:
-				_input.append(key.keycode)
-		KEY_B:
-			if _input.is_empty():
-				cancelled.emit()   # 沒輸入內容：等同 ESC，直接回二級標題
-			else:
-				_input.pop_back()
-		KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-			_confirm()
-		KEY_ESCAPE:
+	if ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
+			or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]):
+		_confirm()
+	elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B):
+		# B（鍵盤 S／手柄 B）：刪除最後一位；沒輸入內容時等同 ESC（取消回二級）
+		if _input.is_empty():
 			cancelled.emit()
+		else:
+			_input.pop_back()
+	elif stick != null:
+		_stick_direction(stick)
+	elif key != null:
+		match key.keycode:
+			KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT:
+				if _input.size() < PASSWORD_LEN:
+					_input.append(key.keycode)
+			KEY_ESCAPE:
+				cancelled.emit()
+
+
+## 手柄左搖杆 → 輸入一位方向（與鍵盤 ↑↓←→ 同一管道、存同一組 KEY_* 鍵碼，
+## 所以與 PASSWORD 的比對不用改）。過 ±0.5 死區的上升緣輸入一位，推住不
+## 連發、回中立區重置後才允許下一次（與起名屏的搖桿判定同一檔）。斜推會
+## 先後越過兩個軸、輸入兩位 —— 想輸哪個方向就單純推哪邊。
+func _stick_direction(mot: InputEventJoypadMotion) -> void:
+	match mot.axis:
+		JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
+			pass
+		_:
+			return              # 只有左搖杆；右搖杆／扳機不收
+	var dir := ""
+	if absf(mot.axis_value) < 0.5:
+		# 回中立區：把這個軸的兩個方向狀態清掉，允許下一次輸入
+		if mot.axis == JOY_AXIS_LEFT_X:
+			_dir_held["left"] = false
+			_dir_held["right"] = false
+		else:
+			_dir_held["up"] = false
+			_dir_held["down"] = false
+		return
+	if mot.axis == JOY_AXIS_LEFT_X:
+		dir = "right" if mot.axis_value > 0.0 else "left"
+	else:
+		dir = "down" if mot.axis_value > 0.0 else "up"
+	if _dir_held[dir]:
+		return                  # 這個方向已經在推，不重複輸入
+	_dir_held[dir] = true
+	if _input.size() < PASSWORD_LEN:
+		_input.append(DIR_KEYS[dir])
 
 
 ## A 確認：未輸滿 8 位只給提示；滿了且與 PASSWORD 一致 → 成功，

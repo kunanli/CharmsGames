@@ -12,7 +12,7 @@ extends Node2D
 # 畫面中央的虛擬鍵盤完成（不依賴系統鍵盤、不彈系統軟鍵盤）：
 #   ↑ ↓ ← →（搖杆）      移動選擇框；邊界夾住不繞行
 #   A（或 Enter／空白）   確認：選字元 → 加入名字；選 OK → 確認名字
-#   B                     刪除最後一個字元
+#   B（鍵盤 S）           刪除最後一個字元 —— 2026-09 鍵盤 B 邏輯改到 S
 #   X                     清空全部（輸入框閃一下回饋）
 #   Y                     預留，暫無功能（結構已留好，未來直接掛）
 #   ESC                   取消 → cancelled
@@ -144,8 +144,8 @@ func _on_key(key: InputEventKey) -> void:
 				_move("right", true)
 			KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
 				_confirm()
-			KEY_B:
-				_delete()
+			KEY_S:
+				_delete()               # 街機 B（2026-09 鍵盤 B 邏輯改到 S）
 			KEY_X:
 				_clear()
 			KEY_Y:

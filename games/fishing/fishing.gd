@@ -447,9 +447,10 @@ func _tick_play(delta: float) -> void:
 
 
 func _read_input() -> void:
-	# 放線：A / 空白 / 方向鍵下（GDD 指定 A，方向鍵下為備用）
+	# 放線：A / 空白 / 方向鍵下（GDD 指定 A，方向鍵下為備用；A＝鍵盤 A／手柄 A）
 	var cast_now := (Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_SPACE)
-		or Input.is_key_pressed(KEY_DOWN) or Input.is_key_pressed(KEY_ENTER))
+		or Input.is_key_pressed(KEY_DOWN) or Input.is_key_pressed(KEY_ENTER)
+		or ArcadeInput.held(ArcadeInput.ACTION_A))
 	if cast_now and not _prev_cast and hook_state == Hook.SWING:
 		hook_state = Hook.EXTEND      # 放出去就不能取消，這是決策的代價
 	_prev_cast = cast_now
@@ -463,8 +464,9 @@ func _read_input() -> void:
 		pan += 1.0
 	_juice.look(Vector2(pan, 0.0))
 
-	# 月光能量：B（X 也接受）。GDD 指定只在收線途中可用。
-	var moon_now := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)
+	# 月光能量：B（鍵盤 S／手柄 B；X 也接受）。GDD 指定只在收線途中可用。
+	# 2026-09：鍵盤 B 的邏輯改到 S。
+	var moon_now := Input.is_key_pressed(KEY_X) or ArcadeInput.held(ArcadeInput.ACTION_B)
 	if moon_now and not _prev_moon:
 		_use_moon()
 	_prev_moon = moon_now

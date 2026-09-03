@@ -92,6 +92,22 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 | Fishing | ← → 探看湖面 | **A**／空白／↓／Enter 放線，**B**／**X** 用月光能量 | 月光能量只在收線途中有效 |
 | Catch | ← → | **B**／**X** 引爆護盾 | 長按同方向 1 秒加速至 ×2.5（A/Shift 衝刺已移除） |
 
+**街機按鍵綁定（2026-09，`shared/arcade_input.gd` ＋ project.godot
+`[input]`，鍵盤與 Xbox 手柄同時生效）**：**A**＝鍵盤 A／手柄 A、
+**B**＝**鍵盤 S**／手柄 B（2026-09 起**鍵盤 B 不再有任何功能**，原 B 邏輯
+全部改到 S）、投幣 **Y**＝鍵盤 Y／手柄 View/Back（button_index 4）。
+上表與各段的 A／B／投幣都指街機按鍵；程式端一律走 InputMap action
+（`arcade_a`／`arcade_b`／`coin_insert`）判斷，不要直接比 KEY_A／KEY_B
+keycode。**方向鍵沒有整綁手柄**：管理員界面（一級清單／SETTING 二三級）
+的 ↑↓ 選擇與**管理員密碼的方向輸入**都額外吃**手柄左搖杆**（`launcher.gd`
+的 `_pad_stick_nav` 與 `ui/admin_password.gd` 的 `_stick_direction`，
+死區 ±0.5、邊沿觸發不連發、回中立區才能推下一次）；三款遊戲內的移動走
+內建 `ui_left` 等 action（手柄十字鍵／左搖杆引擎預設已綁）；
+起名屏本來就吃手柄（十字鍵／左搖杆／A B X Y）。
+手柄按鈕事件不進 `_unhandled_key_input`，同時吃鍵盤＋手柄的界面
+（launcher 標題層／密碼彈窗／清除選單／排行榜面板）都改用
+`_unhandled_input` ＋ `ArcadeInput.pressed/released`。
+
 局終進 **Game Over 動畫**（`ui/game_over.gd`，三款共用）：**背景保留
 遊戲場景** —— launcher 暫停遊戲節點定格在最後一幀當底（不釋放、不是
 二級標題圖），遊戲自己的 RESULT 壓暗遮罩照畫；動畫只有 GAME OVER／
@@ -162,12 +178,18 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   （`clear_records_by_date` 與今天／昨天／前天三個 wrapper）已無 UI 入口，
   保留作為通用工具（sim 第 6 節仍驗證）。
 - **SETTING 管理員設定**（2026-08 新增，一級標題選中 SETTING 按 A 進入，
-  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級兩個選項
-  **CLEAR LEADERBOARD／UNLIMITED COINS**，↑ ↓ 選擇、A 執行、B/ESC 回一級
-  （選擇狀態保留）。**UNLIMITED COINS** 按 A 切換 ON/OFF（ON/OFF 畫在名字
-  右側），狀態跨執行保存 —— `shared/settings.gd`（class_name Settings，
-  `user://settings.cfg`）；投幣系統已實裝（2026-09，見「投幣系統」段），
-  開局閘門統一透過 `CoinManager.is_unlimited_coins()` 轉讀這裡的狀態。
+  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級三個選項
+  **CLEAR LEADERBOARD／UNLIMITED COINS／MUSIC**，↑ ↓（或手柄左搖杆上下）
+  選擇（循環）、A 執行、B/ESC 回一級（選擇狀態保留）。**UNLIMITED COINS**
+  按 A 切換 ON/OFF（開關型選項的 ON/OFF 畫在名字右側），狀態跨執行保存 ——
+  `shared/settings.gd`（class_name Settings，`user://settings.cfg`）；
+  投幣系統已實裝（2026-09，見「投幣系統」段），開局閘門統一透過
+  `CoinManager.is_unlimited_coins()` 轉讀這裡的狀態。**MUSIC**（2026-09
+  新增）按 A 切換 ON/OFF，**只控制 BGM、不控制音效**：AudioManager 的
+  `play_bgm()` 每次讀 `Settings.is_music_on()`，關閉時一律不播並停掉
+  正在播的曲子（曲名照記，各處 play_bgm 調用點不用改）；切換當下由
+  `AudioManager.apply_music_setting()` 立即停／續（打開時接續播回當前
+  場合的 BGM）。預設 ON。
   **CLEAR LEADERBOARD** 按 A 進三級
   清除選單：**CLEAR TODAY／CLEAR LAST 24 HOURS／CLEAR ALL DATA**，↑ ↓ 選擇、
   A **執行**（無二次確認）、B/ESC 回二級，執行完顯示 SCORE DATA CLEARED
@@ -217,9 +239,10 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   右側 12px 狀態文字：無限 ON 顯示「∞」／OFF 顯示「餘額/需求」（如 0/1）。
   抖動位移只走繪製層、倒數歸零自動停。
 - **Y 接線**：InputMap action **`coin_insert`**（project.godot `[input]`，
-  實體 Y 鍵），launcher 用 `InputEventKey.is_action_pressed()` 讀。Y 吃掉
+  實體 Y 鍵＋手柄 View/Back，2026-09 加手柄），launcher 用
+  `ArcadeInput.pressed()` 讀（`_is_coin_insert`）。投幣鍵吃掉
   事件、不觸發起名；無限 ON 也照常 +1 並播 `coin_push.wav`（實體投幣的
-  聲音，規格允許；關掉 ON 後先前投的幣仍在）。IDLE 待機中按 Y ＝喚醒＋
+  聲音，規格允許；關掉 ON 後先前投的幣仍在）。IDLE 待機中投幣 ＝喚醒＋
   投幣。
 - **音效**集中在 AudioManager `SFX_PATHS`：`coin_push`（投幣）／
   `ui_coin_none`（幣不夠）／`ui_confirm`（成功進起名）。
@@ -259,9 +282,9 @@ res://
 │   ├── juice.gd            全畫面：震動／鏡頭偏移／視差／頓格（class_name Juice）
 │   ├── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
 │   ├── ready_go.gd         開場 READY 動畫：實例化 Ready_go.tscn、淡入淡出、播完自行釋放（class_name ReadyGo）
-│   ├── audio_manager.gd    音訊管理器（Autoload；BGM／SFX 路徑集中在 BGM_PATHS／SFX_PATHS）
+│   ├── audio_manager.gd    音訊管理器（Autoload；BGM／SFX 路徑集中在 BGM_PATHS／SFX_PATHS；MUSIC 開關只影響 BGM）
 │   ├── coin_manager.gd     投幣系統：餘額與開局閘門（class_name CoinManager，靜態單例）
-│   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS，user://settings.cfg）
+│   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS／MUSIC，user://settings.cfg）
 ├── ui/
 │   ├── game_over.gd        局終 Game Over 動畫（只淡入淡出文字，背景＝暫停定格的遊戲場景）
 │   ├── leaderboard_panel.gd 排行榜面板（YOUR SCORE 標題＋前 10 名單欄＋底部玩家行）

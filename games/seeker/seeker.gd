@@ -322,9 +322,9 @@ func _run_state(delta: float) -> void:
 
 # ── 月光能量與石化（M4）─────────────────────────────────
 
-## A 鍵主動啟動。GDD 的 Xbox 協議指定 A，與另兩款的主動技能鍵一致。
+## A 鍵主動啟動（鍵盤 A／手柄 A）。GDD 的 Xbox 協議指定 A，與另兩款一致。
 func _read_skill() -> void:
-	var now := Input.is_key_pressed(KEY_A)
+	var now := Input.is_key_pressed(KEY_A) or ArcadeInput.held(ArcadeInput.ACTION_A)
 	if now and not _prev_skill:
 		_activate_moon()
 	_prev_skill = now

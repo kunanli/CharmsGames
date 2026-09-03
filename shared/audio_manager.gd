@@ -9,6 +9,10 @@ extends Node
 #
 # 所有音訊路徑集中在這裡（BGM_PATHS / SFX_PATHS）。遊戲腳本一律只呼叫
 # AudioManager.play_bgm / play_sfx，不直接 load() 或操作 AudioStreamPlayer。
+#
+# BGM 有管理員開關（SETTING 選單的 MUSIC，2026-09 新增）：狀態存在
+# Settings（跨執行保存），play_bgm() 每次都檢查；apply_music_setting()
+# 給切換當下立即停／續用。開關只影響 BGM，play_sfx 的音效不受影響。
 # 素材未進場（載入失敗）時靜默跳過、不報錯 —— 與專案「素材未進場不當機」
 # 的慣例一致；載入失敗的路徑記 null 不重試（同 launcher 的 idle stream cache）。
 # ─────────────────────────────────────────────────────────
@@ -58,7 +62,8 @@ var _bgm_player: AudioStreamPlayer
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _sfx_index := 0                     # 全池都在播時，輪替的下一個
 var _stream_cache: Dictionary = {}      # path → AudioStream；載入失敗記 null 不重試
-var _bgm_name := ""
+var _bgm_name := ""                     # 最新一次 play_bgm 的曲名（關閉期間也照記，打開時接續播這首）
+var _bgm_loop := false                  # 最新一次 play_bgm 的循環要求（接續播回時沿用）
 
 
 func _ready() -> void:
@@ -78,6 +83,13 @@ func _ready() -> void:
 ## loop＝是否循環播放；stream 是快取的共用資源，同一首永遠用同一種循環
 ## 設定，直接寫回 stream 沒有副作用。
 func play_bgm(name: String, loop := false) -> void:
+	# MUSIC 關閉（Settings）：BGM 一律不播、正在播的立刻停。_bgm_name 仍記
+	# 成最新請求 —— apply_music_setting() 打開開關時才知道要接續播哪首。
+	if not Settings.is_music_on():
+		_bgm_name = name
+		_bgm_loop = loop
+		_bgm_player.stop()
+		return
 	if name == _bgm_name and _bgm_player.playing:
 		return
 	var stream := _get_stream(BGM_PATHS.get(name, ""))
@@ -89,6 +101,18 @@ func play_bgm(name: String, loop := false) -> void:
 	_bgm_player.stream = stream
 	_bgm_player.play()
 	_bgm_name = name
+	_bgm_loop = loop
+
+
+## MUSIC 開關切換後呼叫（launcher 的 SETTING 選單）：讓當下立刻生效 ——
+## 關閉 → 停掉正在播的 BGM；打開 → 接續播回當前場合的 BGM（曲名與循環
+## 旗標由 play_bgm 持續記錄，關閉期間流程照常換場也不會記錯）。
+func apply_music_setting() -> void:
+	if Settings.is_music_on():
+		if _bgm_name != "" and not _bgm_player.playing:
+			play_bgm(_bgm_name, _bgm_loop)
+	else:
+		_bgm_player.stop()
 
 
 ## 播放單發音效。同一支音效快速連發也不互相打斷：

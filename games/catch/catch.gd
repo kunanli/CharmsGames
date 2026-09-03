@@ -465,8 +465,9 @@ func _move_luna(delta: float) -> void:
 		_at_wall = false
 	luna_x = clamped
 
-	# 主動引爆護盾：清掉畫面上所有炸彈但不加分
-	var burst := Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_X)
+	# 主動引爆護盾：清掉畫面上所有炸彈但不加分。
+	# B（鍵盤 S／手柄 B；X 也接受）—— 2026-09 鍵盤 B 的邏輯改到 S。
+	var burst := Input.is_key_pressed(KEY_X) or ArcadeInput.held(ArcadeInput.ACTION_B)
 	if burst and not _prev_burst:
 		_burst_shield()
 	_prev_burst = burst

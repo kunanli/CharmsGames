@@ -48,33 +48,41 @@ var _rule := 0            # 選中的規則（ClearRule 索引）
 var _confirm := false     # 二次確認中
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
+	# 街機 A／B 走 InputMap action（鍵盤 A·S／手柄 A·B，見 shared/arcade_input.gd）；
+	# ← → 循環選擇與 ESC 維持鍵盤。手柄軸／滑鼠等事件不收。
 	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo:
+	var pad := event as InputEventJoypadButton
+	if key == null and pad == null:
+		return
+	if key != null and (key.echo or not key.pressed):
 		return
 	get_viewport().set_input_as_handled()
 
+	var pressed_a := ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
+		or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE])
+	var pressed_b := ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
+		or (key != null and key.keycode in [KEY_S, KEY_ESCAPE])
+
 	if not _confirm:
-		match key.keycode:
-			KEY_LEFT:
-				_rule = (_rule + RULES.size() - 1) % RULES.size()
-				AudioManager.play_sfx("ui_select")
-			KEY_RIGHT:
-				_rule = (_rule + 1) % RULES.size()
-				AudioManager.play_sfx("ui_select")
-			KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-				AudioManager.play_sfx("ui_confirm")   # 進二次確認
-				_confirm = true
-			KEY_B, KEY_ESCAPE:
-				cancelled.emit()
+		if key != null and key.keycode == KEY_LEFT:
+			_rule = (_rule + RULES.size() - 1) % RULES.size()
+			AudioManager.play_sfx("ui_select")
+		elif key != null and key.keycode == KEY_RIGHT:
+			_rule = (_rule + 1) % RULES.size()
+			AudioManager.play_sfx("ui_select")
+		elif pressed_a:
+			AudioManager.play_sfx("ui_confirm")   # 進二次確認
+			_confirm = true
+		elif pressed_b:
+			cancelled.emit()
 	else:
-		match key.keycode:
-			KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-				AudioManager.play_sfx("ui_confirm")   # 執行刪除
-				LeaderboardManager.clear_records(game_id, _rule)
-				cleared.emit()
-			KEY_B, KEY_ESCAPE:
-				_confirm = false
+		if pressed_a:
+			AudioManager.play_sfx("ui_confirm")   # 執行刪除
+			LeaderboardManager.clear_records(game_id, _rule)
+			cleared.emit()
+		elif pressed_b:
+			_confirm = false
 	queue_redraw()
 
 

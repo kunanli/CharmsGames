@@ -25,7 +25,8 @@ extends Node2D
 #     大標題與底部當前玩家行 = MOON_LIGHT（#90FFFF，色盤新增色）。
 #
 # 按鍵：
-#   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱）
+#   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱；
+#             B＝鍵盤 S／手柄 B，2026-09 鍵盤 B 邏輯改到 S）
 # ─────────────────────────────────────────────────────────
 
 signal exit_requested
@@ -80,12 +81,18 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
+	# B／ESC 回二級。B 走 InputMap action（鍵盤 S／手柄 B，
+	# 見 shared/arcade_input.gd）；手柄軸／滑鼠等事件不收。
 	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo:
+	var pad := event as InputEventJoypadButton
+	if key == null and pad == null:
+		return
+	if key != null and (key.echo or not key.pressed):
 		return
 	get_viewport().set_input_as_handled()
-	if key.keycode == KEY_B or key.keycode == KEY_ESCAPE:
+	if ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
+			or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
 		exit_requested.emit()
 
 

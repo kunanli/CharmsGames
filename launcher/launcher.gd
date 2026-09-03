@@ -10,10 +10,18 @@ extends Node2D
 #     Y＝投幣（InputMap coin_insert，不觸發起名）；幣不夠（且非無限投幣）
 #     → 左下角 Coin 圖抖動＋UI_Coin_None、留在二級，夠 → 扣幣＋UI_confirm
 #     → 起名。幣量與閘門在 CoinManager，UI 畫在本檔 _draw_coin_ui）
+#
+#   街機鍵位（2026-09 起，shared/arcade_input.gd ＋ project.godot [input]，
+#   鍵盤與 Xbox 手柄同時生效）：A＝鍵盤 A／手柄 A、B＝鍵盤 S／手柄 B
+#   （2026-09 鍵盤 B 的邏輯全部改到 S，鍵盤 B 不再有用）、投幣
+#   Y＝鍵盤 Y／手柄 View/Back。手柄按鈕事件不進 _unhandled_key_input，
+#   所以本檔的按鍵處理走 _unhandled_input，A／B／投幣一律讀 InputMap action。
+#   管理員界面（一級清單／SETTING 二三級）的 ↑↓ 選擇另收手柄左搖杆上下
+#   （_pad_stick_nav：死區 ±0.5、邊沿觸發不連發）；其餘方向輸入仍只吃鍵盤。
 #   → NAME_INPUT → PLAYING
 #   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #   一級標題選中 SETTING 按 A → SETTING（二級：CLEAR LEADERBOARD /
-#     UNLIMITED COINS，A 執行、B 回一級）
+#     UNLIMITED COINS / MUSIC —— MUSIC 只關 BGM 不關音效，A 執行、B 回一級）
 #   → SETTING_CLEAR（三級：CLEAR TODAY / LAST 24 HOURS / ALL DATA，
 #     跨三款一起清、A 執行、B 回 SETTING）
 #
@@ -27,7 +35,7 @@ extends Node2D
 # ESC → 留在二級。遊戲結束與遊戲中 ESC 都回**該款的二級標題**。
 # 一級標題按 B 開**當前選中遊戲的排行榜清除選單**（ui/admin_clear_menu.gd，
 # Modal Overlay，見「清除功能」段落）。
-# 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_key_input 註解）。
+# 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_input 註解）。
 #
 # 二級標題另有「待機」狀態（IDLE，2026-08 新增）：進二級起 10 秒無操作
 # 計時，↑↓←→／A／B 任一輸入重設計時；連續 10 秒無輸入 → 隱藏標題圖、
@@ -117,10 +125,12 @@ const MENU_NAME_SIZE := 16
 const MENU_SUB_SIZE := 11      # SETTING 二級／三級選單的字體（選項名字比一級長）
 const MENU_LINE_H := 18.0      # 4 行（三款遊戲＋SETTING）塞進 291 高的區域
 
-## SETTING 二級選單的兩個選項（索引即 setting_index）。
-const SETTING_OPTIONS := ["CLEAR RANKING DATA", "UNLIMITED COINS"]
+## SETTING 二級選單的三個選項（索引即 setting_index）。MUSIC 只控制 BGM：
+## 狀態存 Settings（跨執行保存），AudioManager 播 BGM 前與切換當下讀取。
+const SETTING_OPTIONS := ["CLEAR RANKING DATA", "UNLIMITED COINS", "MUSIC"]
 const SETTING_CLEAR_IDX := 0
 const SETTING_COINS_IDX := 1
+const SETTING_MUSIC_IDX := 2
 
 ## 三級排行榜清除選單：顯示名與對應的 ClearRule（TODAY／LAST_24_HOURS／ALL，
 ## 索引順序一致）。執行時跨三款遊戲一起清，見 _draw_clear_menu 與
@@ -142,9 +152,10 @@ const AB_HOLD_SECONDS := 3.0
 const TITLE_IDLE_SECONDS := 10.0
 
 ## 待機計時與喚醒認定的有效街機輸入（與二級標題正常流程用的同一組按鍵，
-## 見 _unhandled_key_input 的分層註解）。待機狀態下只有這幾個鍵能喚醒，
+## 見 _unhandled_input 的分層註解）。待機狀態下只有這幾個鍵能喚醒，
 ## 喚醒的那一次輸入不會繼續觸發二級標題原本的操作。
-const TITLE_IDLE_WAKE_KEYS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_A, KEY_B]
+## 手柄 A／B 不吃 keycode，由 _is_wake_input 的 action 判斷補上。
+const TITLE_IDLE_WAKE_KEYS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_A, KEY_S]
 
 ## 待機畫面中央 CLICK TO PLAY 的閃爍週期（秒）與每週期亮著的時長。
 const IDLE_PROMPT_PERIOD := 1.2
@@ -194,6 +205,7 @@ var _notice_timer := 0.0
 var _finish_data := {}        # 局終暫存：record_id / score / game_over
 var _ab_hold_active := false  # 二級標題：A／B 有被按下，等待長按判定（提前鬆開＝普通按鍵）
 var _ab_hold_time := 0.0      # A＋B 同時按住的累計秒數（滿 AB_HOLD_SECONDS 進管理員密碼）
+var _stick_nav_dir := 0       # 手柄左搖杆垂直推量（0 中立／-1 上／1 下）：管理員界面 ↑↓ 選擇的邊沿觸發狀態
 var _title_idle := false      # 二級標題待機狀態：true = IDLE（在播待機影片）、false = NORMAL
 var _title_video: VideoStreamPlayer = null   # 二級標題背景影片（NORMAL 與起名 overlay 的底層）
 var _idle_video: VideoStreamPlayer = null
@@ -205,7 +217,7 @@ var _idle_stream_cache: Dictionary = {}   # game index → VideoStream；載入�
 var _coin_tex: Texture2D = null   # 投幣 UI 的 Coin 圖（_ready 降到 12×12；解不開時用原圖）
 var _coin_shake_time := 0.0       # 幣不夠的 Coin 圖抖動剩餘秒數（>0 時每幀重繪）
 var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
-var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = UNLIMITED COINS
+var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = UNLIMITED COINS、2 = MUSIC
 var clear_index := 0          # 三級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
 
 
@@ -286,15 +298,16 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	if mode == Mode.GAME_TITLE and _title_idle:
 		# IDLE：每幀重繪讓待機影片畫面跟得上；不處理 A＋B 長按 ——
-		# 待機中正常互動全部停止（輸入層面見 _unhandled_key_input）。
+		# 待機中正常互動全部停止（輸入層面見 _unhandled_input）。
 		# CLICK TO PLAY 的閃爍相位也在此累計。
 		_idle_prompt_elapsed += delta
 		queue_redraw()
 		return
 	if mode == Mode.GAME_TITLE and _ab_hold_active:
 		# 二級標題的管理員入口：A＋B 同時按住滿 AB_HOLD_SECONDS 秒 →
-		# 管理員密碼界面（不到 3 秒鬆開的話，keyup 分支會當普通按鍵進起名）。
-		if Input.is_key_pressed(KEY_A) and Input.is_key_pressed(KEY_B):
+		# 管理員密碼界面（不到 3 秒鬆開的話，放開分支會當普通按鍵進起名）。
+		# 鍵盤 A＋S、手柄 A＋B（可混按）都算 —— 走同一組 InputMap action。
+		if ArcadeInput.held(ArcadeInput.ACTION_A) and ArcadeInput.held(ArcadeInput.ACTION_B):
 			_ab_hold_time += delta
 			if _ab_hold_time >= AB_HOLD_SECONDS:
 				_ab_hold_active = false
@@ -304,29 +317,45 @@ func _process(delta: float) -> void:
 			_ab_hold_time = 0.0
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
+	# 只處理鍵盤與手柄「按鈕」：搖桿軸（InputEventJoypadMotion）、滑鼠等
+	# 一律略過 —— 否則二級標題的「任意鍵」會被撥搖桿誤觸發。
 	var key := event as InputEventKey
-	if key == null or key.echo:
+	var pad := event as InputEventJoypadButton
+	var stick := event as InputEventJoypadMotion
+	if key == null and pad == null and stick == null:
+		return
+	if key != null and key.echo:
 		return
 
-	# IDLE（待機）：二級標題的正常互動全部停止。↑↓←→／A／B 其中一個
+	# 手柄左搖杆（2026-09）：只餵管理員界面的 ↑↓ 選擇（_pad_stick_nav），
+	# 其餘模式一律在這裡吃掉 —— 二級標題的「任意鍵」不能被撥搖桿誤觸發。
+	if stick != null:
+		if stick.axis == JOY_AXIS_LEFT_Y \
+				and _password_modal == null and _clear_modal == null \
+				and (mode == Mode.MENU or mode == Mode.SETTING or mode == Mode.SETTING_CLEAR):
+			_pad_stick_nav(stick.axis_value)
+		return
+
+	# IDLE（待機）：二級標題的正常互動全部停止。↑↓←→／街機 A／B 其中一個
 	# **按下** → 只喚醒、輸入被吃掉（不進起名、不進 A／B 長按判定）；
-	# Y ＝投幣：喚醒並照常投一枚幣（實體投幣隨時都收）；其餘按鍵
-	# （含 keyup）一律忽略。
+	# 投幣（Y／手柄 View）＝喚醒並照常投一枚幣（實體投幣隨時都收）；
+	# 其餘按鍵（含放開）一律忽略。
 	if mode == Mode.GAME_TITLE and _title_idle:
-		if key.pressed and key.keycode in TITLE_IDLE_WAKE_KEYS:
+		if event.is_pressed() and _is_wake_input(event):
 			_wake_from_title_idle()
-		elif key.pressed and _is_coin_insert(key):
+		elif event.is_pressed() and _is_coin_insert(event):
 			_wake_from_title_idle()
 			_insert_coin()
 		return
 
-	# keyup 只用於二級標題的 A／B 長按判定：兩個鍵沒按住滿 3 秒就鬆開
+	# 放開事件只用於二級標題的 A／B 長按判定：兩顆鍵沒按住滿 3 秒就鬆開
 	# ＝普通按鍵，照樣進入起名流程（進入密碼界面後 _ab_hold_active 已清，
 	# 鬆開不會誤觸發）。起名／遊戲等子節點會吃掉自己的事件，收不到這裡。
-	if not key.pressed:
+	if not event.is_pressed():
 		if mode == Mode.GAME_TITLE and _ab_hold_active \
-				and (key.keycode == KEY_A or key.keycode == KEY_B):
+				and (ArcadeInput.released(event, ArcadeInput.ACTION_A)
+					or ArcadeInput.released(event, ArcadeInput.ACTION_B)):
 			_ab_hold_active = false
 			_ab_hold_time = 0.0
 			_launch(active_index)
@@ -335,10 +364,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# NAME_INPUT / LEADERBOARD 的按鍵由各自的子節點處理並吃掉事件，
 	# launcher 不需要也不應該碰。
 	#
-	# 輸入分層：
+	# 輸入分層（街機 A／B／投幣走 InputMap action —— 鍵盤 A·S·Y 與手柄
+	# A·B·View 都會命中；方向鍵維持鍵盤直讀 keycode，管理員界面的 ↑↓
+	# 另收手柄左搖杆上下）：
 	#   Level 1  密碼彈窗／清除選單開著 → 只剩彈窗自己的按鍵，這裡整段不處理
 	#   Level 2  二級標題 → 按**任意鍵**進入起名流程（A／B 例外：先等長按
-	#            判定 —— 兩個一起按住 3 秒進管理員密碼界面、提前鬆開＝普通
+	#            判定 —— 兩顆一起按住 3 秒進管理員密碼界面、提前鬆開＝普通
 	#            按鍵）。固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有
 	#            管理員密碼一條路）
 	#   Level 3  一級標題 → ↑ ↓ 選遊戲／SETTING（循環）、B 開當前遊戲的
@@ -352,67 +383,77 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	match mode:
 		Mode.MENU:
-			match key.keycode:
-				KEY_UP, KEY_DOWN:
-					var dir := 1 if key.keycode == KEY_DOWN else -1
-					selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
-					AudioManager.play_sfx("ui_select")   # 選單移動
-					queue_redraw()
-				KEY_B:
-					if selected_game < GAMES.size():
-						_open_clear_menu()     # SETTING 行 B 無操作
-				KEY_A:
-					AudioManager.play_sfx("ui_confirm")   # A 確認
-					if selected_game >= GAMES.size():
-						mode = Mode.SETTING     # SETTING → 二級選單
-					else:
-						_enter_game_title(selected_game)
-					queue_redraw()
+			if ArcadeInput.pressed(event, ArcadeInput.ACTION_A):
+				AudioManager.play_sfx("ui_confirm")   # A 確認（鍵盤 A／手柄 A）
+				if selected_game >= GAMES.size():
+					mode = Mode.SETTING     # SETTING → 二級選單
+				else:
+					_enter_game_title(selected_game)
+				queue_redraw()
+			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B):
+				# B（鍵盤 S／手柄 B）開當前選中遊戲的清除選單
+				if selected_game < GAMES.size():
+					_open_clear_menu()     # SETTING 行 B 無操作
+			elif key != null:
+				match key.keycode:
+					KEY_UP, KEY_DOWN:
+						var dir := 1 if key.keycode == KEY_DOWN else -1
+						selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
+						AudioManager.play_sfx("ui_select")   # 選單移動
+						queue_redraw()
+					# A／B 已由上面的 action 分支吃掉，這裡不再比 keycode
 		Mode.SETTING:
-			match key.keycode:
-				KEY_UP, KEY_DOWN:
-					setting_index = 1 - setting_index    # 兩個選項直接互換
-					AudioManager.play_sfx("ui_select")
-					queue_redraw()
-				KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-					AudioManager.play_sfx("ui_confirm")
-					if setting_index == SETTING_CLEAR_IDX:
+			if ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
+					or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]):
+				AudioManager.play_sfx("ui_confirm")
+				match setting_index:
+					SETTING_CLEAR_IDX:
 						mode = Mode.SETTING_CLEAR        # 進三級清除選單
-					else:
+					SETTING_COINS_IDX:
 						Settings.set_unlimited_coins(not Settings.is_unlimited_coins())
-					queue_redraw()
-				KEY_B, KEY_ESCAPE:
-					mode = Mode.MENU                     # 回一級，選擇狀態保留
-					queue_redraw()
+					SETTING_MUSIC_IDX:
+						_toggle_music()                  # 只關 BGM，音效不受影響
+				queue_redraw()
+			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
+					or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
+				mode = Mode.MENU                     # 回一級，選擇狀態保留
+				queue_redraw()
+			elif key != null and key.keycode in [KEY_UP, KEY_DOWN]:
+				var dir := 1 if key.keycode == KEY_DOWN else -1
+				setting_index = (setting_index + dir + SETTING_OPTIONS.size()) % SETTING_OPTIONS.size()
+				AudioManager.play_sfx("ui_select")
+				queue_redraw()
 		Mode.SETTING_CLEAR:
-			match key.keycode:
-				KEY_UP, KEY_DOWN:
-					var dir := 1 if key.keycode == KEY_DOWN else -1
-					clear_index = (clear_index + dir + CLEAR_OPTIONS.size()) % CLEAR_OPTIONS.size()
-					AudioManager.play_sfx("ui_select")
-					queue_redraw()
-				KEY_A, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-					AudioManager.play_sfx("ui_confirm")
-					LeaderboardManager.clear_all_games_records(CLEAR_RULES[clear_index])
-					_show_notice("SCORE DATA CLEARED", Palette.GOLD)
-					mode = Mode.SETTING                   # 執行完回二級，選項狀態保留
-					queue_redraw()
-				KEY_B, KEY_ESCAPE:
-					mode = Mode.SETTING
-					queue_redraw()
+			if ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
+					or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]):
+				AudioManager.play_sfx("ui_confirm")
+				LeaderboardManager.clear_all_games_records(CLEAR_RULES[clear_index])
+				_show_notice("SCORE DATA CLEARED", Palette.GOLD)
+				mode = Mode.SETTING                   # 執行完回二級，選項狀態保留
+				queue_redraw()
+			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
+					or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
+				mode = Mode.SETTING
+				queue_redraw()
+			elif key != null and key.keycode in [KEY_UP, KEY_DOWN]:
+				var dir := 1 if key.keycode == KEY_DOWN else -1
+				clear_index = (clear_index + dir + CLEAR_OPTIONS.size()) % CLEAR_OPTIONS.size()
+				AudioManager.play_sfx("ui_select")
+				queue_redraw()
 		Mode.GAME_TITLE:
-			# 有效街機輸入（↑↓←→／A／B）與投幣（Y）重設 10 秒待機計時；
-			# 其他鍵不重設（字母／空白等照舊進起名流程）。NORMAL 時這些鍵
+			# 有效街機輸入（↑↓←→／A／B）與投幣（Y／手柄 View）重設 10 秒待機
+			# 計時；其他鍵不重設（字母／空白等照舊進起名流程）。NORMAL 時這些鍵
 			# 也會照常觸發起名／長按判定 —— 只有 IDLE 喚醒那一次輸入會被攔截。
-			if key.keycode in TITLE_IDLE_WAKE_KEYS or _is_coin_insert(key):
+			if (key != null and key.keycode in TITLE_IDLE_WAKE_KEYS) \
+					or _is_arcade_a(event) or _is_arcade_b(event) or _is_coin_insert(event):
 				_idle_timer.start()
-			# Y ＝投幣：吃掉事件，不觸發起名（幣量 +1＋coin_push 音效）。
-			if _is_coin_insert(key):
+			# Y／手柄 View ＝投幣：吃掉事件，不觸發起名（幣量 +1＋coin_push 音效）。
+			if _is_coin_insert(event):
 				_insert_coin()
 			# 任意鍵 → 起名開局（閘門見 _launch）。A／B 例外：按下後先等長按
-			# 判定（_process 裡兩個一起按住 3 秒 → 管理員密碼界面；提前鬆開 →
-			# keyup 分支當普通按鍵進起名 —— 一樣要過 _launch 的投幣閘門）。
-			elif key.keycode == KEY_A or key.keycode == KEY_B:
+			# 判定（_process 裡兩顆一起按住 3 秒 → 管理員密碼界面；提前鬆開 →
+			# 放開分支當普通按鍵進起名 —— 一樣要過 _launch 的投幣閘門）。
+			elif _is_arcade_a(event) or _is_arcade_b(event):
 				_ab_hold_active = true
 				_ab_hold_time = 0.0
 			else:
@@ -420,8 +461,53 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				_ab_hold_time = 0.0
 				_launch(active_index)
 		Mode.PLAYING:
-			if key.keycode == KEY_ESCAPE:
+			if key != null and key.keycode == KEY_ESCAPE:
 				_close_game()
+
+
+## 街機 A／B 的按下判斷（鍵盤 A·S／手柄 A·B 共用，見 shared/arcade_input.gd）。
+func _is_arcade_a(event: InputEvent) -> bool:
+	return ArcadeInput.pressed(event, ArcadeInput.ACTION_A)
+
+
+func _is_arcade_b(event: InputEvent) -> bool:
+	return ArcadeInput.pressed(event, ArcadeInput.ACTION_B)
+
+
+## 待機喚醒認定的有效輸入：方向鍵（鍵盤）＋街機 A／B（鍵盤 A·S／手柄 A·B）。
+func _is_wake_input(event: InputEvent) -> bool:
+	var key := event as InputEventKey
+	if key != null and key.keycode in TITLE_IDLE_WAKE_KEYS:
+		return true
+	return _is_arcade_a(event) or _is_arcade_b(event)
+
+
+## 手柄左搖杆的垂直推量 → 管理員界面（一級清單／SETTING 二三級）的上下
+## 選擇，與鍵盤 ↑↓ 同一組移動與音效。死區 ±0.5（與起名屏的搖桿判定同一
+## 檔）：過死區算「推住」，邊沿觸發只動一次、回到中立區重置後才允許下一
+## 次 —— 推住不連發，與鍵盤方向鍵不吃 echo 一致。
+func _pad_stick_nav(value: float) -> void:
+	var dir := 0
+	if value >= 0.5:
+		dir = 1          # 推下（搖桿 Y 軸向下為正）
+	elif value <= -0.5:
+		dir = -1         # 推上
+	if dir == _stick_nav_dir:
+		return
+	_stick_nav_dir = dir
+	if dir == 0:
+		return           # 回中立只重置狀態，不動選擇
+	match mode:
+		Mode.MENU:
+			selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
+		Mode.SETTING:
+			setting_index = (setting_index + dir + SETTING_OPTIONS.size()) % SETTING_OPTIONS.size()
+		Mode.SETTING_CLEAR:
+			clear_index = (clear_index + dir + CLEAR_OPTIONS.size()) % CLEAR_OPTIONS.size()
+		_:
+			return
+	AudioManager.play_sfx("ui_select")   # 選單移動
+	queue_redraw()
 
 
 ## 一級標題按 A 確認 → 二級標題。未建置的款項留在原地跳提示。
@@ -432,6 +518,7 @@ func _enter_game_title(index: int) -> void:
 	active_index = index
 	_ab_hold_active = false
 	_ab_hold_time = 0.0
+	_stick_nav_dir = 0
 	mode = Mode.GAME_TITLE
 	_begin_title_idle_watch()   # 進二級：開始 10 秒無操作計時
 	queue_redraw()
@@ -461,15 +548,15 @@ func _launch(index: int) -> void:
 	_start_game(index)
 
 
-# ── 投幣（二級標題 Y，InputMap action「coin_insert」＝實體 Y 鍵）────
+# ── 投幣（二級標題 Y；InputMap action「coin_insert」＝鍵盤 Y＋手柄 View）──
 
-## 這顆按鍵事件是不是「投幣」。action 被人從 project.godot 的 [input]
-## 拿掉時安全回 false，不讓 is_action_pressed 刷錯誤。
-func _is_coin_insert(key: InputEventKey) -> bool:
-	return InputMap.has_action("coin_insert") and key.is_action_pressed("coin_insert")
+## 這顆輸入事件是不是「投幣」（鍵盤 Y／手柄 View/Back）。action 被人從
+## project.godot 的 [input] 拿掉時安全回 false，不讓 is_action_pressed 刷錯誤。
+func _is_coin_insert(event: InputEvent) -> bool:
+	return ArcadeInput.pressed(event, ArcadeInput.ACTION_COIN)
 
 
-## Y 投一枚幣：幣量 +1、刷新左下角顯示、播 coin_push。無限投幣 ON 也
+## Y／手柄 View 投一枚幣：幣量 +1、刷新左下角顯示、播 coin_push。無限投幣 ON 也
 ## 照常累計與播音（實體投幣的聲音，規格允許；ON/OFF 只影響開局扣不扣）。
 ## 不設投幣上限。
 func _insert_coin() -> void:
@@ -484,6 +571,17 @@ func _start_coin_shake() -> void:
 	_coin_shake_time = COIN_SHAKE_SECONDS
 	AudioManager.play_sfx("ui_coin_none")
 	queue_redraw()
+
+
+# ── SETTING 二級選單的 MUSIC 開關（只控制 BGM，音效不受影響）────
+
+## 切換 MUSIC：狀態寫回 Settings（user://settings.cfg，跨執行保存），
+## 再叫 AudioManager.apply_music_setting() 讓當下立刻生效 —— 關閉 → 停掉
+## 正在播的 BGM；打開 → 接續播回當前場合的 BGM（各處 play_bgm 調用點
+## 不用改，AudioManager 內部自己檢查開關）。
+func _toggle_music() -> void:
+	Settings.set_music_on(not Settings.is_music_on())
+	AudioManager.apply_music_setting()
 
 
 ## 標題層的短提示（NOT BUILT／載入失敗／清除成功），停留 NOTICE_TIME 秒。
@@ -694,6 +792,7 @@ func _open_password_modal() -> void:
 func _on_password_succeeded() -> void:
 	_close_password_modal()
 	_title_video.stop()    # 回一級：二級標題背景影片不再需要
+	_stick_nav_dir = 0     # 離開管理員流程：搖桿邊沿狀態重置
 	mode = Mode.MENU
 	queue_redraw()
 
@@ -928,10 +1027,10 @@ func _draw_game_menu() -> void:
 		MENU_SELECTED if sel_setting else MENU_IDLE)
 
 
-## SETTING 二級選單（CLEAR LEADERBOARD / UNLIMITED COINS）：同一塊管理員
-## 區域內垂直排列，選中／未選中顏色與一級清單相同。UNLIMITED COINS 行右側
-## 緊接名字顯示 ON/OFF 狀態（用量到的名字寬度推過去）。
-## 底部一行操作提示在區域內。
+## SETTING 二級選單（CLEAR LEADERBOARD / UNLIMITED COINS / MUSIC）：同一塊
+## 管理員區域內垂直排列，選中／未選中顏色與一級清單相同。開關型選項
+## （UNLIMITED COINS／MUSIC）行右側緊接名字顯示 ON/OFF 狀態
+## （用量到的名字寬度推過去）。底部一行操作提示在區域內。
 func _draw_setting_menu() -> void:
 	var font := ThemeDB.fallback_font
 	var name_x := MENU_REGION_POS.x + 8.0
@@ -942,14 +1041,23 @@ func _draw_setting_menu() -> void:
 		var name: String = SETTING_OPTIONS[i]
 		draw_string(font, Vector2(name_x, y), name,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE, col)
-		if i == SETTING_COINS_IDX:
+		var status := _setting_status(i)
+		if status != "":
 			var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE).x
-			draw_string(font, Vector2(name_x + w + 8.0, y),
-				"ON" if Settings.is_unlimited_coins() else "OFF",
+			draw_string(font, Vector2(name_x + w + 8.0, y), status,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE, col)
 		y += MENU_LINE_H
 	_center_in_region("A CONFIRM    B BACK",
 		MENU_REGION_POS.y + MENU_REGION_SIZE.y - 20.0, 8, Palette.TEXT_DIM)
+
+
+## 開關型 SETTING 選項右側的 ON/OFF 狀態文字；非開關選項回空字串（不畫）。
+func _setting_status(index: int) -> String:
+	if index == SETTING_COINS_IDX:
+		return "ON" if Settings.is_unlimited_coins() else "OFF"
+	if index == SETTING_MUSIC_IDX:
+		return "ON" if Settings.is_music_on() else "OFF"
+	return ""
 
 
 ## 三級排行榜清除選單（CLEAR TODAY / CLEAR LAST 24 HOURS / CLEAR ALL DATA）：

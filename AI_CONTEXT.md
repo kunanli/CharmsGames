@@ -96,6 +96,8 @@ Launcher.tscn          ← 唯一场景，只有 1 个 Node2D（launcher.gd）
 | Fishing | ← → 探看湖面（三款唯一有镜头移动的） | **A / 空格 / ↓ / Enter** 放线；**B / X** 月光能量（每局 3 次，收线途中才有效） | 放线后不可取消 |
 | Catch | ← → | **B / X** 引爆护盾清全场炸弹 | 长按同方向 1 秒线性加速到 ×2.5（A/Shift 冲刺已移除），人物贴屏幕最底 |
 
+**街机按键绑定（2026-09）**：A＝键盘 A／手柄 A、B＝**键盘 S**／手柄 B（键盘 B 的逻辑已全部改到 S，键盘 B 不再有功能）、投币 Y＝键盘 Y／手柄 View/Back；统一走 InputMap action（`shared/arcade_input.gd`：`arcade_a`／`arcade_b`／`coin_insert`），同时吃键盘＋手柄的界面用 `_unhandled_input`（手柄按钮事件不进 `_unhandled_key_input`）。方向键未整绑手柄：管理员界面（一级清单／SETTING 二三级）的 ↑↓ 选择与管理员密码的方向输入都额外吃手柄左摇杆（`_pad_stick_nav`／`admin_password.gd` 的 `_stick_direction`，死区 ±0.5、边沿触发不连发、回中立区才能推下一次）；游戏内移动走内建 `ui_left` 等 action（手柄十字键／左摇杆引擎预设已绑）；起名屏本就支持手柄（十字键／左摇杆／A B X Y）。
+
 ## 当前开发进度
 
 | 游戏 | 状态 |
