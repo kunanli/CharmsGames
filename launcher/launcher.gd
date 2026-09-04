@@ -3,7 +3,7 @@ extends Node2D
 # ─────────────────────────────────────────────────────────
 # 啟動標題 + 遊戲流程狀態機：
 #   MENU（一級標題＝管理員的遊戲選擇畫面：↑ ↓ 循環選遊戲／SETTING、
-#     B 開當前選中遊戲的排行榜清除選單、A 確認）
+#     A 確認）
 #   → GAME_TITLE（二級標題＝該款全屏影片背景，無按鈕、底部一行閃爍的
 #     PRESS ANY BUTTON TO START 提示：按**任意鍵** → 起名開局；A／B 例外 —— 兩個一起按住 3 秒 →
 #     管理員密碼界面，提前鬆開＝普通按鍵 → 起名。開局一律過投幣閘門：
@@ -16,14 +16,16 @@ extends Node2D
 #   （2026-09 鍵盤 B 的邏輯全部改到 S，鍵盤 B 不再有用）、投幣
 #   Y＝鍵盤 Y／手柄 View/Back。手柄按鈕事件不進 _unhandled_key_input，
 #   所以本檔的按鍵處理走 _unhandled_input，A／B／投幣一律讀 InputMap action。
-#   管理員界面（一級清單／SETTING 二三級）的 ↑↓ 選擇另收手柄左搖杆上下
+#   管理員界面（一級清單／SETTING 二三四級）的 ↑↓ 選擇另收手柄左搖杆上下
 #   （_pad_stick_nav：死區 ±0.5、邊沿觸發不連發）；其餘方向輸入仍只吃鍵盤。
 #   → NAME_INPUT → PLAYING
 #   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #   一級標題選中 SETTING 按 A → SETTING（二級：CLEAR LEADERBOARD /
 #     UNLIMITED COINS / MUSIC —— MUSIC 只關 BGM 不關音效，A 執行、B 回一級）
-#   → SETTING_CLEAR（三級：CLEAR TODAY / LAST 24 HOURS / ALL DATA，
-#     跨三款一起清、A 執行、B 回 SETTING）
+#   → SETTING_GAME（三級：CLEAR MAZE / FISHING / CATCH DATA，選要清哪一款、
+#     A 進四級、B 回 SETTING）
+#   → SETTING_CLEAR（四級：CLEAR TODAY / LAST 24 HOURS / ALL DATA，只清
+#     三級選中的那款，A 執行後回 SETTING 二級、B 回 SETTING_GAME）
 #
 # 標題層：一級畫 Title_ChooseGames（assets/title/）＋遊戲選擇清單（名字用
 # draw_string 疊在圖上）；二級畫該款的全屏背景影片
@@ -33,9 +35,9 @@ extends Node2D
 # （ui/admin_password.gd，Modal Overlay，二級標題 A＋B 長按 3 秒進入）：
 # 用方向鍵輸入「上上下下左右左右」共 8 位指令、按 A 確認 —— 正確 → 回一級、
 # ESC → 留在二級。遊戲結束與遊戲中 ESC 都回**該款的二級標題**。
-# 一級標題按 B 開**當前選中遊戲的排行榜清除選單**（ui/admin_clear_menu.gd，
-# Modal Overlay，見「清除功能」段落）。
-# 彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_input 註解）。
+# 一級標題的 B 鍵沒有任何功能（原「按 B 開當前選中遊戲的排行榜清除選單」
+# 已於 2026-09 拆除，清除統一走 SETTING 選單）。
+# 管理員密碼彈窗開著時本檔不處理任何按鍵（輸入分層見 _unhandled_input 註解）。
 #
 # 二級標題沒有待機功能（2026-09 移除原「10 秒無操作 → 播待機影片＋
 # 中央閃爍 CLICK TO PLAY」整段；GAMES 的 idle_video 欄位一併拆除，
@@ -62,7 +64,7 @@ extends Node2D
 # 腳本還不存在的項目會顯示 NOT BUILT YET，不會讓選單當掉。
 # ─────────────────────────────────────────────────────────
 
-enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }
+enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_GAME, SETTING_CLEAR }
 
 const GAMES := [
 	{
@@ -111,24 +113,28 @@ const MENU_SELECTED := Color("FFC4FF")
 const MENU_IDLE := Color("FF44FF")
 
 ## 管理員選單區域：1920×1080 設計座標 (734, 392) 起、651×291（邏輯畫面 ÷4）。
-## 一級遊戲清單（三款遊戲＋SETTING）、SETTING 二級、清除三級都畫在這一塊內。
+## 一級遊戲清單（三款遊戲＋SETTING）、SETTING 二級、清除三四級都畫在這一塊內。
 ## 註：需求原文就是 (734,392)；舊常量 (774,452) 與自身註解不符，2026-08 修正。
 const MENU_REGION_POS := Vector2(734.0, 425.0) / 4.0
 const MENU_REGION_SIZE := Vector2(651.0, 330.0) / 4.0
 const MENU_NAME_SIZE := 16
-const MENU_SUB_SIZE := 11      # SETTING 二級／三級選單的字體（選項名字比一級長）
+const MENU_SUB_SIZE := 11      # SETTING 二級／三四級選單的字體（選項名字比一級長）
 const MENU_LINE_H := 18.0      # 4 行（三款遊戲＋SETTING）塞進 291 高的區域
 
 ## SETTING 二級選單的三個選項（索引即 setting_index）。MUSIC 只控制 BGM：
 ## 狀態存 Settings（跨執行保存），AudioManager 播 BGM 前與切換當下讀取。
-const SETTING_OPTIONS := ["CLEAR RANKING DATA", "UNLIMITED COINS", "MUSIC"]
+const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "UNLIMITED COINS", "MUSIC"]
 const SETTING_CLEAR_IDX := 0
 const SETTING_COINS_IDX := 1
 const SETTING_MUSIC_IDX := 2
 
-## 三級排行榜清除選單：顯示名與對應的 ClearRule（TODAY／LAST_24_HOURS／ALL，
-## 索引順序一致）。執行時跨三款遊戲一起清，見 _draw_clear_menu 與
-## LeaderboardManager.clear_all_games_records。
+## SETTING 三級清除選單：選要清哪一款（索引即 clear_game_index，順序對應
+## GAMES）。_ready() 從 GAMES 的 menu_name 組出 —— 新增一款遊戲自動多一行。
+var clear_game_options: Array[String] = []
+
+## 四級排行榜清除選單：顯示名與對應的 ClearRule（TODAY／LAST_24_HOURS／ALL，
+## 索引順序一致）。執行時只清三級選中的那款（LeaderboardManager.clear_records），
+## 見 _draw_clear_menu。
 const CLEAR_OPTIONS := ["CLEAR TODAY", "CLEAR LAST 24 HOURS", "CLEAR ALL DATA"]
 const CLEAR_RULES := [
 	LeaderboardManager.ClearRule.TODAY,
@@ -176,8 +182,7 @@ var game: Node2D = null       # 目前正在玩的那一款，沒在玩時為 nu
 var active_index := -1        # 目前這局是哪一款（排行榜重開要用）
 var _panel: Node2D = null
 var _name_input: Node2D = null
-var _password_modal: Node2D = null   # F3 管理員密碼彈窗；非 null 時攔下所有標題層按鍵
-var _clear_modal: Node2D = null      # 排行榜清除選單；同上，開著時標題層不響應
+var _password_modal: Node2D = null   # 管理員密碼彈窗；非 null 時攔下所有標題層按鍵
 var _built: Array[bool] = []  # 每一款的腳本存不存在，開場算一次就好
 var _notice := ""
 var _notice_col := Palette.WARN   # 提示文字顏色（清除成功用 GOLD）
@@ -193,7 +198,8 @@ var _coin_tex: Texture2D = null   # 投幣 UI 的 Coin 圖（_ready 降到 12×1
 var _coin_shake_time := 0.0       # 幣不夠的 Coin 圖抖動剩餘秒數（>0 時每幀重繪）
 var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
 var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = UNLIMITED COINS、2 = MUSIC
-var clear_index := 0          # 三級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
+var clear_game_index := 0     # SETTING 三級清除選單：0 = MAZE、1 = FISHING、2 = CATCH（對應 GAMES）
+var clear_index := 0          # 四級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
 
 
 func _ready() -> void:
@@ -208,6 +214,10 @@ func _ready() -> void:
 	# FileAccess.file_exists() 在匯出版會一律回 false，選單就全變成 COMING SOON。
 	for entry in GAMES:
 		_built.append(ResourceLoader.exists(entry["script"]))
+
+	# SETTING 三級清除選單的選項：CLEAR <遊戲短名> DATA，順序跟著 GAMES 走。
+	for entry in GAMES:
+		clear_game_options.append("CLEAR %s DATA" % entry["menu_name"])
 
 	# 二級標題背景影片（NORMAL 與起名 overlay 的底層）：VideoStreamPlayer
 	# 只負責播放、**節點本身隱藏**（它是 Control，expand=false 時會用自己的
@@ -281,8 +291,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# 其餘模式一律在這裡吃掉 —— 二級標題的「任意鍵」不能被撥搖桿誤觸發。
 	if stick != null:
 		if stick.axis == JOY_AXIS_LEFT_Y \
-				and _password_modal == null and _clear_modal == null \
-				and (mode == Mode.MENU or mode == Mode.SETTING or mode == Mode.SETTING_CLEAR):
+				and _password_modal == null \
+				and (mode == Mode.MENU or mode == Mode.SETTING
+					or mode == Mode.SETTING_GAME or mode == Mode.SETTING_CLEAR):
 			_pad_stick_nav(stick.axis_value)
 		return
 
@@ -304,18 +315,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	# 輸入分層（街機 A／B／投幣走 InputMap action —— 鍵盤 A·S·Y 與手柄
 	# A·B·View 都會命中；方向鍵維持鍵盤直讀 keycode，管理員界面的 ↑↓
 	# 另收手柄左搖杆上下）：
-	#   Level 1  密碼彈窗／清除選單開著 → 只剩彈窗自己的按鍵，這裡整段不處理
+	#   Level 1  密碼彈窗開著 → 只剩彈窗自己的按鍵，這裡整段不處理
 	#   Level 2  二級標題 → 按**任意鍵**進入起名流程（A／B 例外：先等長按
 	#            判定 —— 兩顆一起按住 3 秒進管理員密碼界面、提前鬆開＝普通
 	#            按鍵）。固定場所：1/2/3 不換遊戲、ESC 無效（回一級只有
 	#            管理員密碼一條路）
-	#   Level 3  一級標題 → ↑ ↓ 選遊戲／SETTING（循環）、B 開當前遊戲的
-	#            排行榜清除選單、A 確認進二級標題（SETTING 則進 SETTING 二級選單）
-	#   Level 4  SETTING 二級 → ↑ ↓ 選項、A 執行（CLEAR LEADERBOARD＝進三級、
-	#            UNLIMITED COINS＝切換 ON/OFF）、B/ESC 回一級
-	#   Level 5  SETTING_CLEAR 三級 → ↑ ↓ 選清除規則、A 執行（跨三款一起清）、
-	#            B/ESC 回 SETTING 二級
-	if _password_modal != null or _clear_modal != null:
+	#   Level 3  一級標題 → ↑ ↓ 選遊戲／SETTING（循環）、A 確認進二級標題
+	#            （SETTING 則進 SETTING 二級選單）；B 沒有功能
+		#   Level 4  SETTING 二級 → ↑ ↓ 選項、A 執行（CLEAR LEADERBOARD＝進三級、
+		#            UNLIMITED COINS＝切換 ON/OFF）、B/ESC 回一級
+		#   Level 5  SETTING_GAME 三級 → ↑ ↓ 選要清哪一款、A 進四級、B/ESC 回二級
+		#   Level 6  SETTING_CLEAR 四級 → ↑ ↓ 選清除規則、A 執行（只清三級選中的
+		#            那款，執行完回 SETTING 二級）、B/ESC 回三級
+	if _password_modal != null:
 		return                     # Level 1：彈窗開著，底層標題不響應任何鍵
 
 	match mode:
@@ -327,10 +339,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				else:
 					_enter_game_title(selected_game)
 				queue_redraw()
-			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B):
-				# B（鍵盤 S／手柄 B）開當前選中遊戲的清除選單
-				if selected_game < GAMES.size():
-					_open_clear_menu()     # SETTING 行 B 無操作
 			elif key != null:
 				match key.keycode:
 					KEY_UP, KEY_DOWN:
@@ -338,14 +346,15 @@ func _unhandled_input(event: InputEvent) -> void:
 						selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
 						AudioManager.play_sfx("ui_select")   # 選單移動
 						queue_redraw()
-					# A／B 已由上面的 action 分支吃掉，這裡不再比 keycode
+					# A 已由上面的 action 分支吃掉，這裡不再比 keycode；
+					# B 在一級沒有功能（清除選單 2026-09 拆除，清除走 SETTING）
 		Mode.SETTING:
 			if ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
 					or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]):
 				AudioManager.play_sfx("ui_confirm")
 				match setting_index:
 					SETTING_CLEAR_IDX:
-						mode = Mode.SETTING_CLEAR        # 進三級清除選單
+						mode = Mode.SETTING_GAME        # 進三級：選要清哪一款
 					SETTING_COINS_IDX:
 						Settings.set_unlimited_coins(not Settings.is_unlimited_coins())
 					SETTING_MUSIC_IDX:
@@ -360,17 +369,33 @@ func _unhandled_input(event: InputEvent) -> void:
 				setting_index = (setting_index + dir + SETTING_OPTIONS.size()) % SETTING_OPTIONS.size()
 				AudioManager.play_sfx("ui_select")
 				queue_redraw()
+		Mode.SETTING_GAME:
+			if ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
+					or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]):
+				AudioManager.play_sfx("ui_confirm")
+				mode = Mode.SETTING_CLEAR        # 進四級：選清除規則
+				queue_redraw()
+			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
+					or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
+				mode = Mode.SETTING                  # 回二級，選擇狀態保留
+				queue_redraw()
+			elif key != null and key.keycode in [KEY_UP, KEY_DOWN]:
+				var dir := 1 if key.keycode == KEY_DOWN else -1
+				clear_game_index = (clear_game_index + dir + clear_game_options.size()) % clear_game_options.size()
+				AudioManager.play_sfx("ui_select")
+				queue_redraw()
 		Mode.SETTING_CLEAR:
 			if ArcadeInput.pressed(event, ArcadeInput.ACTION_A) \
 					or (key != null and key.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]):
 				AudioManager.play_sfx("ui_confirm")
-				LeaderboardManager.clear_all_games_records(CLEAR_RULES[clear_index])
-				_show_notice("SCORE DATA CLEARED", Palette.GOLD)
+				# 只清三級選中的那款（跨遊戲的 clear_all_games_records 已無 UI 入口）
+				LeaderboardManager.clear_records(GAMES[clear_game_index]["id"], CLEAR_RULES[clear_index])
+				_show_notice("%s SCORE DATA CLEARED" % GAMES[clear_game_index]["menu_name"], Palette.GOLD)
 				mode = Mode.SETTING                   # 執行完回二級，選項狀態保留
 				queue_redraw()
 			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
 					or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
-				mode = Mode.SETTING
+				mode = Mode.SETTING_GAME
 				queue_redraw()
 			elif key != null and key.keycode in [KEY_UP, KEY_DOWN]:
 				var dir := 1 if key.keycode == KEY_DOWN else -1
@@ -405,7 +430,7 @@ func _is_arcade_b(event: InputEvent) -> bool:
 	return ArcadeInput.pressed(event, ArcadeInput.ACTION_B)
 
 
-## 手柄左搖杆的垂直推量 → 管理員界面（一級清單／SETTING 二三級）的上下
+## 手柄左搖杆的垂直推量 → 管理員界面（一級清單／SETTING 二三四級）的上下
 ## 選擇，與鍵盤 ↑↓ 同一組移動與音效。死區 ±0.5（與起名屏的搖桿判定同一
 ## 檔）：過死區算「推住」，邊沿觸發只動一次、回到中立區重置後才允許下一
 ## 次 —— 推住不連發，與鍵盤方向鍵不吃 echo 一致。
@@ -425,6 +450,8 @@ func _pad_stick_nav(value: float) -> void:
 			selected_game = (selected_game + dir + GAMES.size() + 1) % (GAMES.size() + 1)
 		Mode.SETTING:
 			setting_index = (setting_index + dir + SETTING_OPTIONS.size()) % SETTING_OPTIONS.size()
+		Mode.SETTING_GAME:
+			clear_game_index = (clear_game_index + dir + clear_game_options.size()) % clear_game_options.size()
 		Mode.SETTING_CLEAR:
 			clear_index = (clear_index + dir + CLEAR_OPTIONS.size()) % CLEAR_OPTIONS.size()
 		_:
@@ -605,7 +632,7 @@ func _on_panel_exit() -> void:
 ## 開排行榜面板：大標題 YOUR SCORE ＋ 前 10 名單欄 ＋ 底部當前玩家行，
 ## B/ESC 回該款二級標題。當前玩家的成績（名字／分數／record_id）由
 ## launcher 傳入，排名在面板內用 record_id 查。
-## 清除功能已移到一級標題的清除選單（見 _open_clear_menu），面板一律只讀。
+## 清除功能只在 SETTING 選單（一級標題的清除選單 2026-09 拆除），面板一律只讀。
 func _open_leaderboard() -> void:
 	var entry: Dictionary = GAMES[active_index]
 	var panel := Node2D.new()
@@ -621,45 +648,6 @@ func _open_leaderboard() -> void:
 	add_child(panel)
 	mode = Mode.LEADERBOARD
 	queue_redraw()
-
-
-# ── 管理員排行榜清除選單（一級標題按 B，Modal Overlay）────
-
-## 一級標題按 B：開「當前選中遊戲」的排行榜清除選單。選單自己跟
-## LeaderboardManager 要資料與執行刪除，launcher 只負責開關與提示。
-func _open_clear_menu() -> void:
-	if _clear_modal != null:
-		return
-	var modal := Node2D.new()
-	modal.name = "AdminClearMenu"
-	modal.set_script(load("res://ui/admin_clear_menu.gd"))
-	modal.set("game_id", GAMES[selected_game]["id"])
-	modal.set("game_name", GAMES[selected_game]["menu_name"])
-	modal.connect("cleared", Callable(self, "_on_clear_done"))
-	modal.connect("cancelled", Callable(self, "_on_clear_cancelled"))
-	_clear_modal = modal
-	add_child(modal)
-
-
-## 清除完成：關選單、留在一級標題，顯示成功提示。
-## （選單開著時標題層不收任何鍵，selected_game 不會被切動 ——
-## 清的一定是開選單時選中的那一款。）
-func _on_clear_done() -> void:
-	_close_clear_modal()
-	_show_notice("%s SCORE DATA CLEARED" % GAMES[selected_game]["menu_name"], Palette.GOLD)
-
-
-## B/ESC 取消：關選單，留在一級標題，什麼都不做。
-func _on_clear_cancelled() -> void:
-	_close_clear_modal()
-
-
-func _close_clear_modal() -> void:
-	if _clear_modal == null:
-		return
-	remove_child(_clear_modal)
-	_clear_modal.queue_free()
-	_clear_modal = null
 
 
 # ── 姓名輸入 ────────────────────────────────────────────
@@ -822,11 +810,13 @@ func _draw() -> void:
 		# 一級標題的遊戲選擇清單（管理員用）：名字
 		_draw_game_menu()
 		#_center("↑ ↓ SELECT    A START    B CLEAR", 250, 12, Palette.BG)
-	elif mode == Mode.SETTING or mode == Mode.SETTING_CLEAR:
-		# SETTING 二級／清除三級：同一張一級圖墊底，一級清單文字整個不畫
+	elif mode == Mode.SETTING or mode == Mode.SETTING_GAME or mode == Mode.SETTING_CLEAR:
+		# SETTING 二級／清除三四級：同一張一級圖墊底，一級清單文字整個不畫
 		draw_texture_rect(TITLE_MAIN_IMAGE, Rect2(0, 0, 480, 270), false)
 		if mode == Mode.SETTING:
 			_draw_setting_menu()
+		elif mode == Mode.SETTING_GAME:
+			_draw_clear_game_menu()
 		else:
 			_draw_clear_menu()
 	elif (mode == Mode.GAME_TITLE or mode == Mode.NAME_INPUT) and active_index >= 0:
@@ -898,9 +888,26 @@ func _setting_status(index: int) -> String:
 	return ""
 
 
-## 三級排行榜清除選單（CLEAR TODAY / CLEAR LAST 24 HOURS / CLEAR ALL DATA）：
-## 執行時**跨三款遊戲一起清**（LeaderboardManager.clear_all_games_records），
-## 不需要也不能選遊戲。選中／未選中顏色與上層相同。
+## SETTING 三級清除選單（CLEAR MAZE DATA / CLEAR FISHING DATA / CLEAR CATCH
+## DATA）：選要清哪一款的排行榜，A 進四級規則選單。選項由 _ready() 從
+## GAMES 組出，順序對應 GAMES。選中／未選中顏色與上層相同。
+func _draw_clear_game_menu() -> void:
+	var font := ThemeDB.fallback_font
+	var name_x := MENU_REGION_POS.x + 8.0
+	var y := MENU_REGION_POS.y + (MENU_REGION_SIZE.y - MENU_LINE_H * clear_game_options.size()) / 2.0
+	for i in clear_game_options.size():
+		var selected := i == clear_game_index
+		draw_string(font, Vector2(name_x, y), clear_game_options[i],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE,
+			MENU_SELECTED if selected else MENU_IDLE)
+		y += MENU_LINE_H
+	_center_in_region("A CONFIRM    B BACK",
+		MENU_REGION_POS.y + MENU_REGION_SIZE.y - 20.0, 8, Palette.TEXT_DIM)
+
+
+## 四級排行榜清除選單（CLEAR TODAY / CLEAR LAST 24 HOURS / CLEAR ALL DATA）：
+## 執行時**只清三級選中的那款**（LeaderboardManager.clear_records 帶
+## game_id）。選中／未選中顏色與上層相同。
 func _draw_clear_menu() -> void:
 	var font := ThemeDB.fallback_font
 	var name_x := MENU_REGION_POS.x + 8.0

@@ -209,9 +209,10 @@ class Manager:
         return removed
 
     def clear_all_games_records(self, rule):
-        """統一清除接口（鏡像 .gd 的 clear_all_games_records，SETTING 三級
-        選單用）：跨全部遊戲一起清。只接受 TODAY／LAST_24_HOURS／ALL，
-        其他規則視為無操作。"""
+        """統一清除接口（鏡像 .gd 的 clear_all_games_records）：跨全部遊戲
+        一起清。只接受 TODAY／LAST_24_HOURS／ALL，其他規則視為無操作。
+        （2026-09 起 SETTING 清除選單改走 per-game 的 clear_records，本
+        函式已無 UI 入口，保留為通用工具。）"""
         if rule == CLEAR_RULES["ALL"]:
             before = len(self.records)
             self.records = []
@@ -600,7 +601,7 @@ def main():
        len([r for r in m12e.records if r["game_id"] == "seeker"]) == 3,
        "ALL：catch 的 3 筆全刪，seeker／fishing 各 3 筆不動")
 
-    print("\n== 13. clear_all_games_records（SETTING 三級選單：跨三款一起清）==")
+    print("\n== 13. clear_all_games_records（通用工具，現無 UI 入口：跨三款一起清）==")
     # 13a. TODAY：三款遊戲今天的記錄一起刪，昨天的全留下
     m13 = Manager(path)
     for g in GAME_IDS:

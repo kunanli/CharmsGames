@@ -39,11 +39,10 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 3. 按 Run（F5 也可以）
 4. 一級標題（Title_ChooseGames.png 全屏）是**管理員的遊戲選擇畫面**：
    **↑ ↓** 循環選項目（MAZE → FISHING → CATCH → SETTING → MAZE）、
-   **B** 進當前選中遊戲的**排行榜清除選單**
-   （見「排行榜」段的清除功能；SETTING 行 B 無操作）、**A** 確認進該款
-   二級標題 —— 選中 SETTING 時 A 進 **SETTING 二級選單**（見「SETTING
-   管理員設定」段）。所有選單文字都在 1920×1080 設計座標 (734,392) 起、
-   651×291 的區域內。
+   **A** 確認進該款二級標題 —— 選中 SETTING 時 A 進 **SETTING 二級選單**
+   （見「SETTING 管理員設定」段）；**B 鍵沒有任何功能**（原「按 B 開
+   排行榜清除選單」已於 2026-09 拆除，清除統一走 SETTING）。所有選單文字
+   都在 1920×1080 設計座標 (734,392) 起、651×291 的區域內。
    二級標題（背景是各款的全屏影片 `assets/title/TItleVideo/Title_*.ogv`，
    等比例縮放填滿 480×270 —— 素材是 16:9 所以正好全屏；影片沒進場時退回
    標題圖 `Title_*.jpg`）**沒有按鈕**，底部有一行閃爍的
@@ -92,7 +91,7 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 全部改到 S）、投幣 **Y**＝鍵盤 Y／手柄 View/Back（button_index 4）。
 上表與各段的 A／B／投幣都指街機按鍵；程式端一律走 InputMap action
 （`arcade_a`／`arcade_b`／`coin_insert`）判斷，不要直接比 KEY_A／KEY_B
-keycode。**方向鍵沒有整綁手柄**：管理員界面（一級清單／SETTING 二三級）
+keycode。**方向鍵沒有整綁手柄**：管理員界面（一級清單／SETTING 二三四級）
 的 ↑↓ 選擇與**管理員密碼的方向輸入**都額外吃**手柄左搖杆**（`launcher.gd`
 的 `_pad_stick_nav` 與 `ui/admin_password.gd` 的 `_stick_direction`，
 死區 ±0.5、邊沿觸發不連發、回中立區才能推下一次）；三款遊戲內的移動走
@@ -130,9 +129,8 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   文字，背景是暫停定格的遊戲場景，三款共用一份）、
   `ui/leaderboard_panel.gd`（通用排行榜面板：大標題 YOUR SCORE＋前 10 名
   單欄＋底部當前玩家行，進入時逐行交錯顯現，三款共用一份，一律只讀）、
-  `ui/admin_clear_menu.gd`（管理員的排行榜清除選單：一級標題按 B 進入）、
   `ui/name_input.gd`（姓名輸入屏：街機虛擬鍵盤，搖杆＋按鍵操作，見「起名」）。
-- **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_CLEAR }`。
+- **流程控制在 launcher**：`enum Mode { MENU, GAME_TITLE, NAME_INPUT, PLAYING, GAME_OVER, LEADERBOARD, SETTING, SETTING_GAME, SETTING_CLEAR }`。
   標題層：一級畫 `assets/title/Title_ChooseGames.png` 全屏圖、另把遊戲選擇
   清單（名字）用 draw_string 疊在圖上；**二級的背景是該款的全屏影片**
   （`assets/title/TItleVideo/Title_*.ogv`，2026-08 從靜態圖改成影片當背景
@@ -157,17 +155,13 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   分數格式；排名是本局實際名次、可能 >10）—— 不管本局有沒有進前 10
   都會顯示。**配色（2026-09 企劃指定）**：前十名行文字 = MOON（#A0DCFF）、
   大標題與底部當前玩家行 = MOON_LIGHT（#90FFFF，色盤為此新增的第 21 色）。
-- **清除功能在管理員一級標題**（2026-08 從排行榜面板搬過來，面板一律只讀、
-  玩家端沒有清除入口）：一級標題選中某款後按 **B** 進該款的清除選單
-  （`ui/admin_clear_menu.gd`，Modal Overlay，開著時標題層不處理任何按鍵）。
-  五種規則 **LAST 1 HOUR／LAST 4 HOURS／TODAY／BEFORE TODAY／ALL DATA**，
-  **← →** 循環選（選中的高亮）、**A** 進二次確認（顯示
-  `DELETE <GAME> SCORE DATA?` 與所選規則）、**A** 執行、**B／ESC** 逐層取消；
-  執行完回一級標題並顯示成功提示。統一走
-  `LeaderboardManager.clear_records(game_id, ClearRule)`，**只影響當前
-  選中的那款**，不跨遊戲。時間判定用 played_at／played_date 字串字典序
-  （定寬零填充，字典序即時間序），TODAY／BEFORE TODAY 以本地 00:00 為界、
-  LAST 1/4 HOURS 以「現在往前 1/4 小時」為界 —— 記錄本來就有時間欄位，
+- **清除功能只在 SETTING 選單**（面板一律只讀、玩家端沒有清除入口）。
+  原「一級標題選中某款後按 **B** 進該款清除選單」（`ui/admin_clear_menu.gd`，
+  2026-08 從排行榜面板搬過來、五種規則 LAST 1 HOUR／LAST 4 HOURS／TODAY／
+  BEFORE TODAY／ALL DATA 加二次確認）已於 **2026-09 拆除** —— 檔案與
+  launcher 的 `_clear_modal` 接線整段移除，一級標題 B 鍵自此沒有任何功能。
+  時間判定用 played_at／played_date 字串字典序
+  （定寬零填充，字典序即時間序）—— 記錄本來就有時間欄位，
   不需要另加 timestamp。面板時代的跨遊戲日期清除
   （`clear_records_by_date` 與今天／昨天／前天三個 wrapper）已無 UI 入口，
   保留作為通用工具（sim 第 6 節仍驗證）。
@@ -184,16 +178,19 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   正在播的曲子（曲名照記，各處 play_bgm 調用點不用改）；切換當下由
   `AudioManager.apply_music_setting()` 立即停／續（打開時接續播回當前
   場合的 BGM）。預設 ON。
-  **CLEAR LEADERBOARD** 按 A 進三級
-  清除選單：**CLEAR TODAY／CLEAR LAST 24 HOURS／CLEAR ALL DATA**，↑ ↓ 選擇、
-  A **執行**（無二次確認）、B/ESC 回二級，執行完顯示 SCORE DATA CLEARED
-  提示並留在二級。**清除統一走 `LeaderboardManager.clear_all_games_records(
-  ClearRule)`，執行時跨 Maze／Fishing／Catch 三款一起清**，不接受 game_id；
-  規則只吃 TODAY（今天 00:00 之後）／LAST_24_HOURS（現在往前 24 小時）／
-  ALL（全部）。時間判定沿用 played_at／played_date 字串字典序，
-  LAST_24_HOURS 是 ClearRule 新追加的末位值（不影響舊的五種規則索引）。
-  一級標題按 B 的舊單遊戲清除選單（`ui/admin_clear_menu.gd`）原樣保留，
-  兩條清除路徑並存。
+  **CLEAR LEADERBOARD** 按 A 進**三級「選哪一款」清除選單**（2026-09 改版，
+  原本是直接進規則選單跨三款一起清）：**CLEAR MAZE DATA／CLEAR FISHING DATA／
+  CLEAR CATCH DATA**（選項由 launcher 從 `GAMES` 的 `menu_name` 組出，新增
+  遊戲自動多一行），↑ ↓ 選擇、A 進**四級規則選單**、B/ESC 回二級。
+  四級：**CLEAR TODAY／CLEAR LAST 24 HOURS／CLEAR ALL DATA**，↑ ↓ 選擇、
+  A **執行**（無二次確認）、B/ESC 回三級；執行完顯示
+  `<遊戲短名> SCORE DATA CLEARED` 提示並**回二級**（選擇狀態保留）。
+  **執行走 `LeaderboardManager.clear_records(game_id, ClearRule)`，只清
+  三級選中的那款**；規則只吃 TODAY（今天 00:00 之後）／LAST_24_HOURS
+  （現在往前 24 小時）／ALL（全部）。時間判定沿用 played_at／played_date
+  字串字典序，LAST_24_HOURS 是 ClearRule 末位值（不影響舊的五種規則索引）。
+  跨三款一起清的 `clear_all_games_records(ClearRule)` 自此**沒有 UI 入口**，
+  保留作為通用工具（sim 仍驗證）。
 - **排序**：score 降冪 → played_at 升冪 → record_id 升冪（同分先玩的高，
   第三鍵兜底排序確定性）。記錄 ID 由時間戳＋引擎毫秒＋**序號**＋隨機尾碼組成
   —— 序號在同一次執行內嚴格遞增，同毫秒連續提交也不撞（300 筆連發的
@@ -281,7 +278,6 @@ res://
 ├── ui/
 │   ├── game_over.gd        局終 Game Over 動畫（只淡入淡出文字，背景＝暫停定格的遊戲場景）
 │   ├── leaderboard_panel.gd 排行榜面板（YOUR SCORE 標題＋前 10 名單欄＋底部玩家行）
-│   ├── admin_clear_menu.gd 管理員排行榜清除選單（一級標題按 B 進入）
 │   ├── name_input.gd       起名：街機虛擬鍵盤
 │   └── admin_password.gd   管理員密碼界面（二級標題 A＋B 長按進入，方向指令密碼）
 ├── tools/sim/              平衡模擬腳本（見該目錄 README）
