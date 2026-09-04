@@ -47,10 +47,11 @@ const LANE_MIN_GAP := 0.6           # 同一軌道連續生成的最小間隔
 const SPAWN_Y := -10.0
 const KILL_Y := 270.0               # 掉到這條線以下就算漏接（= 判定框底邊＝螢幕最底）
 
-# ── 生命與護盾 ──────────────────────────────────────────
+# ── 生命與月光能量 ──────────────────────────────────────
 const START_LIVES := 3
-const SHIELD_TIME := 8.0
-const SHIELD_WARN := 2.0            # 剩 2 秒開始閃爍
+# 月光能量（2026-09）：護盾功能取消，純加分道具 —— 接到 +150（吃 Combo 倍率），
+# 漏接跟其他有價物一樣斷 Combo；仍是每局最多出現 MOON_MAX_PER_ROUND 個的稀有物。
+const MOON_SCORE := 150
 const MOON_MAX_PER_ROUND := 3       # 每局最多出現 3 個月光能量
 
 # ── Combo ───────────────────────────────────────────────
@@ -113,7 +114,6 @@ var luna_vx := 0.0                  # 目前的水平速度，慣性用
 var _hold_t := 0.0                  # 長按同一方向幾秒了（加速用）
 var _hold_dir := 0.0                # 目前按住的方向；放開或換向就把 _hold_t 歸零
 
-var shield_left := 0.0
 var moons_spawned := 0
 
 var drops: Array[Drop] = []
@@ -127,8 +127,6 @@ var _pop_text := ""
 var _pop_col := Color.WHITE
 var _pop_timer := 0.0
 var _pop_at := Vector2.ZERO
-
-var _prev_burst := false
 
 # Game feel（見 shared/juice.gd）。位移只作用在繪製，不碰任何遊戲數值。
 var _juice := Juice.new(Juice.ARCADE)
@@ -302,7 +300,6 @@ func _start_round() -> void:
 	luna_vx = 0.0
 	_hold_t = 0.0
 	_hold_dir = 0.0
-	shield_left = 0.0
 	moons_spawned = 0
 	drops.clear()
 	_lane_last.clear()
@@ -416,7 +413,6 @@ func _tick_play(delta: float) -> void:
 		_juice.kick(0.32)          # 每 15 秒一次的段落推進，給一個節奏點
 
 	_move_luna(delta)
-	_tick_shield(delta)
 	_tick_spawn(delta)
 	_move_drops(delta)
 
@@ -469,37 +465,6 @@ func _move_luna(delta: float) -> void:
 	else:
 		_at_wall = false
 	luna_x = clamped
-
-	# 主動引爆護盾：清掉畫面上所有炸彈但不加分。
-	# B（鍵盤 S／手柄 B；X 也接受）—— 2026-09 鍵盤 B 的邏輯改到 S。
-	var burst := Input.is_key_pressed(KEY_X) or ArcadeInput.held(ArcadeInput.ACTION_B)
-	if burst and not _prev_burst:
-		_burst_shield()
-	_prev_burst = burst
-
-
-func _burst_shield() -> void:
-	if shield_left <= 0.0:
-		return
-	var cleared := 0
-	var kept: Array[Drop] = []
-	for d in drops:
-		if d.kind == Kind.BOMB:
-			cleared += 1
-		else:
-			kept.append(d)
-	drops = kept
-	shield_left = 0.0
-	if cleared > 0:
-		_juice.kick(minf(0.45 + 0.06 * cleared, 0.80))
-		_juice.freeze(0.12)
-		_fx.burst(Vector2(luna_x, LUNA_Y - 12.0), 24, Palette.MOON, 140.0, 0.7, 3.0, 0.35)
-		_pop("BURST! x%d" % cleared, Palette.MOON, Vector2(240, 150))
-
-
-func _tick_shield(delta: float) -> void:
-	if shield_left > 0.0:
-		shield_left = maxf(0.0, shield_left - delta)
 
 
 ## 融合物件的貼圖尺寸。判定框、邊界內縮、生成可及性計算都從這裡出，
@@ -662,40 +627,27 @@ func _move_drops(delta: float) -> void:
 func _on_caught(d: Drop) -> void:
 	match d.kind:
 		Kind.BOMB:
-			AudioManager.play_sfx("catch_boom")      # 接到炸彈（護盾擋下也是接到）
-			if shield_left > 0.0:
-				shield_left = 0.0          # 護盾擋掉一顆炸彈後消失
-				_juice.kick(0.50)
-				_juice.freeze(0.10)
-				_fx.burst(d.pos, 18, Palette.MOON, 105.0, 0.55, 3.0, 0.5)
-				_pop("BLOCKED", Palette.MOON, d.pos)
-			else:
-				lives -= 1
-				_play_oneshot(PAnim.HURT)   # 接到炸彈扣命：受傷動畫播一次再回 Idle
-				# 剛失去的那顆愛心播「1 秒放大 1.5 倍＋淡出」（格位 = 少掉後的 lives）
-				_heart_fade = 1.0
-				_heart_fade_slot = lives
-				combo = 0
-				multiplier = 1
-				_flash = 0.28
-				_juice.kick(0.95)
-				_juice.freeze(0.14)
-				# 炸開：暖橘的火花 ＋ 暗紫的碎片
-				_fx.burst(d.pos, 20, Palette.WARN, 135.0, 0.55, 3.0, 0.8)
-				_fx.burst(d.pos, 12, Palette.CAT_GLOW, 90.0, 0.7, 2.0, 0.9)
-				_pop("-1 LIFE", Palette.WARN, d.pos)
-				if lives <= 0:
-					state = State.RESULT
-					_score_shown = 0.0
-					_finish_round()
-		Kind.MOON:
-			shield_left = SHIELD_TIME
-			_juice.kick(0.30)
-			_juice.freeze(0.05)
-			_catch_squash = 1.0
-			_fx.burst(d.pos, 14, Palette.MOON, 80.0, 0.6, 3.0, 0.3)
-			_pop("SHIELD 8s", Palette.MOON, d.pos)
+			AudioManager.play_sfx("catch_boom")      # 接到炸彈
+			lives -= 1
+			_play_oneshot(PAnim.HURT)   # 接到炸彈扣命：受傷動畫播一次再回 Idle
+			# 剛失去的那顆愛心播「1 秒放大 1.5 倍＋淡出」（格位 = 少掉後的 lives）
+			_heart_fade = 1.0
+			_heart_fade_slot = lives
+			combo = 0
+			multiplier = 1
+			_flash = 0.28
+			_juice.kick(0.95)
+			_juice.freeze(0.14)
+			# 炸開：暖橘的火花 ＋ 暗紫的碎片
+			_fx.burst(d.pos, 20, Palette.WARN, 135.0, 0.55, 3.0, 0.8)
+			_fx.burst(d.pos, 12, Palette.CAT_GLOW, 90.0, 0.7, 2.0, 0.9)
+			_pop("-1 LIFE", Palette.WARN, d.pos)
+			if lives <= 0:
+				state = State.RESULT
+				_score_shown = 0.0
+				_finish_round()
 		_:
+			# 有價物（珠寶／星塵／Charm／月光能量，2026-09 起月亮也是純加分）
 			AudioManager.play_sfx("catch_item")      # 接到會加分的掉落物
 			var base := _base_score(d.kind)
 			var was_mult := multiplier
@@ -710,6 +662,10 @@ func _on_caught(d: Drop) -> void:
 					_juice.kick(0.45)
 					_juice.freeze(0.09)
 					_fx.burst(d.pos, 20, Palette.GOLD, 110.0, 0.7, 3.0, 0.6)
+				Kind.MOON:
+					_juice.kick(0.30)
+					_juice.freeze(0.05)
+					_fx.burst(d.pos, 14, Palette.MOON, 80.0, 0.6, 3.0, 0.3)
 				Kind.STARDUST:
 					_juice.kick(0.12)
 					_fx.burst(d.pos, 8, Palette.PEARL, 70.0, 0.45, 2.0, 0.7)
@@ -724,8 +680,9 @@ func _on_caught(d: Drop) -> void:
 
 
 func _on_missed(d: Drop) -> void:
-	# 漏接有價物才斷 Combo；炸彈與月光能量漏掉沒有懲罰
-	if d.kind == Kind.BOMB or d.kind == Kind.MOON:
+	# 漏接有價物才斷 Combo；炸彈漏掉沒有懲罰（月光能量 2026-09 起也是純加分，
+	# 屬於有價物 —— 漏掉照樣斷）
+	if d.kind == Kind.BOMB:
 		return
 	if combo > 0:
 		_juice.kick(0.32, Vector2.DOWN)
@@ -743,6 +700,8 @@ func _base_score(kind: int) -> int:
 			return 50
 		Kind.STARDUST:
 			return 100
+		Kind.MOON:
+			return MOON_SCORE
 		Kind.CHARM:
 			return 300
 	return 0
@@ -833,12 +792,6 @@ func _draw_luna() -> void:
 		var r := 18.0 + t * 8.0 + sin(Time.get_ticks_msec() / 1000.0 * 6.0) * 1.5
 		draw_arc(Vector2(cx, LUNA_Y - 12), r, 0.0, TAU, 28,
 			Color(Palette.GOLD, 0.25 + t * 0.45), 1.0)
-
-	# 護盾光圈，剩 2 秒開始閃爍
-	if shield_left > 0.0:
-		var show := shield_left > SHIELD_WARN or fmod(shield_left, 0.24) < 0.12
-		if show:
-			draw_arc(Vector2(cx, LUNA_Y - 12), 20.0, 0.0, TAU, 24, Palette.MOON, 1.0)
 
 
 func _draw_luna_body(cx: float, cy: float) -> void:

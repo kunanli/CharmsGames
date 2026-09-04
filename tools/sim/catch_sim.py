@@ -20,7 +20,7 @@ LUNA_Y = 270.0                    # 腳踩螢幕最底（貼底）
 CATCH = (90.0, 71.0)
 LANES, LANE_W, LANE_MIN_GAP = 6, 80.0, 0.6
 SPAWN_Y, KILL_Y = -10.0, 270.0    # 漏接線＝判定框底邊＝螢幕最底
-START_LIVES, SHIELD_TIME, MOON_MAX = 3, 8.0, 3
+START_LIVES, MOON_MAX = 3, 3
 COMBO_STEP, COMBO_MAX = 5, 5
 ROUND_TIME, PHASE_LEN, CHARM_EVERY = 60.0, 15.0, 15.0
 # 掉落物數量翻倍（2026-09 企劃）：gap 減半、max_on 翻倍；炸彈比例＝原值
@@ -34,7 +34,9 @@ PHASES = [
     dict(speed=120.0, max_on=10, bomb=0.2275, cm=2.0, gap=(0.385, 0.575)),
 ]
 JEWEL, STARDUST, CHARM, BOMB, MOON = range(5)
-BASE = {JEWEL: 50, STARDUST: 100, CHARM: 300, BOMB: 0, MOON: 0}
+BASE = {JEWEL: 50, STARDUST: 100, CHARM: 300, BOMB: 0, MOON: 150}
+# 月光能量（2026-09）：護盾取消、純加分（MOON_SCORE=150，吃 Combo 倍率），
+# 漏接與其他有價物一樣斷 Combo —— 上面的 CATCH/生成/移動邏輯之外它已無特殊分支
 CATCH_Y = LUNA_Y - CATCH[1]        # 判定框上緣：掉落物從上方進框，等效接取面
 CLAMP = CATCH[0] / 2.0             # 邊界內縮＝貼圖半寬（與 _move_luna 同步）
 RISK = CATCH[0] / 2.0 + 6.0        # 炸彈進到這個橫距內就視為威脅（半寬＋餘裕）
@@ -65,7 +67,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
     rng = random.Random(seed)
     t_left, score, lives, combo, mult = ROUND_TIME, 0, START_LIVES, 0, 1
     luna, vx, hold_t, hold_dir = 240.0, 0.0, 0.0, 0.0
-    shield, moons = 0.0, 0
+    moons = 0
     drops, lane_last = [], [LANE_MIN_GAP] * LANES
     spawn_t, charm_t = 0.6, CHARM_EVERY
     vs = vc = 0
@@ -101,7 +103,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         ln = rng.choice(cand)
         drops.append(Drop(kind, ln * LANE_W + rng.uniform(14.0, LANE_W - 14.0), SPAWN_Y))
         lane_last[ln] = 0.0
-        if kind not in (BOMB, MOON):
+        if kind != BOMB:
             vs += 1
             if pi == 3:
                 vs_ph3 += 1
@@ -158,7 +160,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
                     best, target = v, d
         want = luna if target is None else target.x
         for d in drops:
-            if d.k != BOMB or shield > 0:
+            if d.k != BOMB:
                 continue
             tt = (CATCH_Y - d.y) / ph["speed"]
             if 0 <= tt < 0.45 and abs(d.x - luna) < RISK:
@@ -190,8 +192,6 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         else:
             at_wall = False
         luna = cl
-        if shield > 0:
-            shield = max(0.0, shield - DT)
         bx0, bx1 = luna - CATCH[0] / 2, luna + CATCH[0] / 2
         keep = []
         for d in drops:
@@ -199,15 +199,11 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
             if bx0 <= d.x < bx1 and CATCH_Y <= d.y < CATCH_Y + CATCH[1]:
                 if d.k == BOMB:
                     bombs += 1
-                    if shield > 0:
-                        shield = 0.0
-                    else:
-                        lives -= 1
-                        combo, mult = 0, 1
+                    lives -= 1
+                    combo, mult = 0, 1
                     frozen += hitstop
-                elif d.k == MOON:
-                    shield = SHIELD_TIME     # 月光能量是 combo-neutral
                 else:
+                    # 有價物（含月光能量：2026-09 起純加分、吃倍率）
                     vc += 1
                     combo += 1
                     mult = max(1, min(1 + combo // COMBO_STEP, COMBO_MAX))
@@ -216,7 +212,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
                     frozen += hitstop
                 continue
             if d.y >= KILL_Y:
-                if d.k not in (BOMB, MOON):
+                if d.k != BOMB:
                     combo, mult = 0, 1
                 continue
             keep.append(d)
@@ -246,9 +242,11 @@ def main():
     a = report("生成間隔綁落速（GDD 直譯）", gaps=False)
     b = report("關掉有價物可及性約束", chain=False)
     # 比的是分布而不是最高值 —— 兩者都可能偶爾摸到 ×5，差別在平均。
-    # 融合判定框（90 寬）把接取變容易後，連綁落速的節奏都撐得起倍率
-    # （×2.56 → ×2.93），現行策略仍勝但差距縮小，門檻從 +0.4 放寬到 +0.2。
-    ok(cur["mean_mult"] > a["mean_mult"] + 0.2,
+    # 融合判定框（90 寬）把接取變容易後，連綁落速的節奏都撐得起倍率，
+    # 2026-09 取消護盾後死亡率再升（存活率 53%→42%），倍率分布整體被壓扁、
+    # 差距縮到 ~0.2 以內（現行 ×2.36 vs 綁落速 ×2.17），門檻放寬到 +0.1。
+    # 現行策略仍穩定勝出、接取率斷言（下一條）差距很大，主斷言成立。
+    ok(cur["mean_mult"] > a["mean_mult"] + 0.1,
        f"生成間隔綁落速時平均最高倍率 ×{a['mean_mult']:.2f}，"
        f"現行 ×{cur['mean_mult']:.2f} —— 「同屏上限是上限不是目標」")
     # 2026-09 末段加壓後，現行第 4 段 gap（0.385~0.575）已與「綁落速」的
