@@ -162,6 +162,12 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   厚度 1 邏輯 px＝1920 設計 4px）：maze＝ACCENT_MAZE #D80E85／
   fishing＝ACCENT_FISHING #123BF4／catch＝ACCENT_CATCH #A40CE8
   （色盤為此新增三色，21→24 色）。
+- **新紀錄煙花（2026-09）**：本局排名 1~3 時，排行榜面板從**玩家行顯現
+  的那一刻**起全屏**循環播放** `assets/AnimationScene/UI_Animate/new_record.tscn`
+  （`ui/leaderboard_panel.gd` 內實例化：素材 1600×900 等比縮到 480×270
+  全屏、線性濾鏡；60 幀 @20fps 自帶循環），**直到 B/ESC 關閉排行榜** ——
+  面板釋放時煙花跟著一起消失。第 4 名以後不播；素材缺檔或場景結構不符
+  時靜默跳過。
 - **清除功能只在 SETTING 選單**（面板一律只讀、玩家端沒有清除入口）。
   原「一級標題選中某款後按 **B** 進該款清除選單」（`ui/admin_clear_menu.gd`，
   2026-08 從排行榜面板搬過來、五種規則 LAST 1 HOUR／LAST 4 HOURS／TODAY／

@@ -24,6 +24,10 @@ extends Node2D
 #     底部當前玩家行 = 各款指定色文字＋**白邊**（8 方向整字偏移各畫一遍
 #     白字當外框，厚度 OUTLINE_PX＝1 邏輯 px，即 1920 設計 4px）：
 #     maze #D80E85／fishing #123BF4／catch #A40CE8。
+#   - **新紀錄煙花（2026-09）**：本局排名 1~3 時，玩家行顯現的那一刻起
+#     全屏**循環播放** assets/AnimationScene/UI_Animate/new_record.tscn
+#     （素材 1600×900 等比縮到 480×270 全屏，60 幀 @20fps 自帶循環），
+#     直到 B/ESC 關閉排行榜為止 —— 第 4 名以後不播。
 #
 # 按鍵：
 #   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱；
@@ -72,6 +76,15 @@ var _rank := -1
 var _elapsed := 0.0
 var _anim_done := false
 
+# ── 新紀錄煙花（1~3 名限定，見檔頭說明）────────────────────
+const FIREWORK_SCENE := "res://assets/AnimationScene/UI_Animate/new_record.tscn"
+const FIREWORK_FADE_IN := 0.25     # 淡入（與 ReadyGo 同款）
+const FIREWORK_CENTER := Vector2(240, 135)   # 邏輯畫面正中
+const FIREWORK_SCALE := 0.3        # 素材 1600×900 → 480×270 全屏
+
+var _fw_sprite: AnimatedSprite2D
+var _fw_started := false
+
 
 func _ready() -> void:
 	_bg = load("res://assets/UI/LeaderBoard/rank-%s.png" % game_id)
@@ -81,11 +94,15 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if _anim_done:
-		return
-	_elapsed += delta
-	_anim_done = _elapsed >= _player_delay() + ROW_FADE
-	queue_redraw()
+	if not _anim_done:
+		_elapsed += delta
+		_anim_done = _elapsed >= _player_delay() + ROW_FADE
+		queue_redraw()
+	# 新紀錄煙花（1~3 名限定）：玩家行顯現的那一刻起播，
+	# 循環播放直到面板關閉（B/ESC 時整個面板連煙花一起釋放）
+	if _rank >= 1 and _rank <= 3:
+		if not _fw_started and _elapsed >= _player_delay():
+			_start_fireworks()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -233,3 +250,35 @@ func _ordinal(i: int) -> String:
 func _center(font: Font, text: String, y: float, size: int, col: Color) -> void:
 	draw_string(font, Vector2(0, y), text,
 		HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, size, col)
+
+
+# ── 新紀錄煙花（1~3 名限定）────────────────────────────────
+
+## 全屏循環播放 new_record.tscn，直到面板關閉。素材缺檔或場景結構
+## 不符時靜默跳過，不影響排行榜本體（與 ReadyGo 同一套容錯思路）。
+func _start_fireworks() -> void:
+	_fw_started = true
+	var scene := load(FIREWORK_SCENE)
+	if scene == null:
+		return
+	var root := scene.instantiate() as Node2D
+	if root == null:
+		return
+	# tscn 結構：Node2D「NewRecord」下只有一顆 AnimatedSprite2D
+	# （newrecord：60 幀 @20fps，素材自帶循環 —— 一直循環到面板關閉）
+	for child in root.get_children():
+		if child is AnimatedSprite2D:
+			_fw_sprite = child
+	if _fw_sprite == null:
+		root.queue_free()
+		return
+	_fw_sprite.centered = true
+	_fw_sprite.position = FIREWORK_CENTER
+	_fw_sprite.scale = Vector2(FIREWORK_SCALE, FIREWORK_SCALE)
+	# 1600×900 縮到 480×270：面板的 NEAREST 會把光暈縮成碎點，煙花用線性濾鏡
+	_fw_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_fw_sprite.modulate.a = 0.0      # 先全透明再淡入，避免閃出儲存的最後一幀
+	add_child(root)                  # 子節點畫在面板 _draw 之上：蓋住底圖與文字
+	_fw_sprite.frame = 0
+	_fw_sprite.play()                # 播 tscn 指定的 newrecord 動畫（循環）
+	create_tween().tween_property(_fw_sprite, "modulate:a", 1.0, FIREWORK_FADE_IN)
