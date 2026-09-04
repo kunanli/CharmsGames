@@ -531,18 +531,24 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(25, 37), "%d:%02d" % [secs / 60, secs % 60],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, tsize, time_col)
 
-	# 中：分數（滾動中的值，不是瞬間跳到位）。背景框在 1920×1080 設計座標
-	# (768,70)、文字 baseline (990,92)，除以 4 到邏輯畫面（同 launcher 慣例）。
+	# 右：分數（滾動中的值，不是瞬間跳到位）。與 fishing 同位 —— 背景框
+	# 右緣對齊 480-12，只動 X、Y 不變（框 17.5／文字 34.0）。
 	var fsize := s_score_frame.get_size() / 4.0
-	draw_texture_rect(s_score_frame, Rect2(192.0, 17.5, fsize.x, fsize.y), false)
-	draw_string(font, Vector2(213.0, 34.0), " %06d" % int(round(_score_shown)),
+	var fx := 480.0 - 12.0 - fsize.x
+	draw_texture_rect(s_score_frame, Rect2(fx, 17.5, fsize.x, fsize.y), false)
+	# 分數本體下面先畫一層右下偏移 1 邏輯 px 的 NIGHT 陰影。整字平移疊畫
+	# 而不是 draw_string_outline()：像素字低尺寸光柵外框會毛邊（同排行榜白邊做法）。
+	draw_string(font, Vector2(fx + 24.0, 35.0), "%06d" % int(round(_score_shown)),
+		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.NIGHT)
+	draw_string(font, Vector2(fx + 23.0, 34.0), "%06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.LUNA)
 
-	# 右：生命愛心。HEART.png（80×68 設計稿 ÷4 = 20×17）。剛失去的那顆播
+	# 中：生命愛心（接手原本分數框的畫面居中位置，整排以 x=240 置中）。
+	# HEART.png（80×68 設計稿 ÷4 = 20×17）。剛失去的那顆播
 	# 1 秒「放大 1.5 倍＋淡出」，播完後與其他空位一樣畫成暗色愛心。
 	var heart_size := s_heart_ui.get_size() / 4.0
 	for i in START_LIVES:
-		var c := Vector2(404 + i * 22, 30)
+		var c := Vector2(240.0 - 22.0 + i * 22.0, 30)
 		if i < lives:
 			_draw_heart(c, heart_size, 1.0)
 		elif i == _heart_fade_slot and _heart_fade > 0.0:

@@ -969,6 +969,10 @@ func _draw_hud() -> void:
 	var fsize := s_score_frame.get_size() / 4.0
 	var fx := SCREEN.x - 12.0 - fsize.x
 	draw_texture_rect(s_score_frame, Rect2(fx, 17.5, fsize.x, fsize.y), false)
+	# 分數本體下面先畫一層右下偏移 1 邏輯 px 的 NIGHT 陰影。整字平移疊畫
+	# 而不是 draw_string_outline()：像素字低尺寸光柵外框會毛邊（同排行榜白邊做法）。
+	draw_string(font, Vector2(fx + 24.0, 35.0), "%06d" % int(round(_score_shown)),
+		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.NIGHT)
 	draw_string(font, Vector2(fx + 23.0, 34.0), "%06d" % int(round(_score_shown)),
 		HORIZONTAL_ALIGNMENT_CENTER, fsize.x, 12, Palette.LUNA)
 
