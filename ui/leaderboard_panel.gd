@@ -18,11 +18,12 @@ extends Node2D
 #       排名 1ST./2ND./…（X≈370）、玩家名字（X≈620）、分數（X≈1255）。
 #   - 進入面板時**逐行交錯顯現**：淡入＋從左滑入，每行錯開 ROW_STAGGER 秒，
 #     只播一次；底部當前玩家行最後顯現。
-#   - 畫面最底部是**當前玩家**的成績行（MOON_LIGHT 高亮，同樣排名／
-#     名字／分數格式；排名是本局實際名次，可能 >10）—— 不管本局有沒有
-#     進前 10 都會顯示。
-#   - 配色（2026-09 企劃指定）：前十名行文字 = MOON（#A0DCFF），
-#     大標題與底部當前玩家行 = MOON_LIGHT（#90FFFF，色盤新增色）。
+#   - 畫面最底部是**當前玩家**的成績行（同樣排名／名字／分數格式；
+#     排名是本局實際名次，可能 >10）—— 不管本局有沒有進前 10 都會顯示。
+#   - 配色（2026-09 企劃指定）：前十名行文字 = 白（TEXT）；大標題與
+#     底部當前玩家行 = 各款指定色文字＋**白邊**（8 方向整字偏移各畫一遍
+#     白字當外框，厚度 OUTLINE_PX＝1 邏輯 px，即 1920 設計 4px）：
+#     maze #D80E85／fishing #123BF4／catch #A40CE8。
 #
 # 按鍵：
 #   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱；
@@ -50,6 +51,12 @@ const RANK_X := 92.5              # 排名欄左緣 (1920: 370)
 const NAME_X := 155.0             # 名字欄左緣 (1920: 620)
 const SCORE_X := 313.75           # 分數欄左緣 (1920: 1255)
 const PLAYER_BASELINE := 256.0    # 底部當前玩家行基線 (1920: 1024)
+const OUTLINE_PX := 1.0           # 白邊厚度（1 邏輯 px＝4 倍放大後實際 4px＝1920 設計 4px）
+const OUTLINE_OFFSETS := [        # 8 方向白邊的偏移（含斜角，字角的外框才連續）
+	Vector2(-1.0, -1.0), Vector2(0.0, -1.0), Vector2(1.0, -1.0),
+	Vector2(-1.0, 0.0), Vector2(1.0, 0.0),
+	Vector2(-1.0, 1.0), Vector2(0.0, 1.0), Vector2(1.0, 1.0),
+]
 
 # 交錯顯現動畫（進入時只播一次）
 const TITLE_DELAY := 0.10
@@ -130,9 +137,10 @@ func _draw() -> void:
 
 	var t := _reveal(TITLE_DELAY)
 	if t["alpha"] > 0.0:
-		_center(font, "YOUR SCORE",
-			TITLE_CENTER_Y + font.get_ascent(TITLE_SIZE) / 2.0,
-			TITLE_SIZE, Color(Palette.MOON_LIGHT, t["alpha"]))
+		var ty := TITLE_CENTER_Y + font.get_ascent(TITLE_SIZE) / 2.0
+		_draw_outlined(font, Vector2(0.0, ty), "YOUR SCORE",
+			HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x, TITLE_SIZE,
+			_accent_color(), t["alpha"])
 
 	if _total == 0:
 		var e := _reveal(ROW_DELAY)
@@ -156,7 +164,7 @@ func _draw_rows(font: Font) -> void:
 			continue
 		var r: LeaderboardRecord = _records[i]
 		var y := ROW_CENTER_Y + font.get_ascent(ROW_FONT) / 2.0 + i * ROW_PITCH
-		var col := Color(Palette.MOON, e["alpha"])
+		var col := Color(Palette.TEXT, e["alpha"])
 		var dx: float = e["dx"]
 		draw_string(font, Vector2(RANK_X + dx, y), _ordinal(i + 1),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
@@ -166,21 +174,48 @@ func _draw_rows(font: Font) -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
 
 
-## 底部當前玩家行：最後顯現、MOON_LIGHT 高亮。排名是本局的實際名次
+## 底部當前玩家行：最後顯現，各款主色字＋白邊。排名是本局的實際名次
 ## （可能 >10；找不到記錄時顯示 -- 兜底）。
 func _draw_player_row(font: Font) -> void:
 	var e := _reveal(_player_delay())
 	if e["alpha"] <= 0.0:
 		return
-	var col := Color(Palette.MOON_LIGHT, e["alpha"])
 	var dx: float = e["dx"]
 	var rank_text := _ordinal(_rank) if _rank > 0 else "--"
-	draw_string(font, Vector2(RANK_X + dx, PLAYER_BASELINE), rank_text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
-	draw_string(font, Vector2(NAME_X + dx, PLAYER_BASELINE), player_name,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
-	draw_string(font, Vector2(SCORE_X + dx, PLAYER_BASELINE), "%d" % score,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, col)
+	var cells := [
+		[Vector2(RANK_X, PLAYER_BASELINE), rank_text],
+		[Vector2(NAME_X, PLAYER_BASELINE), player_name],
+		[Vector2(SCORE_X, PLAYER_BASELINE), "%d" % score],
+	]
+	for c in cells:
+		_draw_outlined(font, c[0] + Vector2(dx, 0.0), c[1],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, ROW_FONT, _accent_color(), e["alpha"])
+
+
+## 各款排行榜的主色（2026-09 企劃指定，maze＝seeker）。
+## 未知 game_id 退回白色 TEXT，保證文字在深色底圖上可讀。
+func _accent_color() -> Color:
+	match game_id:
+		"seeker":
+			return Palette.ACCENT_MAZE
+		"fishing":
+			return Palette.ACCENT_FISHING
+		"catch":
+			return Palette.ACCENT_CATCH
+	return Palette.TEXT
+
+
+## 白邊字：先以 8 方向偏移各畫一遍白字當外框（OUTLINE_PX 厚），再畫
+## 主色文字蓋上；兩層同一個 alpha，跟交錯顯現動畫同步。
+## 用整字平移而不是 draw_string_outline()：像素字體在低尺寸下光柵
+## 外框會毛邊，整字平移疊出來的外框才是乾淨的像素階梯。
+func _draw_outlined(font: Font, pos: Vector2, text: String,
+		alignment: HorizontalAlignment, width: float, size: int,
+		col: Color, alpha: float) -> void:
+	var white := Color(Palette.TEXT, alpha)
+	for off in OUTLINE_OFFSETS:
+		draw_string(font, pos + off * OUTLINE_PX, text, alignment, width, size, white)
+	draw_string(font, pos, text, alignment, width, size, Color(col, alpha))
 
 
 ## 1ST.／2ND.／3RD.／4TH.…（英文序數＋句點）。

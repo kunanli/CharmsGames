@@ -49,6 +49,17 @@ static func consume_coin() -> bool:
 	return true
 
 
+## 起名中止的退幣（2026-09，name_input 空名按 B／← 發 aborted 後呼叫）：
+## 把開局閘門吃掉的那枚補回。無限投幣 ON 時閘門沒扣過幣，這裡也不補 ——
+## ON/OFF 在起名期間不會變（SETTING 只能從一級標題進），用當下開關判斷
+## 是安全的。只准用在「玩家主動中止起名」這一條路，其他流程動幣量走
+## add_coin／consume_coin。
+static func refund_start_cost() -> void:
+	if is_unlimited_coins():
+		return
+	coins += START_COST
+
+
 ## UNLIMITED COINS 開關的唯一事實在 Settings（跨執行保存），這裡轉讀。
 ## 遊戲流程統一走這個名字，不要各自直接呼叫 Settings。
 static func is_unlimited_coins() -> bool:

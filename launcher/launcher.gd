@@ -661,6 +661,7 @@ func _open_name_input() -> void:
 	ni.set("game_id", entry["id"])
 	ni.connect("confirmed", Callable(self, "_on_name_confirmed"))
 	ni.connect("cancelled", Callable(self, "_on_name_cancelled"))
+	ni.connect("aborted", Callable(self, "_on_name_aborted"))
 	_name_input = ni
 	add_child(ni)
 	mode = Mode.NAME_INPUT
@@ -680,6 +681,14 @@ func _on_name_cancelled() -> void:
 	mode = Mode.GAME_TITLE      # 取消起名 → 回二級標題（不是一級）
 	_begin_title()              # 回二級：啟動背景影片與標題 BGM
 	queue_redraw()
+
+
+## 起名中止（2026-09：街機端名字為空時按 B／S／鍵盤 ← 鈕）：先把開局閘門
+## 吃掉的那枚幣退回 CoinManager（無限投幣 ON 時閘門沒扣過幣，refund 自動
+## 不補），其餘與 ESC 取消相同 —— 回二級標題。ESC 取消不走這裡、不退幣。
+func _on_name_aborted() -> void:
+	CoinManager.refund_start_cost()
+	_on_name_cancelled()
 
 
 # ── F3 管理員密碼彈窗（Modal Overlay，不是主流程狀態）──

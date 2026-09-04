@@ -5,9 +5,9 @@ extends RefCounted
 # 三款共用色盤 v1 —— 對應 Guides/charms-palette.png
 #
 # 硬規則（美術規格書第三條）：**只用本檔列出的顏色**（原 20 色，
-# 2026-09 企劃指定新增 MOON_LIGHT 後為 21 色），不自行新增中間色、
-# 不用漸層、不用圖層混合產生新色。需要新色請先跟企劃討論再加進色盤，
-# 加了之後這支檔案要一起更新。
+# 2026-09 企劃指定新增 MOON_LIGHT 與排行榜主色三色 ACCENT_* 後
+# 為 24 色），不自行新增中間色、不用漸層、不用圖層混合產生新色。
+# 需要新色請先跟企劃討論再加進色盤，加了之後這支檔案要一起更新。
 #
 # 為什麼這麼嚴：480×270 用 4 倍整數放大，一個像素會變成螢幕上的
 # 4×4 方塊。色數一失控，8-bit 的質感就散了。
@@ -42,8 +42,13 @@ const CAT_EYE := Color("FFE066")    # 眼睛（全畫面唯一暖色，玩家靠
 # ── 收集物與 UI ─────────────────────────────────────────
 const PEARL := Color("F0E2B4")      # 星塵珍珠
 const GOLD := Color("FFD37A")       # Pandora 金／得分
-const MOON := Color("A0DCFF")       # 月光能量／石化／排行榜內文
-const MOON_LIGHT := Color("90FFFF") # 比 MOON 更亮的青：排行榜標題／玩家行（2026-09 企劃指定）
+const MOON := Color("A0DCFF")       # 月光能量／石化
+const MOON_LIGHT := Color("90FFFF") # 比 MOON 更亮的青（2026-09 企劃指定）
 const WARN := Color("FF9A6A")       # 警示／倒數 10 秒
-const TEXT := Color("F0F4FF")       # 文字主色
+const TEXT := Color("F0F4FF")       # 文字主色（白）
 const TEXT_DIM := Color("8890C0")   # 文字次要色
+
+# ── 排行榜主色（2026-09 企劃指定，一款一色：標題／玩家行文字）────
+const ACCENT_MAZE := Color("D80E85")     # maze（seeker）排行榜主色
+const ACCENT_FISHING := Color("123BF4")  # fishing 排行榜主色
+const ACCENT_CATCH := Color("A40CE8")    # catch 排行榜主色

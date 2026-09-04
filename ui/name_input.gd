@@ -12,37 +12,48 @@ extends Node2D
 # 畫面中央的虛擬鍵盤完成（不依賴系統鍵盤、不彈系統軟鍵盤）：
 #   ↑ ↓ ← →（搖杆）      移動選擇框；邊界夾住不繞行
 #   A（或 Enter／空白）   確認：選字元 → 加入名字；選 OK → 確認名字
-#   B（鍵盤 S）           刪除最後一個字元 —— 2026-09 鍵盤 B 邏輯改到 S
+#   B（鍵盤 S）／鍵盤 ←   刪除最後一個字元；名字已空 → 中止起名（aborted，
+#                         launcher 退回開局吃掉的那枚幣）—— 2026-09 鍵盤 B
+#                         邏輯改到 S，鍵盤上的 ← 鈕與 B 同義
 #   X                     清空全部（輸入框閃一下回饋）
 #   Y                     預留，暫無功能（結構已留好，未來直接掛）
-#   ESC                   取消 → cancelled
+#   ESC                   取消 → cancelled（不退幣；退幣的中止入口是上面
+#                         「名字為空時按 B／S／←」）
 # 同時也吃手把事件（十字鍵／左搖杆／A B X Y），實機可直接用手把測。
 #
 # 名字規則：只收 A-Z / 0-9，最多 MAX_NAME_LEN（9）字；名字為空時
 # 按 OK 只給回饋（輸入框閃＋OK 抖）不進下一階段。
-# 開啟時預設選中 OK：配合預設名 pandora，直接按 A 即可確認開局。
-# 鍵盤是資料驅動的：KEY_ROWS 就是全部按鍵，未來要加 DELETE／SPACE／
-# RANDOM 等按鍵，在對應列加一格字串即可，移動與繪製自動適用。
+# 開啟時名字為空（DEFAULT_NAME = ""，2026-09 起不再預填 pandora）、
+# 預設選中第一格（"0"），玩家從頭輸入。
+# 鍵盤是資料驅動的：KEY_ROWS 就是全部按鍵（字元／OK／DEL 三種格），
+# 未來要加 SPACE／RANDOM 等按鍵，在對應列加一格字串＋一個分支即可。
+# OK／DEL 與字元鍵共用同一套按鍵素材（普通／選中兩態），各佔兩格寬
+# （資料一格、繪製橫向跨兩格），沒有特殊大鈕。
 # ─────────────────────────────────────────────────────────
 
 signal confirmed(name: String)
-signal cancelled
+signal cancelled          # ESC 取消（不退幣，開發機逃生口）
+signal aborted            # 中止起名：名字為空時按 B／S／鍵盤 ←（launcher 退幣）
 
 const SCREEN := Vector2(480, 270)
 
-## 鍵盤資料：每列一個陣列；最後一列的第 7 格是 OK（特殊格，確認用）。
+## 鍵盤資料：每列一個陣列；字元格之外有兩種功能格 —— DEL（回退，與 B
+## 同義，畫成像素 ←）與 OK（確認名字），都排在最後一列、**各佔兩格寬**
+## （選擇框裡是一格，繪製時橫向跨兩格：6 格字元＋2 寬鍵＝10 欄，與上面
+## 三列對齊）。
 const KEY_ROWS: Array = [
 	["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
 	["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
 	["K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"],
-	["U", "V", "W", "X", "Y", "Z", "OK"],
+	["U", "V", "W", "X", "Y", "Z", "DEL", "OK"],
 ]
 const OK_CELL := "OK"
+const DEL_CELL := "DEL"   # 回退鈕：刪最後一碼；名字為空時＝中止起名
 const MAX_NAME_LEN := 9
 
-## 起名屏開啟時輸入框預設的初始名字：玩家可直接按 OK 使用，或改掉再確認。
-## 只收 A-Z／0-9，長度不得超過 MAX_NAME_LEN。
-const DEFAULT_NAME := "pandora"
+## 起名屏開啟時輸入框預設的初始名字。2026-09 起為空字串：不再預填
+## pandora，玩家一律從頭輸入。要恢復預填就改這裡（A-Z／0-9、≤MAX_NAME_LEN）。
+const DEFAULT_NAME := ""
 
 ## 鍵盤區：1920×1080 美術座標 (830, 519) 590×275 ÷ 4 → 邏輯座標。
 ## 這塊粉紅色區域畫在起名彈窗圖上，所有按鍵必須落在裡面。
@@ -50,8 +61,7 @@ const KEY_AREA := Rect2(207.5, 129.75, 147.5, 68.75)
 const KEY_SIZE := 14.0           # 按鍵素材 64×64 美術 px，微縮後 10 顆才放得下一列
 const KEY_GAP_X := 0.8
 const KEY_GAP_Y := 2.4
-const OK_W := 34.0               # OK 比普通按鍵稍大，置於鍵盤區右下
-const OK_H := 16.0
+# OK／DEL 2026-09 起與字元鍵同尺寸同素材（原「金色大鈕＋像素愛心」已拆）。
 
 ## 各款按鍵素材（普通／選中，美術畫的 64×64）—— 由 launcher 傳的 game_id 決定。
 const BTN_TEX := {
@@ -69,20 +79,22 @@ const BTN_TEX := {
 	],
 }
 
-## 像素愛心（5×4）：OK 按鈕兩側的裝飾。
-const HEART := [
-	[0, 1, 1, 1, 0],
+## 像素左箭頭（5×5）：DEL 鈕的圖示。PixelFont 不保證有「←」字形，
+## 直接用色塊畫，跟字元文字一樣穩。
+const ARROW_LEFT := [
+	[0, 0, 1, 0, 0],
+	[0, 1, 0, 0, 0],
 	[1, 1, 1, 1, 1],
-	[0, 1, 1, 1, 0],
+	[0, 1, 0, 0, 0],
 	[0, 0, 1, 0, 0],
 ]
 
 var title_image: Texture2D       # 各遊戲的起名彈窗圖（RGBA，彈窗區域不透明）
 var game_id := ""                # launcher 傳入，決定用哪組按鍵素材
 
-var _name := DEFAULT_NAME       # 目前輸入的名字，初始為預設名 pandora
-var _sel_row: int = KEY_ROWS.size() - 1   # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
-var _sel_col: int = KEY_ROWS[_sel_row].size() - 1   # 預設選中最後一列最後一格（OK）
+var _name := DEFAULT_NAME       # 目前輸入的名字（2026-09 起預設為空）
+var _sel_row: int = 0           # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
+var _sel_col: int = 0           # 預設選中第一格（"0"），玩家從頭輸入
 var _dir_held := {               # 搖杆／按鍵的按住狀態（只在上升緣動作）
 	"up": false, "down": false, "left": false, "right": false,
 }
@@ -237,10 +249,13 @@ func _move(dir: String, pressed: bool) -> void:
 			_sel_col = mini(_sel_col + 1, KEY_ROWS[_sel_row].size() - 1)
 
 
-## A（或 Enter／空白）：目前格子是字元就加進名字，是 OK 就確認名字。
+## A（或 Enter／空白）：目前格子是字元就加進名字，DEL 就回退，OK 就確認。
 ## 名字滿 9 字或空名按 OK 時，只給回饋（輸入框閃／OK 抖）不動作。
 func _confirm() -> void:
 	var cell: String = KEY_ROWS[_sel_row][_sel_col]
+	if cell == DEL_CELL:
+		_delete()
+		return
 	if cell == OK_CELL:
 		if _name.is_empty():
 			_flash = 0.4
@@ -257,7 +272,7 @@ func _confirm() -> void:
 	_advance()
 
 
-## 輸入成功後自動移到下一個可輸入的位置（跳過 OK，到底繞回第一格）。
+## 輸入成功後自動移到下一個可輸入的位置（跳過 OK 與 DEL，到底繞回第一格）。
 func _advance() -> void:
 	var r := _sel_row
 	var c := _sel_col + 1
@@ -267,16 +282,19 @@ func _advance() -> void:
 			c = 0
 			if r >= KEY_ROWS.size():
 				r = 0
-		if KEY_ROWS[r][c] != OK_CELL:
+		if KEY_ROWS[r][c] != OK_CELL and KEY_ROWS[r][c] != DEL_CELL:
 			break
 		c += 1
 	_sel_row = r
 	_sel_col = c
 
 
-## B：刪掉最後一個字元；名字為空時按了沒效果。
+## B（鍵盤 S）／鍵盤 ← 鈕：刪掉最後一個字元。名字已空 → 中止起名
+## （aborted），launcher 會退回開局閘門吃掉的那枚幣並回二級標題 ——
+## 這是街機端唯一的中止入口（ESC 只是開發機鍵盤的逃生口，街機沒有 ESC）。
 func _delete() -> void:
 	if _name.is_empty():
+		aborted.emit()
 		return
 	_name = _name.substr(0, _name.length() - 1)
 
@@ -299,7 +317,7 @@ func _draw() -> void:
 		draw_texture_rect(title_image, Rect2(Vector2.ZERO, SCREEN), false)
 	var font := ThemeDB.fallback_font
 	_draw_name(font)
-	_draw_keyboard(font)
+	_draw_keyboard()
 	#_center("ARROWS MOVE   A CONFIRM   B DELETE   X CLEAR   ESC CANCEL",
 	#	226, 8, Palette.TEXT)
 
@@ -317,60 +335,55 @@ func _draw_name(font: Font) -> void:
 		draw_rect(Rect2(left + size.x + 4, 100, 6, 12), Palette.MOON)
 
 
-func _draw_keyboard(font: Font) -> void:
+func _draw_keyboard() -> void:
 	for row in KEY_ROWS.size():
 		var n_cols: int = KEY_ROWS[row].size()
 		for col in n_cols:
 			var cell: String = KEY_ROWS[row][col]
 			var selected := row == _sel_row and col == _sel_col
-			if cell == OK_CELL:
-				_draw_ok(font, selected)
-				continue
 			var rect := _cell_rect(row, col)
+			if cell == OK_CELL and _ok_shake > 0.0:
+				rect.position.x += sin(_ok_shake * 70.0) * 2.0   # 空名按 OK 的抖動
+			# OK／DEL 與字元鍵同一套素材：未選中普通底、選中金色底＋WARN 框
 			draw_texture_rect(_btn_chosen if selected else _btn, rect, false)
 			if selected:
 				draw_rect(rect, Palette.WARN, false)
-			_center_in(rect, cell, 8, Palette.NIGHT)
+			if cell == DEL_CELL:
+				_draw_arrow_left(rect)
+			else:
+				_center_in(rect, cell, 8, Palette.NIGHT)
 
 
-## OK 按鈕：永遠用金色底圖（chosen 素材）＋金色邊框＋兩側像素愛心，
-## 比普通按鍵稍大；空名按 OK 時左右抖動。
-func _draw_ok(font: Font, selected: bool) -> void:
-	var rect := _ok_rect()
-	if _ok_shake > 0.0:
-		rect.position.x += sin(_ok_shake * 70.0) * 2.0
-	draw_texture_rect(_btn_chosen, rect, false)
-	draw_rect(rect, Color(Palette.GOLD, 0.35), false)
-	draw_rect(rect, Palette.WARN if selected else Palette.GOLD, false)
-	var cy := rect.position.y + rect.size.y * 0.5
-	_draw_heart(Vector2(rect.position.x + 4.0, cy - 2.0), Palette.LUNA_LIGHT)
-	_center_in(Rect2(rect.position.x + 9.0, rect.position.y, rect.size.x - 18.0, rect.size.y),
-		"OK", 8, Palette.NIGHT)
-	_draw_heart(Vector2(rect.end.x - 9.0, cy - 2.0), Palette.LUNA_LIGHT)
-
-
+## 格子矩形。DEL／OK 是寬鍵：橫向跨兩格（含中間間隙）。寬鍵在資料裡
+## 只佔一格索引，繪製起點要補回「前面每顆寬鍵多佔的那一欄」（最後一列：
+## DEL 起點在第 6 欄、OK 起點在第 8 欄，兩顆剛好補滿 10 欄）。
 func _cell_rect(row: int, col: int) -> Rect2:
-	return Rect2(
-		_grid_origin.x + col * (KEY_SIZE + KEY_GAP_X),
+	var origin_col := col
+	for i in col:
+		if _is_wide(KEY_ROWS[row][i]):
+			origin_col += 1
+	var rect := Rect2(
+		_grid_origin.x + origin_col * (KEY_SIZE + KEY_GAP_X),
 		_grid_origin.y + row * (KEY_SIZE + KEY_GAP_Y),
 		KEY_SIZE, KEY_SIZE)
+	if _is_wide(KEY_ROWS[row][col]):
+		rect.size.x = KEY_SIZE * 2.0 + KEY_GAP_X
+	return rect
 
 
-## OK 放在鍵盤區右下：右緣貼 KEY_AREA 右緣，垂直對齊最後一列。
-func _ok_rect() -> Rect2:
-	var row3 := _cell_rect(3, 0)
-	return Rect2(
-		KEY_AREA.end.x - OK_W,
-		row3.position.y + (KEY_SIZE - OK_H) * 0.5,
-		OK_W, OK_H)
+## DEL／OK 是寬鍵（橫向佔兩格）。
+func _is_wide(cell: String) -> bool:
+	return cell == OK_CELL or cell == DEL_CELL
 
 
-func _draw_heart(pos: Vector2, col: Color) -> void:
-	for y in HEART.size():
-		var n_x: int = HEART[y].size()
+## DEL 鈕的像素左箭頭：5×5 色塊置中（字元格畫文字、這格畫圖示）。
+func _draw_arrow_left(rect: Rect2) -> void:
+	var pos := rect.position + ((rect.size - Vector2(5.0, 5.0)) * 0.5).floor()
+	for y in ARROW_LEFT.size():
+		var n_x: int = ARROW_LEFT[y].size()
 		for x in n_x:
-			if HEART[y][x] == 1:
-				draw_rect(Rect2(pos + Vector2(x, y), Vector2.ONE), col)
+			if ARROW_LEFT[y][x] == 1:
+				draw_rect(Rect2(pos + Vector2(x, y), Vector2.ONE), Palette.NIGHT)
 
 
 func _center(text: String, y: float, size: int, col: Color) -> void:

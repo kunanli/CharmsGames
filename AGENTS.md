@@ -64,10 +64,14 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    起名是**街機虛擬鍵盤**（街機沒有鍵盤滑鼠，不能依賴系統鍵盤／軟鍵盤）：
    **↑ ↓ ← →**（搖杆）移動選擇框、**A**（或 Enter／空白）確認選字、
    **B** 刪除最後一碼、**X** 清空全部、**Y** 預留、**ESC** 取消回二級標題。
-   鍵盤是 0-9／A-Z 共 36 個字元鍵＋右下角 **OK** 鈕；名字只收 A-Z／0-9、
-   最多 9 字，OK 時名字不能為空（空名按 OK 只有輸入框閃＋OK 抖的回饋）。
-   起名屏初始**預設名是 pandora**（小寫）且預設選中 **OK** 鈕 ——
-   直接按 A 即可開局，也可改掉再確認。
+   鍵盤是 0-9／A-Z 共 36 個字元鍵＋最後一列的 **OK** 鈕與 **←** 回退鈕
+   （2026-09：OK／← 與字元鍵同一套按鍵素材、普通／選中兩態、**各佔兩格
+   寬**；← 功能與 B 相同）；名字只收 A-Z／0-9、最多 9 字，OK 時名字不能為空
+   （空名按 OK 只有輸入框閃＋OK 抖的回饋）。
+   起名屏初始**名字為空**（2026-09 起不再預填 pandora）且預設選中
+   第一格（"0"）。**名字為空時按 B（或鍵盤 ← 鈕）＝中止起名**：回二級
+   標題並**退回開局吃掉的那枚幣**（`CoinManager.refund_start_cost()`，
+   見「投幣系統」段）；ESC 取消不退幣。
    二級標題是固定場所：**不響應 1/2/3 與 ESC**，
    唯一回一級的路徑是 **管理員密碼界面**（二級標題 **A＋B 同時按住 3 秒**
    進入）：密碼是**方向指令序列「上上下下左右左右」**（↑ ↑ ↓ ↓ ← → ← →
@@ -151,10 +155,13 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   垂直排列（第一行視覺中心 Y≈190、行距 72px），每行三欄左對齊、60px：
   **排名 1ST./2ND./…**（X≈370）／**玩家名字**（X≈620）／**分數**（X≈1255）。
   進入面板時**逐行交錯顯現**（淡入＋從左滑入，每行錯開 0.1 秒，只播一次）。
-  **畫面最底部是當前玩家的成績行**（MOON_LIGHT 高亮，同樣排名／名字／
-  分數格式；排名是本局實際名次、可能 >10）—— 不管本局有沒有進前 10
-  都會顯示。**配色（2026-09 企劃指定）**：前十名行文字 = MOON（#A0DCFF）、
-  大標題與底部當前玩家行 = MOON_LIGHT（#90FFFF，色盤為此新增的第 21 色）。
+  **畫面最底部是當前玩家的成績行**（同樣排名／名字／分數格式；
+  排名是本局實際名次、可能 >10）—— 不管本局有沒有進前 10 都會顯示。
+  **配色（2026-09 企劃指定）**：前十名行文字 = 白（TEXT）；大標題與
+  底部當前玩家行 = 各款指定色文字＋**白邊**（8 方向整字偏移疊白字外框，
+  厚度 1 邏輯 px＝1920 設計 4px）：maze＝ACCENT_MAZE #D80E85／
+  fishing＝ACCENT_FISHING #123BF4／catch＝ACCENT_CATCH #A40CE8
+  （色盤為此新增三色，21→24 色）。
 - **清除功能只在 SETTING 選單**（面板一律只讀、玩家端沒有清除入口）。
   原「一級標題選中某款後按 **B** 進該款清除選單」（`ui/admin_clear_menu.gd`，
   2026-08 從排行榜面板搬過來、五種規則 LAST 1 HOUR／LAST 4 HOURS／TODAY／
@@ -214,8 +221,9 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
 切「無限投幣」繞過消耗。
 
 - **檔案分工**：`shared/coin_manager.gd`（class_name CoinManager，靜態單例
-  同 CurrentPlayerSession；`get_coins／add_coin／consume_coin／has_coin／
-  is_unlimited_coins`。幣量只存記憶體、啟動歸 0、不設上限 —— 投幣是實體
+  同 CurrentPlayerSession；`get_coins／add_coin／consume_coin／
+  refund_start_cost／has_coin／is_unlimited_coins`。幣量只存記憶體、啟動歸
+  0、不設上限 —— 投幣是實體
   行為；要跨執行保存的只有 UNLIMITED 開關，那在 Settings）；launcher 是
   唯一動幣量的人（Y 接線、開局閘門、Coin UI 畫在 `_draw_coin_ui`），
   三款小遊戲不知道投幣存在。
@@ -223,7 +231,9 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   幣）：`consume_coin()` 一次做完檢查＋扣幣 —— 無限 ON 永遠放行且**不扣
   幣**；OFF 時餘額 ≥ `START_COST`（暫定 1）才扣一枚放行。放行 →
   `UI_confirm.wav` → 起名；擋下 → 左下角 Coin 圖抖動 0.4 秒＋
-  `UI_Coin_None.wav`，留在二級。取消起名**不退幣**（規格未要求退幣）。
+  `UI_Coin_None.wav`，留在二級。起名**中止**（2026-09 新增：名字為空時按
+  B／鍵盤 ←，name_input 發 `aborted`）→ `refund_start_cost()` 把那枚幣
+  補回（無限 ON 時閘門沒扣過幣、refund 自動不補）；**ESC 取消仍不退幣**。
 - **二級標題左下角 Coin UI**（只掛 GAME_TITLE —— 起名 overlay 不畫）：
   `assets/UI/Coin.png` 原圖 1312×1199，_ready()
   一次 LANCZOS 降到 12×12（1920×1080 設計 48×48、位置 (32,1000)）再畫，
@@ -246,7 +256,7 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
 - **格子座標一律 `Vector2i`，像素座標一律 `Vector2`**。兩者用各遊戲自己的 `cell_center()` 轉換。混用是這個專案最容易出的 bug。
 - **不要引入外部套件或 addon**。
 - **不要用物理碰撞（CharacterBody2D 等）做格子移動**。已經用純數學判斷實作，改用物理會造成卡牆角與抖動。
-- **只用 `shared/palette.gd` 的 21 色**（原 20 色＋2026-09 企劃指定的 MOON_LIGHT），不自行新增中間色。唯一被允許的變化是對既有色套 alpha，例如 `Color(Palette.NIGHT, 0.82)`。需要新色請先跟企劃討論再加進色盤。
+- **只用 `shared/palette.gd` 的 24 色**（原 20 色＋2026-09 企劃指定的 MOON_LIGHT 與排行榜主色三色 ACCENT_*），不自行新增中間色。唯一被允許的變化是對既有色套 alpha，例如 `Color(Palette.NIGHT, 0.82)`。需要新色請先跟企劃討論再加進色盤。
 - **HUD 文字一律用英文**。全專案文字統一用 `assets/fonts/PixelFont.ttf`（x10y12pxDenkiChipHangul，10×12 像素網格）：`launcher.gd` 的 `_ready()` 把它設成 `ThemeDB.fallback_font`，所有 `draw_string` 一次生效（引擎內建預設字型已不用）。文字維持英文 —— 這支字體只含部分漢字（640 個 CJK），中英混排的像素對齊也不可靠。字體原生渲染尺寸是 12px，新增文字尺寸時優先取 12 的整數倍（12／24），非整數倍會讓像素網格對不齊。
 - **畫面位移（震動、鏡頭偏移）只能走繪製層，絕對不要寫進 `position`**。`player.gd` / `cat.gd` 每幀都用 `position` 算移動與 9px 碰撞判定，位移寫進去會被修正掉、過格時被清空，還會動到判定。用 `draw_set_transform()`，有子節點的就包一層容器節點（Seeker 的 `_world`）。
 
@@ -268,7 +278,7 @@ res://
 │   ├── fishing/fishing.gd  CharmsFishing：黃金礦工式垂釣（單檔）
 │   └── catch/catch.gd      CharmsCatch：接珠寶躲炸彈（單檔）
 ├── shared/
-│   ├── palette.gd          21 色共用色盤（class_name Palette；原 20 色＋MOON_LIGHT）
+│   ├── palette.gd          24 色共用色盤（class_name Palette；原 20 色＋MOON_LIGHT＋ACCENT_* 三色）
 │   ├── juice.gd            全畫面：震動／鏡頭偏移／視差／頓格（class_name Juice）
 │   ├── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
 │   ├── ready_go.gd         開場 READY 動畫：實例化 Ready_go.tscn、淡入淡出、播完自行釋放（class_name ReadyGo）
@@ -376,15 +386,20 @@ python3 tools/sim/catch_sim.py
   鍵盤**（`ui/name_input.gd`，2026-08 從「鍵盤自輸入＋預設名」改版）：街機
   沒有鍵盤滑鼠，**只用搖杆＋按鍵**（↑ ↓ ← → 移動、A 確認／Enter 空白同義、
   B 刪除、X 清空、Y 預留、ESC 取消）—— 不依賴系統鍵盤、不彈系統軟鍵盤。
-  鍵盤資料驅動（`KEY_ROWS` 陣列，未來加 DELETE／SPACE／RANDOM 只加一格字串）；
-  0-9／A-Z 共 36 個字元鍵＋右下角 **OK** 鈕（金色底、比普通鍵稍大、兩側像素
-  愛心），名字只收 A-Z／0-9、最多 **9 字**，OK 確認時名字不能為空（空名只有
-  輸入框閃＋OK 抖的回饋，不進下一階段）。按鍵素材在
+  鍵盤資料驅動（`KEY_ROWS` 陣列，字元格＋OK／DEL 兩種功能格，未來加
+  SPACE／RANDOM 只加一格字串＋一個分支）；
+  0-9／A-Z 共 36 個字元鍵＋最後一列的 **OK** 鈕與 **←**（DEL 格，像素
+  箭頭畫的，功能＝B 刪除／名字為空時中止起名）。**OK／← 2026-09 起與
+  字元鍵同一套普通／選中素材、各佔兩格寬**（6 字元＋2 寬鍵＝10 欄，與
+  上面三列對齊；原「金色底、比普通鍵稍大、兩側像素愛心」已拆），名字只收
+  A-Z／0-9、最多 **9 字**，OK 確認時名字不能為空（空名只有
+  輸入框閃＋OK 抖的回饋，不進下一階段）。初始**名字為空、選中第一格**
+  （原「預填 pandora＋預設選中 OK」已於 2026-09 移除）。按鍵素材在
   `assets/title/Naming/NamingKeyboard/`（各款 `<game>_btn.png` 普通／
   `<game>_btn_chosen.png` 選中金色，launcher 依 `game_id` 傳入）。移動是
   **邊界夾住不繞行**：第一列再上、最左列再左都停在原位，上下換列直行對齊、
-  目標列較短就夾到最後一格；輸入一碼後自動前進到下一個可輸入位置（跳過 OK，
-  到底繞回第一格）。
+  目標列較短就夾到最後一格；輸入一碼後自動前進到下一個可輸入位置（跳過
+  OK 與 ←，到底繞回第一格）。
 - **寶箱系統已移除**（2026-08，刻意偏離 GDD）：局終不再揭寶箱等級、不抽寶箱、沒有任何寶箱獎勵，**只計分數與排名**。原本三款各自的 `CHEST_BRONZE/SILVER/GOLD` 常數、`chest_tier()`、面板頂部的寶箱揭示行已全部拆除，launcher 也不再傳 `chest_tiers`。不要加回來；美術的寶箱圖示（art-spec 的 `ui_chest.png`）不需要出了，原 M7 的 MysteryBox 接線也一併取消。
 - **狀態機模式統一**：`READY`（開場播 `assets/AnimationScene/UI_Animate/Ready_go.tscn` 的 Ready_GO 動畫，24 幀 @14FPS；`shared/ready_go.gd` 負責實例化與淡入淡出（各 0.25 秒）、播完自行釋放。READY 時長 = `ReadyGo.FADE_SECONDS + ANIM_SECONDS + 0.05` ≈ 2.0 秒，各遊戲 `READY_TIME` 直接引用這兩個常量）→ 遊玩 → `RESULT`。暫停角色用 `set_process(false)`，不要在各處加 `if` 判斷。
 
@@ -597,7 +612,7 @@ GDD 有明確規格。這是 Seeker 現在最缺的東西 —— **整局都是�
 
 - `Guides/CharmsSeeker.docx`、`CharmsFishing.docx`、`CharmsCatch.docx` — **三份 GDD，規格的最終權威**
 - `Guides/art-spec-charms-seeker.md` — 美術素材規格書（尺寸、幀數、命名、交付順序）
-- `Guides/charms-palette.png` — 鎖定的 20 色共用色盤，程式端對應 `shared/palette.gd`（程式端另有 2026-09 企劃指定的 MOON_LIGHT，共 21 色）
+- `Guides/charms-palette.png` — 鎖定的 20 色共用色盤，程式端對應 `shared/palette.gd`（程式端另有 2026-09 企劃指定的 MOON_LIGHT 與 ACCENT_* 三色，共 24 色）
 - `Guides/godot-charms-seeker-guide.md` — M1 的建置紀錄（檔案路徑是重組前的舊版，結構以本檔為準）
 - `tools/sim/README.md` — 平衡模擬腳本的用法與同步紀律
 
