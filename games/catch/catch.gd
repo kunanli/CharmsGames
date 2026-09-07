@@ -689,7 +689,9 @@ func _on_missed(d: Drop) -> void:
 		# 落地的塵土，提醒玩家「這顆掉了」
 		_fx.burst(Vector2(d.pos.x, KILL_Y - 4.0), 6, Palette.TEXT_DIM,
 			50.0, 0.35, 2.0, 0.5, -PI * 0.5, PI * 0.8)
-		_pop("COMBO LOST", Palette.TEXT_DIM, Vector2(d.pos.x, KILL_Y - 12))
+		# COMBO LOST 跳在玩家頭上（飄字往上浮，從判定框上緣再抬高 12px 起跳）
+		_pop("COMBO LOST", Palette.TEXT_DIM,
+			Vector2(luna_x, LUNA_Y - _body_size().y - 12.0))
 	combo = 0
 	multiplier = 1
 

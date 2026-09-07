@@ -165,9 +165,12 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
 - **新紀錄煙花（2026-09）**：本局排名 1~3 時，排行榜面板從**玩家行顯現
   的那一刻**起全屏**循環播放** `assets/AnimationScene/UI_Animate/new_record.tscn`
   （`ui/leaderboard_panel.gd` 內實例化：素材 1600×900 等比縮到 480×270
-  全屏、線性濾鏡；60 幀 @20fps 自帶循環），**直到 B/ESC 關閉排行榜** ——
-  面板釋放時煙花跟著一起消失。第 4 名以後不播；素材缺檔或場景結構不符
-  時靜默跳過。
+  全屏、線性濾鏡；60 幀 @20fps 自帶循環），並同步**循環播放**音效
+  `fireworks_celebration.wav`（AudioManager 新增 `play_sfx_loop`／
+  `stop_sfx_loop`：獨占一支循環 player、與單發池分開；WAV 載入時設
+  LOOP_FORWARD，不受 MUSIC 開關影響），**直到 B/ESC 關閉排行榜** ——
+  面板 `_exit_tree` 停音效、煙花跟著面板一起釋放。第 4 名以後不播；
+  素材缺檔或場景結構不符時靜默跳過。
 - **清除功能只在 SETTING 選單**（面板一律只讀、玩家端沒有清除入口）。
   原「一級標題選中某款後按 **B** 進該款清除選單」（`ui/admin_clear_menu.gd`，
   2026-08 從排行榜面板搬過來、五種規則 LAST 1 HOUR／LAST 4 HOURS／TODAY／
@@ -179,9 +182,12 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   （`clear_records_by_date` 與今天／昨天／前天三個 wrapper）已無 UI 入口，
   保留作為通用工具（sim 第 6 節仍驗證）。
 - **SETTING 管理員設定**（2026-08 新增，一級標題選中 SETTING 按 A 進入，
-  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級三個選項
-  **CLEAR LEADERBOARD／UNLIMITED COINS／MUSIC**，↑ ↓（或手柄左搖杆上下）
-  選擇（循環）、A 執行、B/ESC 回一級（選擇狀態保留）。**UNLIMITED COINS**
+  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級四個選項
+  **CLEAR LEADERBOARD／UNLIMITED COINS／MUSIC／QUIT GAME**，↑ ↓（或手柄
+  左搖杆上下）選擇（循環）、A 執行、B/ESC 回一級（選擇狀態保留）。
+  **QUIT GAME**（2026-09 新增）按 A 直接結束遊戲（`get_tree().quit()`、
+  無二次確認；Settings／排行榜皆即時存檔，退出不丟資料）。
+  **UNLIMITED COINS**
   按 A 切換 ON/OFF（開關型選項的 ON/OFF 畫在名字右側），狀態跨執行保存 ——
   `shared/settings.gd`（class_name Settings，`user://settings.cfg`）；
   投幣系統已實裝（2026-09，見「投幣系統」段），開局閘門統一透過
@@ -475,7 +481,8 @@ python3 tools/sim/catch_sim.py
 - **場上道具與月光庫存已接美術（2026-08-31）**：星塵珍珠 `S_Perl.png`、月光
   能量 `S_Moon.png`（都是 220×220 美術圖，`ITEM_SHOW` 等比縮到 15px 在格子
   中央顯示，內容物約 11~13px，跟舊 15×15 程式圖視覺一致，不會蓋到隔壁格）。
-  HUD 左下角的月光庫存由程式圓形改成 `S_Moon.png`（14px、間距 20），跟愛心
+  HUD 右下角的月光庫存由程式圓形改成 `S_Moon.png`（16px、間距 22；
+  2026-09 由左下角 14px／間距 20 移到右下角並放大），跟愛心
   同一套規則：有庫存全亮、空位暗色（alpha 0.22）、用掉的那顆播 1 秒「放大
   1.25 倍＋淡出」—— `_moon_fade`/`_moon_fade_slot` 鏡像 `_heart_fade` 的寫法，
   觸發點在 `_activate_moon()` 的 `moon_stock -= 1` 之後。

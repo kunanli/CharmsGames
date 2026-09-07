@@ -121,12 +121,14 @@ const MENU_NAME_SIZE := 16
 const MENU_SUB_SIZE := 11      # SETTING 二級／三四級選單的字體（選項名字比一級長）
 const MENU_LINE_H := 18.0      # 4 行（三款遊戲＋SETTING）塞進 291 高的區域
 
-## SETTING 二級選單的三個選項（索引即 setting_index）。MUSIC 只控制 BGM：
+## SETTING 二級選單的四個選項（索引即 setting_index）。MUSIC 只控制 BGM：
 ## 狀態存 Settings（跨執行保存），AudioManager 播 BGM 前與切換當下讀取。
-const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "UNLIMITED COINS", "MUSIC"]
+## QUIT GAME 按 A 直接結束遊戲（Settings／排行榜皆即時存檔，退出不丟資料）。
+const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "UNLIMITED COINS", "MUSIC", "QUIT GAME"]
 const SETTING_CLEAR_IDX := 0
 const SETTING_COINS_IDX := 1
 const SETTING_MUSIC_IDX := 2
+const SETTING_QUIT_IDX := 3
 
 ## SETTING 三級清除選單：選要清哪一款（索引即 clear_game_index，順序對應
 ## GAMES）。_ready() 從 GAMES 的 menu_name 組出 —— 新增一款遊戲自動多一行。
@@ -359,6 +361,9 @@ func _unhandled_input(event: InputEvent) -> void:
 						Settings.set_unlimited_coins(not Settings.is_unlimited_coins())
 					SETTING_MUSIC_IDX:
 						_toggle_music()                  # 只關 BGM，音效不受影響
+					SETTING_QUIT_IDX:
+						get_tree().quit()                # 結束遊戲（無二次確認）
+						return                           # quit 在幀末生效，不再往下走
 				queue_redraw()
 			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
 					or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
@@ -885,7 +890,7 @@ func _draw_setting_menu() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT, -1, MENU_SUB_SIZE, col)
 		y += MENU_LINE_H
 	_center_in_region("A CONFIRM    B BACK",
-		MENU_REGION_POS.y + MENU_REGION_SIZE.y - 20.0, 8, Palette.TEXT_DIM)
+		MENU_REGION_POS.y + MENU_REGION_SIZE.y - 14.0, 8, Palette.TEXT_DIM)
 
 
 ## 開關型 SETTING 選項右側的 ON/OFF 狀態文字；非開關選項回空字串（不畫）。

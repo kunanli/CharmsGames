@@ -27,7 +27,9 @@ extends Node2D
 #   - **新紀錄煙花（2026-09）**：本局排名 1~3 時，玩家行顯現的那一刻起
 #     全屏**循環播放** assets/AnimationScene/UI_Animate/new_record.tscn
 #     （素材 1600×900 等比縮到 480×270 全屏，60 幀 @20fps 自帶循環），
-#     直到 B/ESC 關閉排行榜為止 —— 第 4 名以後不播。
+#     並同步循環播放音效 fireworks_celebration.wav
+#     （AudioManager.play_sfx_loop），直到 B/ESC 關閉排行榜為止
+#     （面板 _exit_tree 停音效、煙花跟著面板一起釋放）—— 第 4 名以後不播。
 #
 # 按鍵：
 #   B / ESC   回該款二級標題（launcher 清名字、不保留玩家名稱；
@@ -282,3 +284,10 @@ func _start_fireworks() -> void:
 	_fw_sprite.frame = 0
 	_fw_sprite.play()                # 播 tscn 指定的 newrecord 動畫（循環）
 	create_tween().tween_property(_fw_sprite, "modulate:a", 1.0, FIREWORK_FADE_IN)
+	AudioManager.play_sfx_loop("fireworks_celebration")   # 循環音效跟著煙花走
+
+
+## 面板離開場景樹（B/ESC 回二級被 launcher 釋放）→ 停掉煙花循環音效。
+## remove_child／queue_free 都會走這裡，比依賴呼叫端記得停穩妥。
+func _exit_tree() -> void:
+	AudioManager.stop_sfx_loop()

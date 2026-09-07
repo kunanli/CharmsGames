@@ -561,13 +561,14 @@ func _draw_hud() -> void:
 	#draw_string(font, Vector2(0, 254), "BEANS %d/%d" % [beans_eaten, beans_total],
 	#	HORIZONTAL_ALIGNMENT_RIGHT, 464, 8, Palette.TEXT_DIM)
 
-	# 左下角：囤著的月光能量（最多 2 個）。S_Moon.png（220×220 美術圖縮到
-	# 14px 顯示）—— 跟右上的愛心同一套規則：有庫存全亮、空位畫成暗色、
-	# 剛用掉的那顆播「放大＋淡出」。間距 20px 比舊程式圓形（r=5、間距 14）寬，
-	# 兩顆月亮才不會黏在一起。
-	var moon_size := Vector2(14, 14)
+	# 右下角：囤著的月光能量（最多 2 個）。S_Moon.png（220×220 美術圖縮到
+	# 16px 顯示）—— 跟上方的愛心同一套規則：有庫存全亮、空位畫成暗色、
+	# 剛用掉的那顆播「放大＋淡出」。間距 22px 維持 6px 邊距（16px 顯示下
+	# 兩顆月亮才不會黏在一起）。第一格靠右緣、往左排 —— 舊左下角版（24+i*20）
+	# 的鏡像。
+	var moon_size := Vector2(16, 16)
 	for i in MOON_STOCK_MAX:
-		var c := Vector2(24 + i * 20, 258)
+		var c := Vector2(456.0 - i * 22.0, 258)
 		if i < moon_stock:
 			_draw_moon(c, moon_size, 1.0)
 		elif i == _moon_fade_slot and _moon_fade > 0.0:
@@ -576,8 +577,10 @@ func _draw_hud() -> void:
 		else:
 			_draw_moon(c, moon_size, 0.22)
 	if moon_stock > 0 and petrify_left <= 0.0:
-		draw_string(font, Vector2(30, 250), "PRESS A",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.CAT)
+		draw_string(font, Vector2(26, 251), "PRESS A",
+			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.NIGHT)
+		draw_string(font, Vector2(25, 250), "PRESS A",
+			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.LUNA_DARK)
 
 	# 石化倒數與連擊
 	if petrify_left > 0.0:

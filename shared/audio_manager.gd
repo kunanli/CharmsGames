@@ -49,6 +49,8 @@ const SFX_PATHS := {
 	"ui_select": "res://assets/audio/UI/UI_select.wav",
 	"coin_push": "res://assets/audio/UI/coin_push.wav",
 	"ui_coin_none": "res://assets/audio/UI/UI_Coin_None.wav",
+	# 排行榜
+	"fireworks_celebration": SFX_DIR + "fireworks_celebration.wav",
 }
 
 const SFX_POOL_SIZE := 8
@@ -61,6 +63,8 @@ const SFX_VOLUME := 1.3
 var _bgm_player: AudioStreamPlayer
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _sfx_index := 0                     # 全池都在播時，輪替的下一個
+var _loop_player: AudioStreamPlayer     # 循環音效獨占一支（與單發池分開）
+var _loop_name := ""                    # 正在循環的音效名（同支不重播）
 var _stream_cache: Dictionary = {}      # path → AudioStream；載入失敗記 null 不重試
 var _bgm_name := ""                     # 最新一次 play_bgm 的曲名（關閉期間也照記，打開時接續播這首）
 var _bgm_loop := false                  # 最新一次 play_bgm 的循環要求（接續播回時沿用）
@@ -71,6 +75,10 @@ func _ready() -> void:
 	_bgm_player.name = "BGM"
 	_bgm_player.volume_linear = BGM_VOLUME
 	add_child(_bgm_player)
+	_loop_player = AudioStreamPlayer.new()
+	_loop_player.name = "SFXLoop"
+	_loop_player.volume_linear = SFX_VOLUME
+	add_child(_loop_player)
 	for i in SFX_POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.name = "SFX%02d" % i
@@ -134,6 +142,33 @@ func _next_sfx_player() -> AudioStreamPlayer:
 			return _sfx_pool[idx]
 	_sfx_index = (_sfx_index + 1) % SFX_POOL_SIZE
 	return _sfx_pool[_sfx_index]
+
+
+## 循環播放一支音效（排行榜的新紀錄煙花慶祝用，2026-09）。獨占一支
+## player，與單發池互不打架；同一支已在播就不重播。不受 MUSIC 開關
+## 影響（那個開關只管 BGM）。WAV 匯入預設不循環，這裡把整段設成
+## LOOP_FORWARD（stream 是快取的共用資源，同一支永遠同一種循環設定，
+## 直接寫回沒有副作用 —— 與 play_bgm 的 stream.loop 同思路）。
+func play_sfx_loop(name: String) -> void:
+	if name == _loop_name and _loop_player.playing:
+		return
+	var stream := _get_stream(SFX_PATHS.get(name, ""))
+	if stream == null:
+		return
+	if stream is AudioStreamWAV and stream.loop_mode != AudioStreamWAV.LOOP_FORWARD:
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_begin = 0
+		stream.loop_end = int(stream.get_length() * stream.mix_rate)
+	_loop_player.stream = stream
+	_loop_player.play()
+	_loop_name = name
+
+
+## 停掉循環音效（排行榜面板關閉時呼叫，面板 _exit_tree 接這裡）。
+func stop_sfx_loop() -> void:
+	if _loop_player != null:
+		_loop_player.stop()
+	_loop_name = ""
 
 
 func _get_stream(path: String) -> AudioStream:
