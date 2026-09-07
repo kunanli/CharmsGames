@@ -61,6 +61,12 @@ const LINE_COLOR := Color("ff81f3")        # 釣線顏色（勾中瞬間閃白�
 const MOON_USES := 3
 const MOON_BOOST := 3.0                    # 勾到寶物時收線 ×3
 
+# ── 閒置提示 ────────────────────────────────────────────
+# 開局倒數結束後，連續這麼多秒沒有任何操作，就在露娜左側跳出抖動的
+# PRESS A（街機上常有玩家站上去不知道按什麼）。只在鉤子待機（SWING、
+# 按 A 真的會放線）時累計與顯示；任何輸入重新計數，按 A 放線即消失。
+const IDLE_HINT_TIME := 3.0
+
 # ── 水層（y 範圍）───────────────────────────────────────
 # 淺/中/深 = (112,168)/(162,208)/(212,256)，全區 (112,256)。
 # 注意水層不是等面積的：鉤子從 (240,96) 以 ±75° 掃，可及範圍是一個倒三角形，
@@ -102,6 +108,9 @@ class Item:
 	var size := Vector2(16, 16)
 	var vx := 0.0
 	var phase := 0.0        # 呼吸光暈 / 游動擺尾的相位
+	var home_y := 0.0       # 出生 y：小惡魔追鉤造成的縱向偏移要游回這裡
+	var facing := -1.0      # 朝向（-1 = 美術預設朝左、+1 = 鏡像朝右）；_move_items 更新
+	var tilt := 0.0         # 垂直移動時的 ±45° 俯仰（弧度）；_move_items 更新、_draw 只讀
 
 	func rect() -> Rect2:
 		return Rect2(pos - size * 0.5, size)
@@ -140,6 +149,8 @@ var _fx := Fx.new()                 # 粒子（見 shared/fx.gd）
 var _rushed := false                # 最後 15 秒的加速只提示一次
 var _line_flash := 0.0              # 勾中時釣線閃一下（GDD 指定的表現）
 var _score_shown := 0.0             # HUD 上滾動中的分數
+var _idle_t := 0.0                  # 連續無操作的秒數（PRESS A 提示，見 IDLE_HINT_TIME）
+var _hint_phase := 0.0              # PRESS A 抖動相位（_process 推進、_draw 只讀）
 
 # ─────────────────────────────────────────────────────────
 # 露娜視覺：F_Player.tscn（畫師交付的動畫場景，AnimatedSprite2D 四段動畫）：
@@ -195,6 +206,10 @@ var _textures := {
 ## 小惡魔的游泳動畫：7 幀循環（ImpAnim/F_Imp_0~6.png，200×200）。
 ## 顯示尺寸沿用 _item_sizes 的 16×16（新幀內容占比與舊 220×220 貼圖一致）。
 const IMP_ANIM_FPS := 8.0
+## 小惡魔主動追鉤的範圍半徑（邏輯 px）：需求是直徑 400px 的圓，以 1920×1080
+## 設計座標給定、÷4 = 邏輯半徑 50。鉤頭進入以小惡魔自身為圓心的這個範圍
+## 內才會被追，範圍外照自己的速度巡游 —— 不再全圖追蹤。
+const IMP_LURE_RADIUS := 100.0
 var _imp_frames: Array[Texture2D] = [
 	preload("res://assets/fishing/ImpAnim/F_Imp_0.png"),
 	preload("res://assets/fishing/ImpAnim/F_Imp_1.png"),
@@ -284,6 +299,7 @@ func _start_round() -> void:
 	_rushed = false
 	_line_flash = 0.0
 	_score_shown = 0.0
+	_idle_t = 0.0
 	_p_anim = PAnim.IDLE
 	_p_time = 0.0
 	_p_oneshot = false
@@ -366,6 +382,7 @@ func _spawn_one(kind: int, band: Vector2) -> void:
 	it.phase = _rng.randf() * TAU
 	if kind == Kind.IMP:
 		it.vx = 12.0 * (1.0 if _rng.randf() < 0.5 else -1.0)
+		it.facing = signf(it.vx)
 
 	# 兩段式：先要求物件之間留 4px 空隙，真的擠不下就退讓成「不重疊即可」。
 	# 不這樣做的話，族群補充在滿場時會靜靜地失敗，魚群會隨著時間越來越稀。
@@ -377,6 +394,7 @@ func _spawn_one(kind: int, band: Vector2) -> void:
 				_rng.randf_range(WATER_L + size.x, WATER_R - size.x),
 				_rng.randf_range(band.x, band.y))
 			if _reachable(it) and not _overlaps(it, margin):
+				it.home_y = it.pos.y   # 小惡魔記住出生 y，追鉤偏移後游回來
 				items.append(it)
 				return
 
@@ -434,6 +452,7 @@ func _process(delta: float) -> void:
 		_pop_timer -= delta
 	if _line_flash > 0.0:
 		_line_flash -= delta
+	_hint_phase += delta              # PRESS A 的抖動相位（畫的時候只讀值）
 	# 分數滾動：小魚幾乎瞬間，Charm（+500）會滾個 0.3 秒
 	_score_shown = move_toward(_score_shown, float(score),
 		maxf(150.0, absf(float(score) - _score_shown) * 3.0) * delta)
@@ -473,7 +492,7 @@ func _tick_play(delta: float) -> void:
 		_rushed = true
 		_juice.kick(0.35)          # 擺速 +15% 的那一刻給個提示
 
-	_read_input()
+	_read_input(delta)
 	_move_items(delta)
 	_tick_respawns(delta)
 
@@ -486,7 +505,7 @@ func _tick_play(delta: float) -> void:
 			_retract(delta)
 
 
-func _read_input() -> void:
+func _read_input(delta: float) -> void:
 	# 放線：A / 空白 / 方向鍵下（GDD 指定 A，方向鍵下為備用；A＝鍵盤 A／手柄 A）
 	var cast_now := (Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_SPACE)
 		or Input.is_key_pressed(KEY_DOWN) or Input.is_key_pressed(KEY_ENTER)
@@ -510,6 +529,13 @@ func _read_input() -> void:
 	if moon_now and not _prev_moon:
 		_use_moon()
 	_prev_moon = moon_now
+
+	# 閒置偵測（PRESS A 提示）：有任何輸入就重新計數；線不在手上時不走數
+	# —— 那段時間按 A 沒有用，提示若還掛著也會因為 cast_now 歸零而消失。
+	if cast_now or moon_now or pan != 0.0:
+		_idle_t = 0.0
+	elif hook_state == Hook.SWING:
+		_idle_t += delta
 
 
 func _use_moon() -> void:
@@ -556,6 +582,7 @@ func _extend(delta: float) -> void:
 			AudioManager.play_sfx("fishing_catch")   # 魚鉤撞上任何物件
 			carried = it
 			carried.pos = tip + Vector2(0, 6)
+			carried.tilt = 0.0    # 上鉤後是掛著被拖走，不是游著，俯仰歸零
 			items.erase(it)
 			_schedule_respawn(it.kind)   # 族群類的，讓新的一隻在收線期間游進來
 			# 力道與重量成反比（pull 就是重量欄）：還沒看清楚就先
@@ -649,13 +676,28 @@ func _move_items(delta: float) -> void:
 		if it.vx == 0.0:
 			continue
 
-		if it.kind == Kind.IMP and line_out:
-			# 全場唯一會主動靠近鉤子的目標：線放出來時往鉤頭靠
-			var toward := signf(tip.x - it.pos.x)
-			it.pos.x += toward * 26.0 * delta
-			it.pos.y += signf(tip.y - it.pos.y) * 10.0 * delta
-		else:
-			it.pos.x += it.vx * delta
+		# 小惡魔的移動（唯一會動 y 的物件）：
+		#   追鉤 —— 線放出來且鉤頭進入以自身為圓心的 IMP_LURE_RADIUS（設計
+		#   直徑 400px ÷4）內，才朝鉤頭靠（水平 26、垂直 10）；
+		#   沒追 —— 照自己的速度巡游，並把追鉤造成的 y 偏移游回出生 y
+		#   （10px/s、1px 死區，游到定位就停）。
+		# 範圍外不做任何反應（連朝向都不變 —— 舊版會全體轉頭看鉤子，是 bug）。
+		var vx_move := it.vx
+		var vy_move := 0.0
+		if it.kind == Kind.IMP and line_out \
+				and it.pos.distance_to(tip) <= IMP_LURE_RADIUS:
+			vx_move = signf(tip.x - it.pos.x) * 26.0
+			vy_move = signf(tip.y - it.pos.y) * 10.0
+		elif it.kind == Kind.IMP and absf(it.home_y - it.pos.y) > 1.0:
+			vy_move = signf(it.home_y - it.pos.y) * 10.0
+		it.pos.x += vx_move * delta
+		it.pos.y += vy_move * delta
+
+		# 朝向跟著實際的水平移動走；有垂直移動時俯仰 ±45°（鏡像時旋轉反向，
+		# 見 _draw_centered_texture）。_draw 只讀這兩個欄位。
+		if vx_move != 0.0:
+			it.facing = signf(vx_move)
+		it.tilt = deg_to_rad(45.0) * signf(vy_move) * it.facing
 
 		# 碰到水域左右邊界就掉頭
 		var half := it.size.x * 0.5
@@ -686,6 +728,7 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 	_draw_ui_frame()
 	_draw_hud()
+	_draw_idle_hint()
 	_draw_urgency()
 
 	if state == State.RESULT:
@@ -790,18 +833,22 @@ func _draw_centered_texture(
 		texture: Texture2D,
 		center: Vector2,
 		size: Vector2,
-		flip_h := false
+		flip_h := false,
+		rot := 0.0
 	) -> void:
 
 	if texture == null:
 		return
 
-	if flip_h:
-		# 水平鏡像：把物體中心當原點、x 軸反轉後再畫（draw_texture_rect
-		# 沒有 flip 參數）。呼叫點都在 WORLD 層（變換＝鏡頭位移），
-		# 畫完恢復原變換，不影響後續繪製。
+	# 鏡像／旋轉走 draw_set_transform（draw_texture_rect 沒有 flip 參數）：
+	# 把物件中心當原點、x 軸反轉（鏡像）再旋轉 rot。Godot 的變換是
+	# 「先縮放後旋轉」，所以鏡像狀態下正角旋轉的方向視覺上是反的 ——
+	# 呼叫端（小惡魔俯仰）已把旋轉角乘上 facing 做了補償。
+	# 呼叫點都在 WORLD 層（變換＝鏡頭位移），畫完恢復原變換，不影響後續繪製。
+	if flip_h or rot != 0.0:
 		var wo := _juice.world_offset()
-		draw_set_transform(center + wo, 0.0, Vector2(-1.0, 1.0))
+		draw_set_transform(center + wo, rot,
+			Vector2(-1.0, 1.0) if flip_h else Vector2.ONE)
 		draw_texture_rect(texture, Rect2(-size * 0.5, size), false)
 		draw_set_transform(wo)
 		return
@@ -819,12 +866,11 @@ func _draw_item(it: Item) -> void:
 		var f := int(it.phase * IMP_ANIM_FPS) % _imp_frames.size()
 		var tex: Texture2D = _imp_frames[f]
 		var size: Vector2 = _item_sizes[Kind.IMP]
-		# 泳姿朝向：放線時往鉤頭靠（水平分量）、平時按自己的游速；掛上鉤
-		# 後維持最後朝向。美術默認朝左，往右游要水平鏡像。
-		var dir := signf(it.vx)
-		if hook_state != Hook.SWING and it != carried:
-			dir = signf(_hook_pos().x - it.pos.x)
-		_draw_centered_texture(tex, it.pos, size, dir > 0.0)
+		# 朝向與俯仰由 _move_items 依「實際移動方向」更新，這裡只讀欄位 ——
+		# 鉤頭不在追蹤範圍內的小惡魔完全不做反應（不轉頭、不轉身）。
+		# 掛上鉤後（carried 不在 items 迴圈裡）欄位自然凍結＝維持最後朝向。
+		# 美術默認朝左，往右游要水平鏡像（facing > 0）。
+		_draw_centered_texture(tex, it.pos, size, it.facing > 0.0, it.tilt)
 		return
 	var texture: Texture2D = _textures.get(it.kind)
 	if texture == null:
@@ -980,6 +1026,21 @@ func _draw_hud() -> void:
 		# 飄字：越接近消失越往上飄
 		var rise := (0.9 - _pop_timer) * 18.0
 		_center(_pop_text, 150 - rise, 16, _pop_col)
+
+
+## 閒置提示：開局倒數結束後連續 IDLE_HINT_TIME 秒沒有任何操作，就在露娜
+## 左側跳出抖動的 PRESS A；按 A 放線（或任何輸入）後 _idle_t 歸零自然消失。
+## 只認 SWING —— 線放出去的途中按 A 沒有用，提示了也白提。
+## 畫在 HUD 層（位移恆 0）：搖桿探看時提示不跟著水面飄，蓋在擺動的線之上。
+func _draw_idle_hint() -> void:
+	if state != State.PLAYING or hook_state != Hook.SWING or _idle_t < IDLE_HINT_TIME:
+		return
+	# 高頻雙正弦抖動：±1 邏輯 px（4 倍放大後螢幕上是 ±4px），只抖繪製位置
+	var off := Vector2(sin(_hint_phase * 11.0), sin(_hint_phase * 17.0))
+	# 右緣對齊船身左側留 8px：文字長度怎麼改都不會壓到露娜
+	var right := PIVOT.x - 38.0
+	draw_string(ThemeDB.fallback_font, Vector2(right - 160.0, 88.0) + off,
+		"PRESS A", HORIZONTAL_ALIGNMENT_RIGHT, 150.0, 16, Palette.MOON)
 
 
 ## 最後 10 秒的收尾張力：四周壓一圈越來越深的暗角。純氛圍，不擋視線。

@@ -664,6 +664,7 @@ func _open_name_input() -> void:
 	ni.set_script(load("res://ui/name_input.gd"))
 	ni.set("title_image", entry["naming_image"])
 	ni.set("game_id", entry["id"])
+	ni.set("dup_checker", Callable(self, "_is_name_taken"))
 	ni.connect("confirmed", Callable(self, "_on_name_confirmed"))
 	ni.connect("cancelled", Callable(self, "_on_name_cancelled"))
 	ni.connect("aborted", Callable(self, "_on_name_aborted"))
@@ -694,6 +695,13 @@ func _on_name_cancelled() -> void:
 func _on_name_aborted() -> void:
 	CoinManager.refund_start_cost()
 	_on_name_cancelled()
+
+
+## 起名查重（2026-09）：只查**本款**排行榜的歷史記錄 —— 分榜互不干涉，
+## 在別款用過的名字不算重名。name_input 按 OK 時經 dup_checker 呼叫；
+## 重名它自己擋（提示＋震動＋音效），不會發 confirmed 進遊戲。
+func _is_name_taken(player_name: String) -> bool:
+	return LeaderboardManager.is_name_taken(GAMES[active_index]["id"], player_name)
 
 
 # ── F3 管理員密碼彈窗（Modal Overlay，不是主流程狀態）──

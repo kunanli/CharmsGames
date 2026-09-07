@@ -59,6 +59,18 @@ static func get_records(game_id: String) -> Array[LeaderboardRecord]:
 	return out
 
 
+## 起名查重（2026-09）：**本款**排行榜裡是否已有人用過這個名字。
+## 只比對 game_id 這一款的分榜（別款用過不算）、精確比對 player_name
+## —— 名字只收 A-Z／0-9，不存在大小寫差異。歷史記錄不會自動消失，
+## 所以名字一旦用過就被永久占用，直到管理員清除資料。
+static func is_name_taken(game_id: String, player_name: String) -> bool:
+	_ensure_loaded()
+	for r in _records:
+		if r.game_id == game_id and r.player_name == player_name:
+			return true
+	return false
+
+
 ## 指定分頁。page_index 0 基（第 1 頁是 0），越界夾到最近的有效頁。
 ## 回傳 {records, total, page_count, page_index}。
 static func get_page(game_id: String, page_index: int, page_size: int = PAGE_SIZE) -> Dictionary:

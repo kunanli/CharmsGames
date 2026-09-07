@@ -577,10 +577,14 @@ func _draw_hud() -> void:
 		else:
 			_draw_moon(c, moon_size, 0.22)
 	if moon_stock > 0 and petrify_left <= 0.0:
-		draw_string(font, Vector2(26, 251), "PRESS A",
+		# PRESS A 抖動提示：每 0.08 秒跳一格的 ±1px 小位移，暗影與本體同一
+		# 偏移一起抖（各抖各的話陰影會脫節）。queue_redraw 每幀重畫，才會動。
+		var shake_t := int(Time.get_ticks_msec() / 80.0) % 4
+		var jitter := Vector2([0, -1, 0, 1][shake_t], [-1, 0, 1, 0][shake_t])
+		draw_string(font, Vector2(26, 251) + jitter, "PRESS A",
 			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.NIGHT)
-		draw_string(font, Vector2(25, 250), "PRESS A",
-			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.LUNA_DARK)
+		draw_string(font, Vector2(25, 250) + jitter, "PRESS A",
+			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.TEXT)
 
 	# 石化倒數與連擊
 	if petrify_left > 0.0:

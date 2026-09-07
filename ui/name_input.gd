@@ -23,6 +23,10 @@ extends Node2D
 #
 # 名字規則：只收 A-Z / 0-9，最多 MAX_NAME_LEN（9）字；名字為空時
 # 按 OK 只給回饋（輸入框閃＋OK 抖）不進下一階段。
+# 按 OK 時先查重（dup_checker 由 launcher 傳入，查**本款**排行榜的
+# 歷史記錄）：重名 → 不發 confirmed，名字上方顯示 "This name is
+# already taken" 約 2 秒＋只震起名這一層（底下的二級標題背景不動）＋
+# ui_coin_none 音效；改名字（輸入／刪除／清空）即清除提示。
 # 開啟時名字為空（DEFAULT_NAME = ""，2026-09 起不再預填 pandora）、
 # 預設選中第一格（"0"），玩家從頭輸入。
 # 鍵盤是資料驅動的：KEY_ROWS 就是全部按鍵（字元／OK／DEL 三種格），
@@ -50,6 +54,14 @@ const KEY_ROWS: Array = [
 const OK_CELL := "OK"
 const DEL_CELL := "DEL"   # 回退鈕：刪最後一碼；名字為空時＝中止起名
 const MAX_NAME_LEN := 9
+
+## 重名提示（2026-09）：按 OK 查本款排行榜，重名就不進遊戲 —— 名字上方
+## 顯示這行字約 2 秒、**只震起名界面這一層**（底下的二級標題背景不動；
+## 幅度線性衰減歸零）＋播 ui_coin_none（幣不夠同款音效，企劃指定）。
+const DUP_MSG := "This name is already taken"
+const DUP_MSG_TIME := 2.0
+const DUP_SHAKE_TIME := 0.3
+const DUP_SHAKE_AMP := 3.0       # 邏輯 px（4 倍放大顯示下是 12px 螢幕位移）
 
 ## 起名屏開啟時輸入框預設的初始名字。2026-09 起為空字串：不再預填
 ## pandora，玩家一律從頭輸入。要恢復預填就改這裡（A-Z／0-9、≤MAX_NAME_LEN）。
@@ -91,6 +103,9 @@ const ARROW_LEFT := [
 
 var title_image: Texture2D       # 各遊戲的起名彈窗圖（RGBA，彈窗區域不透明）
 var game_id := ""                # launcher 傳入，決定用哪組按鍵素材
+## launcher 傳入的重名查詢：func(player_name: String) -> bool（查本款
+## 排行榜）。未接線（Callable 無效）時跳過查重，行為與舊版相同。
+var dup_checker := Callable()
 
 var _name := DEFAULT_NAME       # 目前輸入的名字（2026-09 起預設為空）
 var _sel_row: int = 0           # 選擇框位置：selected_key = KEY_ROWS[_sel_row][_sel_col]
@@ -101,6 +116,8 @@ var _dir_held := {               # 搖杆／按鍵的按住狀態（只在上升
 var _blink := 0.0
 var _flash := 0.0                # 輸入框閃爍（滿字／空名按 OK／清空 的回饋）
 var _ok_shake := 0.0             # OK 抖動（空名按 OK 的回饋）
+var _dup_msg := 0.0              # 重名提示剩餘秒數（>0 顯示在名字上方）
+var _dup_shake := 0.0            # 重名震動剩餘秒數（一次性，衰減歸零）
 
 var _btn: Texture2D              # 普通按鍵底圖
 var _btn_chosen: Texture2D       # 選中按鍵底圖（金色）
@@ -126,6 +143,10 @@ func _process(delta: float) -> void:
 		_flash -= delta
 	if _ok_shake > 0.0:
 		_ok_shake -= delta
+	if _dup_msg > 0.0:
+		_dup_msg -= delta
+	if _dup_shake > 0.0:
+		_dup_shake -= delta
 	queue_redraw()
 
 
@@ -251,6 +272,7 @@ func _move(dir: String, pressed: bool) -> void:
 
 ## A（或 Enter／空白）：目前格子是字元就加進名字，DEL 就回退，OK 就確認。
 ## 名字滿 9 字或空名按 OK 時，只給回饋（輸入框閃／OK 抖）不動作。
+## OK 確認前先查重：重名只給提示＋震動＋音效，不發 confirmed。
 func _confirm() -> void:
 	var cell: String = KEY_ROWS[_sel_row][_sel_col]
 	if cell == DEL_CELL:
@@ -260,6 +282,11 @@ func _confirm() -> void:
 		if _name.is_empty():
 			_flash = 0.4
 			_ok_shake = 0.4
+		elif dup_checker.is_valid() and dup_checker.call(_name):
+			# 重名：留在起名界面，玩家換個名字再確認
+			_dup_msg = DUP_MSG_TIME
+			_dup_shake = DUP_SHAKE_TIME
+			AudioManager.play_sfx("ui_coin_none")
 		else:
 			AudioManager.play_sfx("ui_confirm")   # OK 確認名字
 			confirmed.emit(_name)
@@ -268,25 +295,8 @@ func _confirm() -> void:
 		_flash = 0.2
 		return
 	AudioManager.play_sfx("ui_confirm")   # 選字確認
-	_name += cell
-	_advance()
-
-
-## 輸入成功後自動移到下一個可輸入的位置（跳過 OK 與 DEL，到底繞回第一格）。
-func _advance() -> void:
-	var r := _sel_row
-	var c := _sel_col + 1
-	while true:
-		if c >= KEY_ROWS[r].size():
-			r += 1
-			c = 0
-			if r >= KEY_ROWS.size():
-				r = 0
-		if KEY_ROWS[r][c] != OK_CELL and KEY_ROWS[r][c] != DEL_CELL:
-			break
-		c += 1
-	_sel_row = r
-	_sel_col = c
+	_name += cell                          # 選擇框留在原位：連按 A 可重複輸入同一字元
+	_dup_msg = 0.0
 
 
 ## B（鍵盤 S）／鍵盤 ← 鈕：刪掉最後一個字元。名字已空 → 中止起名
@@ -297,6 +307,7 @@ func _delete() -> void:
 		aborted.emit()
 		return
 	_name = _name.substr(0, _name.length() - 1)
+	_dup_msg = 0.0
 
 
 ## X：一次清空；清掉時輸入框閃一下。名字本來就是空的就沒效果。
@@ -305,18 +316,25 @@ func _clear() -> void:
 		return
 	_name = ""
 	_flash = 0.3
+	_dup_msg = 0.0
 
 
 # ── 繪製 ─────────────────────────────────────────────────
 
 func _draw() -> void:
-	# 50% 黑罩：底下是 launcher 畫的二級標題圖，透出一部分當背景
-	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(0.0, 0.0, 0.0, 0.5))
+	# 重名震動：整層（黑罩＋彈窗＋鍵盤）走繪製層位移，絕不動 position。
+	# draw_set_transform 對這次 _draw 之後的所有繪製指令生效。
+	draw_set_transform(_dup_shake_offset(), 0.0)
+	# 50% 黑罩：底下是 launcher 畫的二級標題圖，透出一部分當背景。
+	# 罩畫得比螢幕大一圈 —— 跟著震動位移時邊緣不露未遮的底。
+	draw_rect(Rect2(Vector2(-8.0, -8.0), SCREEN + Vector2(16.0, 16.0)),
+		Color(0.0, 0.0, 0.0, 0.5))
 	# 起名彈窗圖（RGBA）：只有彈窗區域不透明，鋪滿畫 = 彈窗浮在黑罩上
 	if title_image != null:
 		draw_texture_rect(title_image, Rect2(Vector2.ZERO, SCREEN), false)
 	var font := ThemeDB.fallback_font
 	_draw_name(font)
+	_draw_dup_msg(font)
 	_draw_keyboard()
 	#_center("ARROWS MOVE   A CONFIRM   B DELETE   X CLEAR   ESC CANCEL",
 	#	226, 8, Palette.TEXT)
@@ -333,6 +351,26 @@ func _draw_name(font: Font) -> void:
 	draw_line(Vector2(left - 6, 112), Vector2(left + size.x + 6, 112), Palette.NIGHT, 0.0)
 	if fmod(_blink, 0.8) < 0.4:
 		draw_rect(Rect2(left + size.x + 4, 100, 6, 12), Palette.MOON)
+
+
+## 重名提示：名字上方一行 8px WARN 色小字（與輸入框同一中心線 x=305），
+## 顯示 DUP_MSG_TIME 秒；改名字（輸入／刪除／清空）即消失。
+func _draw_dup_msg(font: Font) -> void:
+	if _dup_msg <= 0.0:
+		return
+	var size := font.get_string_size(DUP_MSG, HORIZONTAL_ALIGNMENT_LEFT, -1, 8)
+	draw_string(font, Vector2(305.0 - size.x * 0.5, 99.0), DUP_MSG,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Palette.WARN)
+
+
+## 重名震動的偏移：一次性震動，幅度隨剩餘時間線性衰減歸零（不會有殘留
+## 抖動）、固定頻率取樣（不逐幀重抽）、合成值只四捨五入一次保持像素對齊
+## —— 與 juice／launcher 幣抖動同一套紀律。
+func _dup_shake_offset() -> Vector2:
+	if _dup_shake <= 0.0:
+		return Vector2.ZERO
+	return (Vector2(sin(_dup_shake * 90.0), cos(_dup_shake * 113.0))
+		* (DUP_SHAKE_AMP * _dup_shake / DUP_SHAKE_TIME)).round()
 
 
 func _draw_keyboard() -> void:

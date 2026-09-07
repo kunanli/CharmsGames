@@ -79,14 +79,22 @@ const COMBO_MAX := 5                # 上限 ×5
 # 末段加壓（2026-09 企劃追加）：第 4 段（45-60s）gap 再 ÷1.3、炸彈比例
 # 不動 —— 有價物與炸彈共用同一條生成計時器，兩者剛好都 +30%
 # （段內有價物 12.7→16.5 顆、炸彈 3.6→4.7 顆，模擬第 6 節驗證）。
+#
+# 整體加密度（2026-09 企劃）：全段 gap ÷1.2、max_on ×1.2 —— 掉落物整體
+# 1.2 倍，**包含炸彈**（炸彈比例不動，跟著共享計時器一起變密，絕對數量
+# +20%）；Charm 的每 15 秒必出節拍不變（那是獎勵節奏，不是密度）。
 const PHASES := [
-	{"speed": 60.0,  "max_on": 4,  "bomb": 0.065,  "charm_mult": 1.0, "gap": Vector2(0.8, 1.1)},
-	{"speed": 80.0,  "max_on": 6,  "bomb": 0.13,   "charm_mult": 1.0, "gap": Vector2(0.7, 1.0)},
-	{"speed": 100.0, "max_on": 8,  "bomb": 0.195,  "charm_mult": 1.0, "gap": Vector2(0.6, 0.9)},
-	{"speed": 120.0, "max_on": 10, "bomb": 0.2275, "charm_mult": 2.0, "gap": Vector2(0.385, 0.575)},
+	{"speed": 60.0,  "max_on": 5,  "bomb": 0.065,  "charm_mult": 1.0, "gap": Vector2(0.667, 0.917)},
+	{"speed": 80.0,  "max_on": 7,  "bomb": 0.13,   "charm_mult": 1.0, "gap": Vector2(0.583, 0.833)},
+	{"speed": 100.0, "max_on": 10, "bomb": 0.195,  "charm_mult": 1.0, "gap": Vector2(0.5, 0.75)},
+	{"speed": 120.0, "max_on": 12, "bomb": 0.2275, "charm_mult": 2.0, "gap": Vector2(0.321, 0.479)},
 ]
 const PHASE_LEN := 15.0
 const CHARM_EVERY := 15.0           # Charm 每 15 秒必定出現 1 個
+# 全局加速（2026-09 企劃）：開局 20 秒後掉落速度在段落基準上線性上升，
+# 局末（60s）累計 +25%（ACCEL_RATE × 40 秒）。前 20 秒維持段落基準速度。
+const ACCEL_START := 20.0
+const ACCEL_RATE := 0.00625
 
 
 ## 一顆掉落物
@@ -352,6 +360,14 @@ func _phase() -> Dictionary:
 	return PHASES[_phase_index()]
 
 
+## 目前的掉落速度：段落基準 × 加速係數（開局 20 秒後線性上升，見 ACCEL_*）。
+## _move_drops（實際落速）與 _chain_filter（生成可及性估算）都吃這個，
+## 兩邊才不會對不上。
+func _fall_speed() -> float:
+	var ramp := maxf(0.0, (ROUND_TIME - time_left) - ACCEL_START)
+	return float(_phase()["speed"]) * (1.0 + ACCEL_RATE * ramp)
+
+
 func _process(delta: float) -> void:
 	# tick() 回 false 代表這一幀在命中頓格中，遊戲邏輯整個停住。
 	# 純表現用的計時器留在下面、不受影響。
@@ -585,7 +601,7 @@ func _chain_filter(candidates: Array[int]) -> Array[int]:
 	if urgent == null:
 		return []
 
-	var speed := float(_phase()["speed"])
+	var speed := _fall_speed()
 	var catch_y := LUNA_Y - _body_size().y   # 判定框上緣：掉落物從上方進框，等效接取面
 	var t_urgent := (catch_y - urgent.pos.y) / speed
 	var t_new := (catch_y - SPAWN_Y) / speed
@@ -603,7 +619,7 @@ func _chain_filter(candidates: Array[int]) -> Array[int]:
 
 
 func _move_drops(delta: float) -> void:
-	var speed := float(_phase()["speed"])
+	var speed := _fall_speed()   # 段落基準 × 20 秒後的線性加速（見 ACCEL_*）
 	var catch_box := _catch_rect()
 	var survivors: Array[Drop] = []
 

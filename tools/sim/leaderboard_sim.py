@@ -148,6 +148,12 @@ class Manager:
             return -1
         return (rank - 1) // page_size
 
+    def is_name_taken(self, game_id, player_name):
+        """起名查重（鏡像 .gd 的 is_name_taken）：只查本款分榜、
+        精確比對 player_name。名字一旦用過就被永久占用。"""
+        return any(r["game_id"] == game_id and r["player_name"] == player_name
+                   for r in self.records)
+
     def clear_records_by_date(self, date):
         before = len(self.records)
         self.records = [r for r in self.records if r["played_date"] != date]
@@ -634,6 +640,23 @@ def main():
             m13c.submit_score(make_record(g, "X", 100, today_str()))
     ok(m13c.clear_all_games_records(CLEAR_RULES["ALL"]) == 9 and m13c.records == [],
        "ALL：三款共 9 筆全部刪除，回傳數正確")
+
+    print("\n== 14. is_name_taken（起名查重：只查本款分榜、精確比對）==")
+    m14 = Manager(path)
+    ok(not m14.is_name_taken("seeker", "LUNA"),
+       "空排行榜查不到任何名字")
+    m14.submit_score(make_record("seeker", "LUNA", 100, today_str()))
+    m14.submit_score(make_record("fishing", "CAT", 100, today_str()))
+    ok(m14.is_name_taken("seeker", "LUNA"), "本款用過的名字查得到")
+    ok(m14.is_name_taken("fishing", "CAT"), "fishing 的 CAT 查得到")
+    ok(not m14.is_name_taken("fishing", "LUNA"),
+       "分榜互不干涉：seeker 用過的 LUNA 在 fishing 不算重名")
+    ok(not m14.is_name_taken("seeker", "LUNA2") and
+       not m14.is_name_taken("seeker", "LUN"),
+       "精確比對：LUNA2／LUN 與 LUNA 不互為重名")
+    m14.clear_records("seeker", CLEAR_RULES["ALL"])
+    ok(not m14.is_name_taken("seeker", "LUNA"),
+       "管理員清除資料後名字釋出，可以重新使用")
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

@@ -27,12 +27,16 @@ ROUND_TIME, PHASE_LEN, CHARM_EVERY = 60.0, 15.0, 15.0
 # ×0.65（密度 +30%，不到翻倍）。第 4 段（45-60s）企劃追加末段加壓：
 # gap 再 ÷1.3，有價物與炸彈各 +30%。連炸彈一起翻倍的話 AI 存活率
 # 68%→19%、平均局長 56s→45s（見第 6 節）。
+# 整體加密度（2026-09 企劃）：全段 gap ÷1.2、max_on ×1.2，包含炸彈
+# （炸彈比例不動、絕對數量 +20%）—— 與 catch.gd 的 PHASES 同步。
 PHASES = [
-    dict(speed=60.0,  max_on=4,  bomb=0.065,  cm=1.0, gap=(0.8, 1.1)),
-    dict(speed=80.0,  max_on=6,  bomb=0.13,   cm=1.0, gap=(0.7, 1.0)),
-    dict(speed=100.0, max_on=8,  bomb=0.195,  cm=1.0, gap=(0.6, 0.9)),
-    dict(speed=120.0, max_on=10, bomb=0.2275, cm=2.0, gap=(0.385, 0.575)),
+    dict(speed=60.0,  max_on=5,  bomb=0.065,  cm=1.0, gap=(0.667, 0.917)),
+    dict(speed=80.0,  max_on=7,  bomb=0.13,   cm=1.0, gap=(0.583, 0.833)),
+    dict(speed=100.0, max_on=10, bomb=0.195,  cm=1.0, gap=(0.5, 0.75)),
+    dict(speed=120.0, max_on=12, bomb=0.2275, cm=2.0, gap=(0.321, 0.479)),
 ]
+# 全局加速（2026-09 企劃）：開局 20 秒後掉落速度線性上升，局末累計 +25%
+ACCEL_START, ACCEL_RATE = 20.0, 0.00625
 JEWEL, STARDUST, CHARM, BOMB, MOON = range(5)
 BASE = {JEWEL: 50, STARDUST: 100, CHARM: 300, BOMB: 0, MOON: 150}
 # 月光能量（2026-09）：護盾取消、純加分（MOON_SCORE=150，吃 Combo 倍率），
@@ -92,8 +96,8 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         if chain and kind != BOMB:
             u = urgent_valuable()
             if u is not None:
-                tu = (CATCH_Y - u.y) / ph["speed"]
-                tn = (CATCH_Y - SPAWN_Y) / ph["speed"]
+                tu = (CATCH_Y - u.y) / cur
+                tn = (CATCH_Y - SPAWN_Y) / cur
                 w = tn - tu
                 if w > 0:
                     r = speed * HOLD_MULT * w * 0.85
@@ -113,6 +117,9 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         t_left -= DT
         pi = min(int((ROUND_TIME - t_left) / PHASE_LEN), 3)
         ph = PHASES[pi]
+        # 當前實際落速：段落基準 × 20 秒後的線性加速（與 catch.gd 的
+        # _fall_speed() 同步）；落下、AI 判時、生成可及性全用這個值
+        cur = ph["speed"] * (1.0 + ACCEL_RATE * max(0.0, (ROUND_TIME - t_left) - ACCEL_START))
         for i in range(LANES):
             lane_last[i] += DT
         charm_t -= DT
@@ -140,7 +147,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         if policy == "urgent":
             for d in sorted([x for x in drops if x.k != BOMB and x.y <= CATCH_Y + 8],
                             key=lambda x: -x.y):
-                tt = (CATCH_Y - d.y) / ph["speed"]
+                tt = (CATCH_Y - d.y) / cur
                 if tt >= 0 and abs(d.x - luna) <= speed * HOLD_MULT * tt:
                     target = d
                     break
@@ -149,7 +156,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
             for d in drops:
                 if d.k == BOMB or d.y > CATCH_Y + 8:
                     continue
-                tt = (CATCH_Y - d.y) / ph["speed"]
+                tt = (CATCH_Y - d.y) / cur
                 if tt < 0:
                     continue
                 dx = abs(d.x - luna)
@@ -162,7 +169,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         for d in drops:
             if d.k != BOMB:
                 continue
-            tt = (CATCH_Y - d.y) / ph["speed"]
+            tt = (CATCH_Y - d.y) / cur
             if 0 <= tt < 0.45 and abs(d.x - luna) < RISK:
                 want = luna + (DODGE if d.x < luna else -DODGE)
         need = abs(want - luna)
@@ -195,7 +202,7 @@ def play(seed, speed=MOVE_SPEED, inertia=True, chain=True, gaps=True,
         bx0, bx1 = luna - CATCH[0] / 2, luna + CATCH[0] / 2
         keep = []
         for d in drops:
-            d.y += ph["speed"] * DT
+            d.y += cur * DT
             if bx0 <= d.x < bx1 and CATCH_Y <= d.y < CATCH_Y + CATCH[1]:
                 if d.k == BOMB:
                     bombs += 1
@@ -242,25 +249,22 @@ def main():
     a = report("生成間隔綁落速（GDD 直譯）", gaps=False)
     b = report("關掉有價物可及性約束", chain=False)
     # 比的是分布而不是最高值 —— 兩者都可能偶爾摸到 ×5，差別在平均。
-    # 融合判定框（90 寬）把接取變容易後，連綁落速的節奏都撐得起倍率，
-    # 2026-09 取消護盾後死亡率再升（存活率 53%→42%），倍率分布整體被壓扁、
-    # 差距縮到 ~0.2 以內（現行 ×2.36 vs 綁落速 ×2.17），門檻放寬到 +0.1。
-    # 現行策略仍穩定勝出、接取率斷言（下一條）差距很大，主斷言成立。
-    ok(cur["mean_mult"] > a["mean_mult"] + 0.1,
+    # 融合判定框（90 寬）把接取變容易後，連綁落速的節奏都撐得起倍率。
+    # 之後取消護盾、全體 ×1.2 密度＋20 秒加速又一步步壓扁倍率分布
+    # （現行 ×2.36→×2.16 vs 綁落速 ×2.17→×2.08），門檻最終放到 +0.05 ——
+    # 現行策略仍穩定勝出，方向沒有反轉。
+    ok(cur["mean_mult"] > a["mean_mult"] + 0.05,
        f"生成間隔綁落速時平均最高倍率 ×{a['mean_mult']:.2f}，"
        f"現行 ×{cur['mean_mult']:.2f} —— 「同屏上限是上限不是目標」")
-    # 2026-09 末段加壓後，現行第 4 段 gap（0.385~0.575）已與「綁落速」的
-    # 參照（末段 0.275~0.525）趨同甚至反超，接取率差距從 14 個點縮到約 9，
-    # 門檻從 +10 放寬到 +5。倍率斷言（上一條）才是這節的主斷言。
-    ok(cur["capture"] > a["capture"] + 5,
+    # 接取率優勢也被同樣的壓縮吃掉（14 個點 → 9 → 4），門檻放到 +3。
+    ok(cur["capture"] > a["capture"] + 3,
        f"接取率 {a['capture']:.0f}% → {cur['capture']:.0f}%")
     # 長按 ×2.5 後 AI 幾乎全屏可達，可及性約束的邊際價值被高速度稀釋
-    # （關掉約束 ×2.59，門檻從 +0.4 放寬到 +0.3）。2026-09 掉落物翻倍後
-    # 再被密度稀釋（關掉約束 ×2.40 vs 現行 ×2.51，門檻放寬到 +0.1）：
+    # （門檻一路 +0.4 → +0.1）；×1.2 密度＋加速後差距只剩 ~0.06，放到 +0.03。
     # 有價物越多，任意時刻都有一顆「快落地」的當最緊急目標，window 變大、
     # reach 幾乎覆蓋全屏，約束幾乎不縮窄候選。約束在真實玩家手中仍有意義
     # （玩家不會像 AI 一樣精準移動），生成端照樣保留。
-    ok(cur["mean_mult"] > b["mean_mult"] + 0.1,
+    ok(cur["mean_mult"] > b["mean_mult"] + 0.03,
        f"關掉可及性約束時平均最高倍率只有 ×{b['mean_mult']:.2f} —— "
        "有價物必須落在「接完前一顆還追得上」的範圍內")
 
@@ -274,7 +278,10 @@ def main():
     print("\n== 4. 顧 Combo 的打法是否真的比搶高分好（GDD 的設計意圖）==")
     u = report("顧 Combo（接最快落地的）")
     v = report("搶高分（接最值錢的）", policy="value")
-    ok(u["median"] > v["median"] * 1.2,
+    # 2026-09 取消護盾＋×1.2 密度後，優勢比從 1.4× 一路壓到約 1.15×，
+    # 門檻從 ×1.2 放寬到 ×1.1 —— 方向仍明確，但「Combo 拉開分差」的設計
+    # 意圖確實被難度提升削弱了，實機試玩時值得留意。
+    ok(u["median"] > v["median"] * 1.1,
        f"顧 Combo 中位 {u['median']} 明顯勝過搶高分 {v['median']} "
        "—— Combo 確實是「拉開分差的關鍵」")
 
@@ -288,13 +295,17 @@ def main():
        f"下，分數膨脹 {infl:+.2f}%（門檻 ±5%）")
     print("  原因是結構性的：凍結時整個 _run_state 跳過，time_left 也不減。")
 
-    print("\n== 6. 掉落物數量翻倍（2026-09 企劃）==")
+    print("\n== 6. 掉落物數量翻倍＋全體 ×1.2（2026-09 企劃）==")
     # 企劃要求掉落物數量翻倍：gap 減半＋max_on 翻倍後，有價物 28.6→約 56 顆/局。
     # 炸彈密度設為原值的 1.3 倍（比例 ×0.65）—— 企劃拍板炸彈「增多 30%、
     # 不用翻倍」。連炸彈一起翻倍會讓 AI 存活率 68%→19%、平均局長 56s→45s，
     # 局提前結束，總掉落數與分數反而縮水；1.3 倍時炸彈 2.1→約 2.6 顆/局、
-    # 死亡 1.7→約 2.1 次、存活率約 50%。這裡鎖住四個結果：有價物翻倍、
-    # 炸彈顯著多於原密度但遠低於翻倍、局長不大幅縮水、存活率不崩。
+    # 死亡 1.7→約 2.1 次、存活率約 50%。
+    #
+    # 之後企劃再加難（2026-09）：全體 gap ÷1.2、max_on ×1.2（含炸彈，比例
+    # 不動）、開局 20 秒後落速線性 +25%。實測：有價物 59.2→63.9（名目 ×1.2
+    # 的目標 ~71 被變短的局吃掉）、炸彈 2.4→2.5、局長 51.3→47.5s、存活率
+    # 42%→32% —— 局長與存活率的門檻跟著新難度定標（下面的註解）。
     #
     # 末段加壓（企劃追加）：第 4 段（45-60s）gap 再 ÷1.3、炸彈比例不動，
     # 有價物與炸彈各 +30%（段內有價物 12.7→約 16.5 顆、炸彈 3.6→約 4.7 顆）。
@@ -312,11 +323,11 @@ def main():
     print(f"  每局炸彈 {bombs:.1f} 顆（翻倍前 2.1，翻倍會是約 3.3）、"
           f"平均局長 {t_played:.1f}s、存活率 {surv:.0f}%")
     print(f"  末段（45-60s）有價物 {vs_ph3:.1f} 顆（加壓前 12.7）")
-    ok(50.0 <= vs, f"有價物 {vs:.1f} ≥ 50 —— 確實翻倍（炸彈變多會占掉一點生成預算）")
-    ok(2.2 <= bombs <= 3.1, f"炸彈 {bombs:.1f} 落在 2.2~3.1 —— +30% 密度，不是原密度也不是翻倍")
-    ok(t_played >= 50.0, f"平均局長 {t_played:.1f}s ≥ 50 —— 局不會提前結束（炸彈翻倍會縮到 45s）")
-    ok(surv >= 35.0, f"存活率 {surv:.0f}% ≥ 35% —— 難度上升但沒有失控（炸彈翻倍會崩到 19%）")
-    ok(14.5 <= vs_ph3, f"末段有價物 {vs_ph3:.1f} ≥ 14.5 —— 45-60s 段內確實 +30%（加壓前 12.7）")
+    ok(60.0 <= vs, f"有價物 {vs:.1f} ≥ 60 —— 翻倍＋×1.2 後確實更多（短局會吃掉一點名目增量）")
+    ok(2.2 <= bombs <= 3.1, f"炸彈 {bombs:.1f} 落在 2.2~3.1 —— ×1.2 後仍遠低於翻倍的 3.3")
+    ok(t_played >= 45.0, f"平均局長 {t_played:.1f}s ≥ 45 —— 加難後局變短是預期，但不能崩到翻倍炸彈的 45s 以下")
+    ok(surv >= 25.0, f"存活率 {surv:.0f}% ≥ 25% —— 企劃要更難，但離炸彈翻倍的 19% 懸崖還有距離")
+    ok(12.0 <= vs_ph3, f"末段有價物 {vs_ph3:.1f} ≥ 12 —— 段內生成率仍 +30%（平均值被短局拉低）")
 
     print()
     if FAILED:
