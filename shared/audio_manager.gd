@@ -29,8 +29,8 @@ const BGM_PATHS := {
 }
 
 ## SFX 名稱 → 路徑（三款各三支）。UI 音效已接入各選單界面：
-## ui_confirm／ui_select 給選單；ui_coin_none（幣不夠被擋）與 coin_push
-## （投幣）給 2026-09 的投幣系統（launcher 二級標題）。
+## ui_confirm／ui_select 給選單；ui_coin_none 給起名屏的重名提示
+## （投幣系統 2026-09 拆除，coin_push 隨之移除）。
 const SFX_PATHS := {
 	# Catch
 	"catch_boom": SFX_DIR + "CATCH/catch_boom.wav",
@@ -47,7 +47,6 @@ const SFX_PATHS := {
 	# UI
 	"ui_confirm": "res://assets/audio/UI/UI_confirm.wav",
 	"ui_select": "res://assets/audio/UI/UI_select.wav",
-	"coin_push": "res://assets/audio/UI/coin_push.wav",
 	"ui_coin_none": "res://assets/audio/UI/UI_Coin_None.wav",
 	# 排行榜
 	"fireworks_celebration": SFX_DIR + "fireworks_celebration.wav",
@@ -121,6 +120,16 @@ func apply_music_setting() -> void:
 			play_bgm(_bgm_name, _bgm_loop)
 	else:
 		_bgm_player.stop()
+
+
+## 徹底停掉 BGM，並清掉「當前場合」的曲名記錄（管理員密碼成功回一級標題
+## 用 —— 一級沒有 BGM，該安靜）。曲名清掉後 apply_music_setting() 的接續
+## 播放就沒有歌可接：在 SETTING 把 MUSIC 關了再開，不會把二級標題的曲子
+## 復活到一級畫面。
+func stop_bgm() -> void:
+	_bgm_player.stop()
+	_bgm_name = ""
+	_bgm_loop = false
 
 
 ## 播放單發音效。同一支音效快速連發也不互相打斷：

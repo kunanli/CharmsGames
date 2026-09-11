@@ -6,22 +6,19 @@ extends Node2D
 #     A 確認）
 #   → GAME_TITLE（二級標題＝該款全屏影片背景，無按鈕、底部一行閃爍的
 #     PRESS ANY BUTTON TO START 提示：按**任意鍵** → 起名開局；A／B 例外 —— 兩個一起按住 3 秒 →
-#     管理員密碼界面，提前鬆開＝普通按鍵 → 起名。開局一律過投幣閘門：
-#     Y＝投幣（InputMap coin_insert，不觸發起名）；幣不夠（且非無限投幣）
-#     → 左下角 Coin 圖抖動＋UI_Coin_None、留在二級，夠 → 扣幣＋UI_confirm
-#     → 起名。幣量與閘門在 CoinManager，UI 畫在本檔 _draw_coin_ui）
+#     管理員密碼界面，提前鬆開＝普通按鍵 → 起名）
 #
 #   街機鍵位（2026-09 起，shared/arcade_input.gd ＋ project.godot [input]，
 #   鍵盤與 Xbox 手柄同時生效）：A＝鍵盤 A／手柄 A、B＝鍵盤 S／手柄 B
-#   （2026-09 鍵盤 B 的邏輯全部改到 S，鍵盤 B 不再有用）、投幣
-#   Y＝鍵盤 Y／手柄 View/Back。手柄按鈕事件不進 _unhandled_key_input，
-#   所以本檔的按鍵處理走 _unhandled_input，A／B／投幣一律讀 InputMap action。
+#   （2026-09 鍵盤 B 的邏輯全部改到 S，鍵盤 B 不再有用）。手柄按鈕事件不進
+#   _unhandled_key_input，所以本檔的按鍵處理走 _unhandled_input，A／B 一律
+#   讀 InputMap action。
 #   管理員界面（一級清單／SETTING 二三四級）的 ↑↓ 選擇另收手柄左搖杆上下
 #   （_pad_stick_nav：死區 ±0.5、邊沿觸發不連發）；其餘方向輸入仍只吃鍵盤。
 #   → NAME_INPUT → PLAYING
 #   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #   一級標題選中 SETTING 按 A → SETTING（二級：CLEAR LEADERBOARD /
-#     UNLIMITED COINS / MUSIC —— MUSIC 只關 BGM 不關音效，A 執行、B 回一級）
+#     MUSIC / QUIT GAME —— MUSIC 只關 BGM 不關音效，A 執行、B 回一級）
 #   → SETTING_GAME（三級：CLEAR MAZE / FISHING / CATCH DATA，選要清哪一款、
 #     A 進四級、B 回 SETTING）
 #   → SETTING_CLEAR（四級：CLEAR TODAY / LAST 24 HOURS / ALL DATA，只清
@@ -121,14 +118,13 @@ const MENU_NAME_SIZE := 16
 const MENU_SUB_SIZE := 11      # SETTING 二級／三四級選單的字體（選項名字比一級長）
 const MENU_LINE_H := 18.0      # 4 行（三款遊戲＋SETTING）塞進 291 高的區域
 
-## SETTING 二級選單的四個選項（索引即 setting_index）。MUSIC 只控制 BGM：
+## SETTING 二級選單的三個選項（索引即 setting_index）。MUSIC 只控制 BGM：
 ## 狀態存 Settings（跨執行保存），AudioManager 播 BGM 前與切換當下讀取。
 ## QUIT GAME 按 A 直接結束遊戲（Settings／排行榜皆即時存檔，退出不丟資料）。
-const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "UNLIMITED COINS", "MUSIC", "QUIT GAME"]
+const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "MUSIC", "QUIT GAME"]
 const SETTING_CLEAR_IDX := 0
-const SETTING_COINS_IDX := 1
-const SETTING_MUSIC_IDX := 2
-const SETTING_QUIT_IDX := 3
+const SETTING_MUSIC_IDX := 1
+const SETTING_QUIT_IDX := 2
 
 ## SETTING 三級清除選單：選要清哪一款（索引即 clear_game_index，順序對應
 ## GAMES）。_ready() 從 GAMES 的 menu_name 組出 —— 新增一款遊戲自動多一行。
@@ -154,7 +150,7 @@ const AB_HOLD_SECONDS := 3.0
 const START_PROMPT_PERIOD := 1.2
 const START_PROMPT_ON_SECONDS := 0.7
 
-## 二級標題 PRESS ANY BUTTON TO START 與投幣數字的每款配色（2026-09 企劃
+## 二級標題 PRESS ANY BUTTON TO START 的每款配色（2026-09 企劃
 ## 指定，跟各款標題影片的美術配色走）。只用在 launcher 標題層文字，不進
 ## shared/palette.gd 的 21 色共用遊戲色盤；鍵＝GAMES 的 id。
 const TITLE_TEXT_COLORS := {
@@ -162,21 +158,6 @@ const TITLE_TEXT_COLORS := {
 	"fishing": {"text": Color("4982F3"), "shadow": Color("2923D1")},
 	"catch": {"text": Color("A351F8"), "shadow": Color("4311B7")},
 }
-
-
-## ── 投幣 UI（二級標題左下角，2026-09）────
-## Coin 圖與幣量文字：1920×1080 設計座標 (70, 940) 起、48×48（÷4 = 邏輯
-## (17.5, 235) 起、12×12）。Coin.png 原圖 1312×1199，全專案最近鄰取樣，
-## 百倍縮小直接畫會糊成一團 —— _ready() 裡用 Image LANCZOS 一次降採樣
-## 到 12×12 再畫。
-const COIN_SOURCE: Texture2D = preload("res://assets/UI/Coin.png")
-const COIN_UI_POS := Vector2(70.0, 940.0) / 4.0
-const COIN_UI_SIZE := Vector2(48.0, 48.0) / 4.0
-const COIN_UI_TEXT_GAP := 4.0    # 狀態文字與 Coin 圖右緣的間距（邏輯 px）
-
-## 幣不夠被擋下時 Coin 圖的水平抖動：總時長與振幅（邏輯 px，畫面上 ×4）。
-const COIN_SHAKE_SECONDS := 0.4
-const COIN_SHAKE_AMPLITUDE := 2.0
 
 
 var mode := Mode.MENU
@@ -196,10 +177,8 @@ var _stick_nav_dir := 0       # 手柄左搖杆垂直推量（0 中立／-1 上�
 var _title_video: VideoStreamPlayer = null   # 二級標題背景影片（NORMAL 與起名 overlay 的底層）
 var _start_prompt_elapsed := 0.0  # 底部 PRESS ANY BUTTON TO START 閃爍相位（秒），進二級時歸零
 var _title_stream_cache: Dictionary = {}  # game index → VideoStream；載入失敗記 null 不重試
-var _coin_tex: Texture2D = null   # 投幣 UI 的 Coin 圖（_ready 降到 12×12；解不開時用原圖）
-var _coin_shake_time := 0.0       # 幣不夠的 Coin 圖抖動剩餘秒數（>0 時每幀重繪）
 var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
-var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = UNLIMITED COINS、2 = MUSIC
+var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = MUSIC、2 = QUIT GAME
 var clear_game_index := 0     # SETTING 三級清除選單：0 = MAZE、1 = FISHING、2 = CATCH（對應 GAMES）
 var clear_index := 0          # 四級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
 
@@ -233,17 +212,6 @@ func _ready() -> void:
 	_title_video.connect("finished", Callable(self, "_on_title_video_finished"))
 	add_child(_title_video)
 
-	# 投幣 UI 的 Coin 圖：原圖太大（1312×1199），載入時一次 LANCZOS 縮到
-	# 顯示尺寸 12×12（設計 48×48 ÷4）。素材解不開（get_image 失敗）時退回
-	# 原圖直接畫 —— 與「素材未進場不當機」的慣例一致；兩者皆不可用時
-	# _draw_coin_ui 只畫文字。
-	var coin_img: Image = COIN_SOURCE.get_image()
-	if coin_img != null:
-		coin_img.resize(int(COIN_UI_SIZE.x), int(COIN_UI_SIZE.y), Image.INTERPOLATE_LANCZOS)
-		_coin_tex = ImageTexture.create_from_image(coin_img)
-	else:
-		_coin_tex = COIN_SOURCE
-
 	queue_redraw()
 
 
@@ -252,10 +220,6 @@ func _process(delta: float) -> void:
 		_notice_timer -= delta
 		if _notice_timer <= 0.0:
 			_notice = ""
-		queue_redraw()
-	if _coin_shake_time > 0.0:
-		# 幣不夠的 Coin 圖抖動：倒數到 0 自動停（_draw 的偏移同步歸 0）。
-		_coin_shake_time = maxf(_coin_shake_time - delta, 0.0)
 		queue_redraw()
 	if mode == Mode.GAME_TITLE:
 		# 二級標題：背景影片每幀更新＋底部提示的閃爍相位，都要每幀重繪。
@@ -314,9 +278,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# NAME_INPUT / LEADERBOARD 的按鍵由各自的子節點處理並吃掉事件，
 	# launcher 不需要也不應該碰。
 	#
-	# 輸入分層（街機 A／B／投幣走 InputMap action —— 鍵盤 A·S·Y 與手柄
-	# A·B·View 都會命中；方向鍵維持鍵盤直讀 keycode，管理員界面的 ↑↓
-	# 另收手柄左搖杆上下）：
+	# 輸入分層（街機 A／B 走 InputMap action —— 鍵盤 A·S 與手柄 A·B 都會
+	# 命中；方向鍵維持鍵盤直讀 keycode，管理員界面的 ↑↓ 另收手柄左搖杆上下）：
 	#   Level 1  密碼彈窗開著 → 只剩彈窗自己的按鍵，這裡整段不處理
 	#   Level 2  二級標題 → 按**任意鍵**進入起名流程（A／B 例外：先等長按
 	#            判定 —— 兩顆一起按住 3 秒進管理員密碼界面、提前鬆開＝普通
@@ -324,8 +287,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	#            管理員密碼一條路）
 	#   Level 3  一級標題 → ↑ ↓ 選遊戲／SETTING（循環）、A 確認進二級標題
 	#            （SETTING 則進 SETTING 二級選單）；B 沒有功能
-		#   Level 4  SETTING 二級 → ↑ ↓ 選項、A 執行（CLEAR LEADERBOARD＝進三級、
-		#            UNLIMITED COINS＝切換 ON/OFF）、B/ESC 回一級
+		#   Level 4  SETTING 二級 → ↑ ↓ 選項、A 執行（CLEAR LEADERBOARD＝進三級）、
+		#            B/ESC 回一級
 		#   Level 5  SETTING_GAME 三級 → ↑ ↓ 選要清哪一款、A 進四級、B/ESC 回二級
 		#   Level 6  SETTING_CLEAR 四級 → ↑ ↓ 選清除規則、A 執行（只清三級選中的
 		#            那款，執行完回 SETTING 二級）、B/ESC 回三級
@@ -357,8 +320,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				match setting_index:
 					SETTING_CLEAR_IDX:
 						mode = Mode.SETTING_GAME        # 進三級：選要清哪一款
-					SETTING_COINS_IDX:
-						Settings.set_unlimited_coins(not Settings.is_unlimited_coins())
 					SETTING_MUSIC_IDX:
 						_toggle_music()                  # 只關 BGM，音效不受影響
 					SETTING_QUIT_IDX:
@@ -408,13 +369,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				AudioManager.play_sfx("ui_select")
 				queue_redraw()
 		Mode.GAME_TITLE:
-			# Y／手柄 View ＝投幣：吃掉事件，不觸發起名（幣量 +1＋coin_push 音效）。
-			if _is_coin_insert(event):
-				_insert_coin()
-			# 任意鍵 → 起名開局（閘門見 _launch）。A／B 例外：按下後先等長按
-			# 判定（_process 裡兩顆一起按住 3 秒 → 管理員密碼界面；提前鬆開 →
-			# 放開分支當普通按鍵進起名 —— 一樣要過 _launch 的投幣閘門）。
-			elif _is_arcade_a(event) or _is_arcade_b(event):
+			# 任意鍵 → 起名開局。A／B 例外：按下後先等長按判定（_process 裡
+			# 兩顆一起按住 3 秒 → 管理員密碼界面；提前鬆開 → 放開分支當普通
+			# 按鍵進起名）。
+			if _is_arcade_a(event) or _is_arcade_b(event):
 				_ab_hold_active = true
 				_ab_hold_time = 0.0
 			else:
@@ -485,14 +443,7 @@ func _launch(index: int) -> void:
 		_show_notice("%s NOT BUILT YET" % entry["title"], Palette.WARN)
 		return
 
-	# 投幣閘門（規格：先擋幣再進起名）：無限投幣 ON 直接放行且不扣幣；
-	# OFF 時餘額夠 START_COST 才扣一枚放行。不夠 → Coin 圖抖動＋
-	# UI_Coin_None，留在二級標題、不進起名。閘門排在 NOT BUILT 之後，
-	# 沒建置的款項不會白吃玩家一枚幣。
-	if not CoinManager.consume_coin():
-		_start_coin_shake()
-		return
-	AudioManager.play_sfx("ui_confirm")   # 只有成功進入起名／開局才播
+	AudioManager.play_sfx("ui_confirm")   # 成功進入起名／開局才播
 
 	if not CurrentPlayerSession.is_active():
 		# 第一次進遊戲：先輸入名字，輸入成功才真正開局
@@ -500,31 +451,6 @@ func _launch(index: int) -> void:
 		_open_name_input()
 		return
 	_start_game(index)
-
-
-# ── 投幣（二級標題 Y；InputMap action「coin_insert」＝鍵盤 Y＋手柄 View）──
-
-## 這顆輸入事件是不是「投幣」（鍵盤 Y／手柄 View/Back）。action 被人從
-## project.godot 的 [input] 拿掉時安全回 false，不讓 is_action_pressed 刷錯誤。
-func _is_coin_insert(event: InputEvent) -> bool:
-	return ArcadeInput.pressed(event, ArcadeInput.ACTION_COIN)
-
-
-## Y／手柄 View 投一枚幣：幣量 +1、刷新左下角顯示、播 coin_push。無限投幣 ON 也
-## 照常累計與播音（實體投幣的聲音，規格允許；ON/OFF 只影響開局扣不扣）。
-## 不設投幣上限。
-func _insert_coin() -> void:
-	CoinManager.add_coin()
-	AudioManager.play_sfx("coin_push")
-	queue_redraw()
-
-
-## 幣不夠被 _launch 擋下：Coin 圖抖 COIN_SHAKE_SECONDS 秒＋UI_Coin_None。
-## 抖動結束自動恢復正常（_process 倒數歸零，偏移在 _draw 同步回 0）。
-func _start_coin_shake() -> void:
-	_coin_shake_time = COIN_SHAKE_SECONDS
-	AudioManager.play_sfx("ui_coin_none")
-	queue_redraw()
 
 
 # ── SETTING 二級選單的 MUSIC 開關（只控制 BGM，音效不受影響）────
@@ -552,6 +478,7 @@ func _start_game(index: int) -> void:
 	if script == null:
 		_show_notice("%s FAILED TO LOAD" % entry["title"], Palette.WARN)
 		mode = Mode.MENU
+		AudioManager.stop_bgm()   # 回一級：一級沒有 BGM
 		queue_redraw()
 		return
 
@@ -667,7 +594,7 @@ func _open_name_input() -> void:
 	ni.set("dup_checker", Callable(self, "_is_name_taken"))
 	ni.connect("confirmed", Callable(self, "_on_name_confirmed"))
 	ni.connect("cancelled", Callable(self, "_on_name_cancelled"))
-	ni.connect("aborted", Callable(self, "_on_name_aborted"))
+	ni.connect("aborted", Callable(self, "_on_name_cancelled"))   # 中止＝同樣回二級（2026-09 投幣拆除後與取消同路）
 	_name_input = ni
 	add_child(ni)
 	mode = Mode.NAME_INPUT
@@ -687,14 +614,6 @@ func _on_name_cancelled() -> void:
 	mode = Mode.GAME_TITLE      # 取消起名 → 回二級標題（不是一級）
 	_begin_title()              # 回二級：啟動背景影片與標題 BGM
 	queue_redraw()
-
-
-## 起名中止（2026-09：街機端名字為空時按 B／S／鍵盤 ← 鈕）：先把開局閘門
-## 吃掉的那枚幣退回 CoinManager（無限投幣 ON 時閘門沒扣過幣，refund 自動
-## 不補），其餘與 ESC 取消相同 —— 回二級標題。ESC 取消不走這裡、不退幣。
-func _on_name_aborted() -> void:
-	CoinManager.refund_start_cost()
-	_on_name_cancelled()
 
 
 ## 起名查重（2026-09）：只查**本款**排行榜的歷史記錄 —— 分榜互不干涉，
@@ -723,6 +642,7 @@ func _open_password_modal() -> void:
 func _on_password_succeeded() -> void:
 	_close_password_modal()
 	_title_video.stop()    # 回一級：二級標題背景影片不再需要
+	AudioManager.stop_bgm()   # 回一級：一級沒有 BGM，停掉二級標題的 TITLE 曲
 	_stick_nav_dir = 0     # 離開管理員流程：搖桿邊沿狀態重置
 	mode = Mode.MENU
 	queue_redraw()
@@ -848,7 +768,6 @@ func _draw() -> void:
 		_draw_title_background()
 		if mode == Mode.GAME_TITLE:
 			_draw_start_prompt()
-			_draw_coin_ui()   # 左下角投幣顯示（只掛在二級標題 NORMAL）
 	else:
 		return              # 遊戲／面板／輸入屏自己會把整個畫面畫滿
 
@@ -877,9 +796,9 @@ func _draw_game_menu() -> void:
 		MENU_SELECTED if sel_setting else MENU_IDLE)
 
 
-## SETTING 二級選單（CLEAR LEADERBOARD / UNLIMITED COINS / MUSIC）：同一塊
+## SETTING 二級選單（CLEAR LEADERBOARD / MUSIC / QUIT GAME）：同一塊
 ## 管理員區域內垂直排列，選中／未選中顏色與一級清單相同。開關型選項
-## （UNLIMITED COINS／MUSIC）行右側緊接名字顯示 ON/OFF 狀態
+## （MUSIC）行右側緊接名字顯示 ON/OFF 狀態
 ## （用量到的名字寬度推過去）。底部一行操作提示在區域內。
 func _draw_setting_menu() -> void:
 	var font := ThemeDB.fallback_font
@@ -903,8 +822,6 @@ func _draw_setting_menu() -> void:
 
 ## 開關型 SETTING 選項右側的 ON/OFF 狀態文字；非開關選項回空字串（不畫）。
 func _setting_status(index: int) -> String:
-	if index == SETTING_COINS_IDX:
-		return "ON" if Settings.is_unlimited_coins() else "OFF"
 	if index == SETTING_MUSIC_IDX:
 		return "ON" if Settings.is_music_on() else "OFF"
 	return ""
@@ -999,36 +916,3 @@ func _title_text_colors() -> Dictionary:
 	if active_index < 0 or active_index >= GAMES.size():
 		return fallback
 	return TITLE_TEXT_COLORS.get(GAMES[active_index]["id"], fallback)
-
-
-## 二級標題左下角的投幣顯示：Coin 圖（12×12，1920×1080 設計 48×48）＋
-## 右側狀態文字 —— 無限投幣 ON 顯示「∞」、OFF 顯示「餘額/需求」（如 0/1，
-## 需求 = CoinManager.START_COST）。文字底影與 PRESS ANY BUTTON 同款雙層
-## 畫法，亮色影片上也看得清。幣不夠被擋下時整組水平抖動（位移只在繪製
-## 層，見 _coin_shake_offset）。只由 _draw 的 GAME_TITLE 分支呼叫
-## （起名 overlay 不畫 —— 起名時幣已扣完）。
-func _draw_coin_ui() -> void:
-	var shake := Vector2(_coin_shake_offset(), 0.0)
-	if _coin_tex != null:
-		draw_texture_rect(_coin_tex, Rect2(COIN_UI_POS + shake, COIN_UI_SIZE), false)
-	var font := ThemeDB.fallback_font
-	var text := "∞" if CoinManager.is_unlimited_coins() \
-		else "%d/%d" % [CoinManager.get_coins(), CoinManager.START_COST]
-	# 文字基線對齊圖示底緣（圖示 235..247，基線 245），尺寸 12 = 像素字體
-	# 原生 12px 的整數倍，網格對得齊。
-	var pos := Vector2(COIN_UI_POS.x + COIN_UI_SIZE.x + COIN_UI_TEXT_GAP,
-		COIN_UI_POS.y + COIN_UI_SIZE.y - 2.0) + shake
-	# 幣量文字跟 PRESS ANY BUTTON 同一套每款配色（2026-09 企劃指定）。
-	var colors := _title_text_colors()
-	draw_string(font, pos + Vector2(0.0, 1.0), text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, colors["shadow"])
-	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, colors["text"])
-
-
-## 幣不夠抖動的水平位移：振幅隨剩餘時間線性衰減的正弦，倒數到 0 時
-## 正好回到 0，不會停在偏移上（位移只進 draw，不碰任何節點 position）。
-func _coin_shake_offset() -> float:
-	if _coin_shake_time <= 0.0:
-		return 0.0
-	return COIN_SHAKE_AMPLITUDE * (_coin_shake_time / COIN_SHAKE_SECONDS) \
-		* sin(_coin_shake_time * 60.0)

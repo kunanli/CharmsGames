@@ -13,12 +13,11 @@ extends Node2D
 #   ↑ ↓ ← →（搖杆）      移動選擇框；邊界夾住不繞行
 #   A（或 Enter／空白）   確認：選字元 → 加入名字；選 OK → 確認名字
 #   B（鍵盤 S）／鍵盤 ←   刪除最後一個字元；名字已空 → 中止起名（aborted，
-#                         launcher 退回開局吃掉的那枚幣）—— 2026-09 鍵盤 B
+#                         launcher 回二級標題）—— 2026-09 鍵盤 B
 #                         邏輯改到 S，鍵盤上的 ← 鈕與 B 同義
 #   X                     清空全部（輸入框閃一下回饋）
 #   Y                     預留，暫無功能（結構已留好，未來直接掛）
-#   ESC                   取消 → cancelled（不退幣；退幣的中止入口是上面
-#                         「名字為空時按 B／S／←」）
+#   ESC                   取消 → cancelled（回二級標題；與中止同路）
 # 同時也吃手把事件（十字鍵／左搖杆／A B X Y），實機可直接用手把測。
 #
 # 名字規則：只收 A-Z / 0-9，最多 MAX_NAME_LEN（9）字；名字為空時
@@ -36,8 +35,8 @@ extends Node2D
 # ─────────────────────────────────────────────────────────
 
 signal confirmed(name: String)
-signal cancelled          # ESC 取消（不退幣，開發機逃生口）
-signal aborted            # 中止起名：名字為空時按 B／S／鍵盤 ←（launcher 退幣）
+signal cancelled          # ESC 取消（回二級標題，開發機逃生口）
+signal aborted            # 中止起名：名字為空時按 B／S／鍵盤 ←（launcher 同樣回二級）
 
 const SCREEN := Vector2(480, 270)
 
@@ -300,7 +299,7 @@ func _confirm() -> void:
 
 
 ## B（鍵盤 S）／鍵盤 ← 鈕：刪掉最後一個字元。名字已空 → 中止起名
-## （aborted），launcher 會退回開局閘門吃掉的那枚幣並回二級標題 ——
+## （aborted），launcher 收到後回二級標題 ——
 ## 這是街機端唯一的中止入口（ESC 只是開發機鍵盤的逃生口，街機沒有 ESC）。
 func _delete() -> void:
 	if _name.is_empty():

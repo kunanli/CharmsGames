@@ -49,7 +49,7 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    **PRESS ANY BUTTON TO START** 提示（亮滅二值閃爍、週期 1.2 秒亮 0.7 秒，
    起名 overlay 不畫這行）：
    按**任意鍵**（方向鍵／A／B／空格／字母鍵……都可以）→ 起名開局；
-   例外有三：**Y**＝投幣（見「投幣系統」段）、**A＋B 同時按住 3 秒** → 進入
+   唯一例外：**A＋B 同時按住 3 秒** → 進入
    **管理員密碼界面**
    （見下，2026-08 取代舊的 START／RANKING 大按鈕與 R／F3 入口 ——
    舊按鈕矩形需求 (60,590)+720×390、`TITLE_START_BTN`／`TITLE_RANKING_BTN`
@@ -70,8 +70,7 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
    （空名按 OK 只有輸入框閃＋OK 抖的回饋）。
    起名屏初始**名字為空**（2026-09 起不再預填 pandora）且預設選中
    第一格（"0"）。**名字為空時按 B（或鍵盤 ← 鈕）＝中止起名**：回二級
-   標題並**退回開局吃掉的那枚幣**（`CoinManager.refund_start_cost()`，
-   見「投幣系統」段）；ESC 取消不退幣。**起名會查重**（2026-09）：
+   標題。**起名會查重**（2026-09）：
    按 OK 時名字與**本款**排行榜歷史記錄重名 → 不進遊戲，名字上方顯示
    "This name is already taken"＋起名界面震一下＋`UI_Coin_None.wav`
    （詳見「三款共通的設計規格」起名段）。
@@ -95,9 +94,9 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 **街機按鍵綁定（2026-09，`shared/arcade_input.gd` ＋ project.godot
 `[input]`，鍵盤與 Xbox 手柄同時生效）**：**A**＝鍵盤 A／手柄 A、
 **B**＝**鍵盤 S**／手柄 B（2026-09 起**鍵盤 B 不再有任何功能**，原 B 邏輯
-全部改到 S）、投幣 **Y**＝鍵盤 Y／手柄 View/Back（button_index 4）。
-上表與各段的 A／B／投幣都指街機按鍵；程式端一律走 InputMap action
-（`arcade_a`／`arcade_b`／`coin_insert`）判斷，不要直接比 KEY_A／KEY_B
+全部改到 S）。
+上表與各段的 A／B 都指街機按鍵；程式端一律走 InputMap action
+（`arcade_a`／`arcade_b`）判斷，不要直接比 KEY_A／KEY_B
 keycode。**方向鍵沒有整綁手柄**：管理員界面（一級清單／SETTING 二三四級）
 的 ↑↓ 選擇與**管理員密碼的方向輸入**都額外吃**手柄左搖杆**（`launcher.gd`
 的 `_pad_stick_nav` 與 `ui/admin_password.gd` 的 `_stick_direction`，
@@ -186,17 +185,15 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   （`clear_records_by_date` 與今天／昨天／前天三個 wrapper）已無 UI 入口，
   保留作為通用工具（sim 第 6 節仍驗證）。
 - **SETTING 管理員設定**（2026-08 新增，一級標題選中 SETTING 按 A 進入，
-  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級四個選項
-  **CLEAR LEADERBOARD／UNLIMITED COINS／MUSIC／QUIT GAME**，↑ ↓（或手柄
+  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級三個選項
+  **CLEAR LEADERBOARD／MUSIC／QUIT GAME**，↑ ↓（或手柄
   左搖杆上下）選擇（循環）、A 執行、B/ESC 回一級（選擇狀態保留）。
   **QUIT GAME**（2026-09 新增）按 A 直接結束遊戲（`get_tree().quit()`、
   無二次確認；Settings／排行榜皆即時存檔，退出不丟資料）。
-  **UNLIMITED COINS**
-  按 A 切換 ON/OFF（開關型選項的 ON/OFF 畫在名字右側），狀態跨執行保存 ——
-  `shared/settings.gd`（class_name Settings，`user://settings.cfg`）；
-  投幣系統已實裝（2026-09，見「投幣系統」段），開局閘門統一透過
-  `CoinManager.is_unlimited_coins()` 轉讀這裡的狀態。**MUSIC**（2026-09
-  新增）按 A 切換 ON/OFF，**只控制 BGM、不控制音效**：AudioManager 的
+  **MUSIC**（2026-09
+  新增）按 A 切換 ON/OFF（開關型選項的 ON/OFF 畫在名字右側，狀態跨執行保存
+  —— `shared/settings.gd`，class_name Settings，`user://settings.cfg`），
+  **只控制 BGM、不控制音效**：AudioManager 的
   `play_bgm()` 每次讀 `Settings.is_music_on()`，關閉時一律不播並停掉
   正在播的曲子（曲名照記，各處 play_bgm 調用點不用改）；切換當下由
   `AudioManager.apply_music_setting()` 立即停／續（打開時接續播回當前
@@ -231,37 +228,15 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
 
 ---
 
-## 投幣系統（2026-09）
+## 投幣系統（2026-09 已移除）
 
-街機代幣：**Y＝投幣**、開一局吃一枚幣；管理員 SETTING 的 UNLIMITED COINS
-切「無限投幣」繞過消耗。
-
-- **檔案分工**：`shared/coin_manager.gd`（class_name CoinManager，靜態單例
-  同 CurrentPlayerSession；`get_coins／add_coin／consume_coin／
-  refund_start_cost／has_coin／is_unlimited_coins`。幣量只存記憶體、啟動歸
-  0、不設上限 —— 投幣是實體
-  行為；要跨執行保存的只有 UNLIMITED 開關，那在 Settings）；launcher 是
-  唯一動幣量的人（Y 接線、開局閘門、Coin UI 畫在 `_draw_coin_ui`），
-  三款小遊戲不知道投幣存在。
-- **開局閘門在 `_launch()`**（排在 NOT BUILT 判斷之後，沒建置的款不白吃
-  幣）：`consume_coin()` 一次做完檢查＋扣幣 —— 無限 ON 永遠放行且**不扣
-  幣**；OFF 時餘額 ≥ `START_COST`（暫定 1）才扣一枚放行。放行 →
-  `UI_confirm.wav` → 起名；擋下 → 左下角 Coin 圖抖動 0.4 秒＋
-  `UI_Coin_None.wav`，留在二級。起名**中止**（2026-09 新增：名字為空時按
-  B／鍵盤 ←，name_input 發 `aborted`）→ `refund_start_cost()` 把那枚幣
-  補回（無限 ON 時閘門沒扣過幣、refund 自動不補）；**ESC 取消仍不退幣**。
-- **二級標題左下角 Coin UI**（只掛 GAME_TITLE —— 起名 overlay 不畫）：
-  `assets/UI/Coin.png` 原圖 1312×1199，_ready()
-  一次 LANCZOS 降到 12×12（1920×1080 設計 48×48、位置 (32,1000)）再畫，
-  右側 12px 狀態文字：無限 ON 顯示「∞」／OFF 顯示「餘額/需求」（如 0/1）。
-  抖動位移只走繪製層、倒數歸零自動停。
-- **Y 接線**：InputMap action **`coin_insert`**（project.godot `[input]`，
-  實體 Y 鍵＋手柄 View/Back，2026-09 加手柄），launcher 用
-  `ArcadeInput.pressed()` 讀（`_is_coin_insert`）。投幣鍵吃掉
-  事件、不觸發起名；無限 ON 也照常 +1 並播 `coin_push.wav`（實體投幣的
-  聲音，規格允許；關掉 ON 後先前投的幣仍在）。
-- **音效**集中在 AudioManager `SFX_PATHS`：`coin_push`（投幣）／
-  `ui_coin_none`（幣不夠）／`ui_confirm`（成功進起名）。
+原投幣系統（Y＝投幣、開局閘門扣幣、SETTING 的 UNLIMITED COINS、二級標題
+左下角 Coin UI、`shared/coin_manager.gd`）已於 **2026-09 末期整體拆除**：
+二級標題按**任意鍵**直接進起名開局、不再扣幣；起名中止（空名按 B／←）與
+ESC 取消都只是回二級標題、沒有退幣分支；`coin_insert` action 自
+project.godot `[input]` 移除，Y／手柄 View 不再有任何特殊功能（當普通按鍵）。
+`assets/UI/Coin.png` 與 `coin_push.wav` 素材檔留著不刪；
+`ui_coin_none.wav` 留下 —— 起名查重的提示音效沿用。
 
 ---
 
@@ -299,8 +274,7 @@ res://
 │   ├── fx.gd               單一物件：粒子爆散／擠壓變形（class_name Fx）
 │   ├── ready_go.gd         開場 READY 動畫：實例化 Ready_go.tscn、淡入淡出、播完自行釋放（class_name ReadyGo）
 │   ├── audio_manager.gd    音訊管理器（Autoload；BGM／SFX 路徑集中在 BGM_PATHS／SFX_PATHS；MUSIC 開關只影響 BGM）
-│   ├── coin_manager.gd     投幣系統：餘額與開局閘門（class_name CoinManager，靜態單例）
-│   └── settings.gd         SETTING 選單的設定值（UNLIMITED COINS／MUSIC，user://settings.cfg）
+│   └── settings.gd         SETTING 選單的設定值（MUSIC，user://settings.cfg）
 ├── ui/
 │   ├── game_over.gd        局終 Game Over 動畫（只淡入淡出文字，背景＝暫停定格的遊戲場景）
 │   ├── leaderboard_panel.gd 排行榜面板（YOUR SCORE 標題＋前 10 名單欄＋底部玩家行）

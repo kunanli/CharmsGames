@@ -7,33 +7,18 @@ extends RefCounted
 # 全靜態單例，跟 Palette / LeaderboardManager 同款用法 ——
 # 不註冊 autoload、不改 project.godot。
 #
-# 目前有兩個開關（都在 launcher 的 SETTING 二級選單切換）：
-#   UNLIMITED COINS —— 投幣系統（shared/coin_manager.gd 的 CoinManager）
-#                      的開局閘門用 is_unlimited_coins() 讀這裡的狀態；
-#   MUSIC          —— 2026-09 新增，只控制 BGM：AudioManager 播 BGM 前與
-#                      SETTING 切換當下讀 is_music_on()，音效不受影響。
+# 目前有一個開關（在 launcher 的 SETTING 二級選單切換）：
+#   MUSIC —— 2026-09 新增，只控制 BGM：AudioManager 播 BGM 前與
+#             SETTING 切換當下讀 is_music_on()，音效不受影響。
 # 未來加設定就是一個 static var ＋ 一對 get/set ＋ _save() 裡的一行。
 # ─────────────────────────────────────────────────────────
 
 const SAVE_PATH := "user://settings.cfg"
 const SECTION := "settings"
-const UNLIMITED_COINS_KEY := "unlimited_coins"
 const MUSIC_ON_KEY := "music_on"
 
-static var unlimited_coins := false
 static var music_on := true       # BGM 預設開（只關音樂，不關音效）
 static var _loaded := false
-
-
-static func is_unlimited_coins() -> bool:
-	_ensure_loaded()
-	return unlimited_coins
-
-
-static func set_unlimited_coins(value: bool) -> void:
-	_ensure_loaded()
-	unlimited_coins = value
-	_save()
 
 
 static func is_music_on() -> bool:
@@ -55,13 +40,11 @@ static func _load() -> void:
 	var cf := ConfigFile.new()
 	if cf.load(SAVE_PATH) != OK:
 		return
-	unlimited_coins = bool(cf.get_value(SECTION, UNLIMITED_COINS_KEY, false))
 	music_on = bool(cf.get_value(SECTION, MUSIC_ON_KEY, true))
 
 
 static func _save() -> void:
 	var cf := ConfigFile.new()
-	cf.set_value(SECTION, UNLIMITED_COINS_KEY, unlimited_coins)
 	cf.set_value(SECTION, MUSIC_ON_KEY, music_on)
 	cf.save(SAVE_PATH)
 
