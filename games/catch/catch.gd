@@ -87,11 +87,13 @@ const COMBO_MAX := 5                # 上限 ×5
 # 前 30 秒炸彈翻倍（2026-09 企劃）：P1/P2 的炸彈比例 ×2（6.5%→13%、
 # 13%→26%），P3/P4 不動 —— 開局炸彈太少、前半壓力不足。注意 P2 的 26%
 # 高過 P3/P4，30 秒處炸彈密度會有一次回落（企劃指定的前傾節奏）。
+# 全局炸彈再 +30%（2026-09 企劃）：四段比例 ×1.3（0.13→0.17、0.26→0.34、
+# 0.195→0.25、0.2275→0.30，取兩位小數）。
 const PHASES := [
-	{"speed": 60.0,  "max_on": 5,  "bomb": 0.13,   "charm_mult": 1.0, "gap": Vector2(0.667, 0.917)},
-	{"speed": 80.0,  "max_on": 7,  "bomb": 0.26,   "charm_mult": 1.0, "gap": Vector2(0.583, 0.833)},
-	{"speed": 100.0, "max_on": 10, "bomb": 0.195,  "charm_mult": 1.0, "gap": Vector2(0.5, 0.75)},
-	{"speed": 120.0, "max_on": 12, "bomb": 0.2275, "charm_mult": 2.0, "gap": Vector2(0.321, 0.479)},
+	{"speed": 60.0,  "max_on": 5,  "bomb": 0.17,  "charm_mult": 1.0, "gap": Vector2(0.667, 0.917)},
+	{"speed": 80.0,  "max_on": 7,  "bomb": 0.34,  "charm_mult": 1.0, "gap": Vector2(0.583, 0.833)},
+	{"speed": 100.0, "max_on": 10, "bomb": 0.25,  "charm_mult": 1.0, "gap": Vector2(0.5, 0.75)},
+	{"speed": 120.0, "max_on": 12, "bomb": 0.30,  "charm_mult": 2.0, "gap": Vector2(0.321, 0.479)},
 ]
 const PHASE_LEN := 15.0
 const CHARM_EVERY := 15.0           # Charm 每 15 秒必定出現 1 個
@@ -99,6 +101,11 @@ const CHARM_EVERY := 15.0           # Charm 每 15 秒必定出現 1 個
 # 局末（60s）累計 +25%（ACCEL_RATE × 40 秒）。前 20 秒維持段落基準速度。
 const ACCEL_START := 20.0
 const ACCEL_RATE := 0.00625
+# 生成密度階梯（2026-09 企劃）：開局 10 秒後掉落物整體 ×1.5 —— 有價物與
+# 炸彈一起變密（gap ÷1.5、max_on ×1.5），炸彈比例不動；落速加速（ACCEL_*）
+# 維持原樣不受影響。前 10 秒保持基準密度，給玩家熱身時間。
+const DENSITY_START := 10.0
+const DENSITY_MULT := 1.5
 
 
 ## 一顆掉落物
@@ -505,6 +512,12 @@ func _catch_rect() -> Rect2:
 
 # ── 掉落物 ──────────────────────────────────────────────
 
+## 目前的生成密度倍率：開局 10 秒後 ×1.5（見 DENSITY_*）—— 有價物與炸彈
+## 一起變密（max_on 與 gap 都乘它）；Charm 的 15 秒必出節拍不受影響。
+func _density_mult() -> float:
+	return DENSITY_MULT if ROUND_TIME - time_left >= DENSITY_START else 1.0
+
+
 func _tick_spawn(delta: float) -> void:
 	for i in LANES:
 		_lane_last[i] += delta
@@ -513,7 +526,8 @@ func _tick_spawn(delta: float) -> void:
 	_spawn_timer -= delta
 
 	var ph := _phase()
-	if drops.size() >= int(ph["max_on"]):
+	var mult := _density_mult()
+	if drops.size() >= int(float(ph["max_on"]) * mult):
 		return
 
 	# Charm 每 15 秒必定出現一個，優先於一般生成
@@ -525,7 +539,7 @@ func _tick_spawn(delta: float) -> void:
 	if _spawn_timer > 0.0:
 		return
 	if _spawn(_roll_kind(ph)):
-		var gap: Vector2 = ph["gap"]
+		var gap: Vector2 = ph["gap"] * (1.0 / mult)
 		_spawn_timer = _rng.randf_range(gap.x, gap.y)
 
 
