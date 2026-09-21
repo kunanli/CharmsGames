@@ -66,6 +66,8 @@ const MOON_BOOST := 3.0                    # 勾到寶物時收線 ×3
 # PRESS A（街機上常有玩家站上去不知道按什麼）。只在鉤子待機（SWING、
 # 按 A 真的會放線）時累計與顯示；任何輸入重新計數，按 A 放線即消失。
 const IDLE_HINT_TIME := 3.0
+## 閒置提示橫幅（Fishing_Atip.png，720×283）的顯示寬度，等比縮放
+const IDLE_HINT_WIDTH := 40.0
 
 # ── 水層（y 範圍）───────────────────────────────────────
 # 淺/中/深 = (112,168)/(162,208)/(212,256)，全區 (112,256)。
@@ -194,6 +196,7 @@ var _p_oneshot := false           # 一次性動畫播放中（播完回基礎�
 var bg_texture : Texture2D = preload("res://assets/fishing/F_BG.jpg");
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
+var s_a_tip: Texture2D = preload("res://assets/UI/Fishing_Atip.png")
 var s_luna: Texture2D = preload("res://assets/fishing/F_Luna.png")
 var s_hook: Texture2D = preload("res://assets/fishing/F_Hook.png")
 var _textures := {
@@ -1029,18 +1032,24 @@ func _draw_hud() -> void:
 
 
 ## 閒置提示：開局倒數結束後連續 IDLE_HINT_TIME 秒沒有任何操作，就在露娜
-## 左側跳出抖動的 PRESS A；按 A 放線（或任何輸入）後 _idle_t 歸零自然消失。
-## 只認 SWING —— 線放出去的途中按 A 沒有用，提示了也白提。
-## 畫在 HUD 層（位移恆 0）：搖桿探看時提示不跟著水面飄，蓋在擺動的線之上。
+## 左側跳出抖動的 PRESS A 橫幅（Fishing_Atip.png）；按 A 放線（或任何輸入）
+## 後 _idle_t 歸零自然消失。只認 SWING —— 線放出去的途中按 A 沒有用，
+## 提示了也白提。畫在 HUD 層（位移恆 0）：搖桿探看時提示不跟著水面飄，
+## 蓋在擺動的線之上。
 func _draw_idle_hint() -> void:
 	if state != State.PLAYING or hook_state != Hook.SWING or _idle_t < IDLE_HINT_TIME:
 		return
+	if s_a_tip == null:
+		return
 	# 高頻雙正弦抖動：±1 邏輯 px（4 倍放大後螢幕上是 ±4px），只抖繪製位置
 	var off := Vector2(sin(_hint_phase * 11.0), sin(_hint_phase * 17.0))
-	# 右緣對齊船身左側留 8px：文字長度怎麼改都不會壓到露娜
+	# 等比縮放：右緣貼船身左側留 8px（橫幅多寬都不會壓到露娜）、
+	# 垂直置中在 y=82 —— 底緣正好落在水面線上
+	var w := IDLE_HINT_WIDTH
+	var h := w * s_a_tip.get_height() / s_a_tip.get_width()
 	var right := PIVOT.x - 38.0
-	draw_string(ThemeDB.fallback_font, Vector2(right - 160.0, 88.0) + off,
-		"PRESS A", HORIZONTAL_ALIGNMENT_RIGHT, 150.0, 16, Palette.MOON)
+	draw_texture_rect(s_a_tip,
+		Rect2(right - w + off.x, 82.0 - h * 0.5 + off.y, w, h), false)
 
 
 ## 最後 10 秒的收尾張力：四周壓一圈越來越深的暗角。純氛圍，不擋視線。

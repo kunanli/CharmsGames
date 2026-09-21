@@ -31,7 +31,7 @@ const START_LIVES := 3
 const MOON_STOCK_MAX := 2     # HUD 最多囤幾個（GDD）
 const PETRIFY_TIME := 5.0     # 啟動後石化幾秒（2026-09 企劃：8 秒改 5 秒）
 const PETRIFY_WARN := 2.0     # 剩幾秒開始閃爍提示
-const MOON_POPUP_TIME := 1.5  # 撿起月亮時，畫面中央 PRESS A 的存活秒數
+const ATIP_TIME := 2.0        # 撿到寶石後，頭上 PRESS A 插圖閃爍幾秒
 # 同一次石化內連續擊碎的分數，超過四隻就維持 400
 const SCORE_BREAK: Array[int] = [50, 100, 200, 400]
 
@@ -74,7 +74,6 @@ var _cave_view: Sprite2D         # 貓窩（2×2 建築貼圖，疊在迷宮上�
 var _cave_base := Vector2.ZERO   # 貓窩貼圖的靜止基準點（_ready 算好，不會再變）
 var _logo_view: Sprite2D         # 中央 Logo 牆的品牌貼圖（疊在 tile 牆上）
 var _overlay: Node2D             # 結算壓暗／CAUGHT!／收尾暗角／石化閃邊
-var _popup: Node2D               # 撿月亮的中央 PRESS A（全場最高層）
 var _world: Node2D
 var _juice := Juice.new(Juice.ARCADE)
 var _fx := Fx.new()               # 粒子（見 shared/fx.gd）
@@ -83,7 +82,7 @@ var _heart_fade := 0.0            # 剛失去的愛心淡出動畫剩餘秒數�
 var _heart_fade_slot := -1        # 正在播動畫的愛心格位
 var _moon_fade := 0.0             # 剛用掉的月光圖示淡出動畫剩餘秒數（0 = 沒在播）
 var _moon_fade_slot := -1         # 正在播動畫的月光格位
-var _moon_popup_left := 0.0       # 撿月亮時中央彈出的 PRESS A 剩餘秒數（0 = 沒在播）
+var _atip_left := 0.0             # 撿寶石後頭上 PRESS A 插圖的剩餘秒數（0 = 沒在播）
 
 var s_bg: Texture2D = preload("res://assets/seeker/Map/S_MAP.png")
 var s_cave: Texture2D = preload("res://assets/seeker/Map/S_Cat_Cave.png")
@@ -93,6 +92,7 @@ var s_logo: Texture2D = preload("res://assets/seeker/Map/S_Hinder_logo.png")
 var s_ui_kuang: Texture2D = preload("res://assets/UI/UI_KUANG.png")
 var s_score_frame: Texture2D = preload("res://assets/UI/SCORE_FRAME.png")
 var s_heart_ui: Texture2D = preload("res://assets/UI/HEART.png")
+var s_atip: Texture2D = preload("res://assets/UI/Maze_Atip.png")
 
 
 func _ready() -> void:
@@ -168,12 +168,6 @@ func _ready() -> void:
 	_world.add_child(player)
 	player.ate.connect(_on_player_ate)
 	player.bumped.connect(_on_player_bumped)
-
-	# 撿月亮的中央彈出提示：排在 _world 之後 = 全場最高層，
-	# 地板、牆、Logo、貓窩、角色都蓋不住它。
-	_popup = Node2D.new()
-	_popup.draw.connect(_draw_moon_popup)
-	add_child(_popup)
 
 	_start_round()
 
@@ -277,8 +271,8 @@ func _process(delta: float) -> void:
 		_heart_fade = maxf(0.0, _heart_fade - delta)
 	if _moon_fade > 0.0:
 		_moon_fade = maxf(0.0, _moon_fade - delta)
-	if _moon_popup_left > 0.0:
-		_moon_popup_left = maxf(0.0, _moon_popup_left - delta)
+	if _atip_left > 0.0:
+		_atip_left = maxf(0.0, _atip_left - delta)
 
 	# 位移無條件更新 —— 頓格期間畫面凍住但還在抖，那正是打擊感的來源
 	_world.position = _juice.world_offset()
@@ -289,7 +283,6 @@ func _process(delta: float) -> void:
 	_logo_view.position = maze.cell_center(Maze.LOGO_CELL) + _juice.world_offset()
 	_cave_view.position = _cave_base + _juice.world_offset()
 	_overlay.queue_redraw()
-	_popup.queue_redraw()
 	queue_redraw()
 
 
@@ -444,8 +437,8 @@ func _on_player_ate(_cell: Vector2i, kind: int) -> void:
 			score += SCORE_MOON
 			# 撿到不會直接發動，存進 HUD 等玩家按 A（GDD 的 Xbox 協議）
 			moon_stock = mini(moon_stock + 1, MOON_STOCK_MAX)
-			# 畫面中央彈出 PRESS A（1.5 秒慢慢放大後消失），引導玩家按 A
-			_moon_popup_left = MOON_POPUP_TIME
+			# 頭上閃爍 PRESS A 插圖 2 秒，引導玩家按 A
+			_atip_left = ATIP_TIME
 			_juice.kick(0.30)
 			_fx.burst(player.position, 12, Palette.MOON, 80.0, 0.5, 3.0, 0.3)
 	if beans_eaten >= beans_total:
@@ -591,14 +584,8 @@ func _draw_hud() -> void:
 		else:
 			_draw_moon(c, moon_size, 0.22)
 	if moon_stock > 0 and petrify_left <= 0.0:
-		# PRESS A 抖動提示：每 0.08 秒跳一格的 ±1px 小位移，暗影與本體同一
-		# 偏移一起抖（各抖各的話陰影會脫節）。queue_redraw 每幀重畫，才會動。
-		var shake_t := int(Time.get_ticks_msec() / 80.0) % 4
-		var jitter := Vector2([0, -1, 0, 1][shake_t], [-1, 0, 1, 0][shake_t])
-		draw_string(font, Vector2(26, 251) + jitter, "PRESS A",
-			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.NIGHT)
-		draw_string(font, Vector2(25, 250) + jitter, "PRESS A",
-			HORIZONTAL_ALIGNMENT_RIGHT, 424, 8, Palette.TEXT)
+		# 右下角：Maze_Atip 方形貼圖（16×16，跟月亮同排、放在月亮左側），常亮
+		draw_texture_rect(s_atip, Rect2(Vector2(404, 250), Vector2(16, 16)), false)
 
 	# 石化倒數與連擊
 	if petrify_left > 0.0:
@@ -609,25 +596,27 @@ func _draw_hud() -> void:
 				HORIZONTAL_ALIGNMENT_CENTER, 480, 10, Palette.BG)
 
 
-## 撿月亮的中央彈出提示（畫在 _popup 上，全場最高層）：50% 透明、1.5 秒內
-## 以螢幕中心為錨點慢慢放大 1.0 → 1.5 倍，播完自動消失；每次撿到各播一次。
-## draw_string 沒有縮放參數，用 draw_set_transform 繞中心等比放大。
-func _draw_moon_popup() -> void:
-	if _moon_popup_left <= 0.0:
+## 撿到寶石後，露娜頭上閃爍 PRESS A 插圖（ATIP_TIME 秒後消失）。
+## 畫在 _overlay：疊在牆與 Logo 之上、角色之下，位置跟著露娜的頭頂走
+##（世界層位移 + 露娜座標）；0.12 秒亮、0.12 秒暗地閃。
+func _draw_atip(on: CanvasItem) -> void:
+	if _atip_left <= 0.0 or player == null:
 		return
-	var font := ThemeDB.fallback_font
-	var k := 1.0 - _moon_popup_left / MOON_POPUP_TIME   # 0 → 1
-	var s := 1.0 + 0.5 * k
-	_popup.draw_set_transform(Vector2(240, 135), 0.0, Vector2(s, s))
-	_popup.draw_string(font, Vector2(-120, 8), "PRESS A",
-		HORIZONTAL_ALIGNMENT_CENTER, 240, 24, Color(Palette.NEAR, 0.8))
-	_popup.draw_set_transform(Vector2.ZERO)
+	if fmod(ATIP_TIME - _atip_left, 0.24) >= 0.12:
+		return                                # 閃爍的暗相
+	# 正方形顯示：24×24，水平對齊露娜、底部離頭頂 3px
+	var s := 24.0
+	var center := player.position + _juice.world_offset() \
+		+ Vector2(0.0, -13.0 - s * 0.5)
+	on.draw_texture_rect(s_atip,
+		Rect2(center - Vector2(s, s) * 0.5, Vector2(s, s)), false)
 
 
 ## 狀態覆蓋層（畫在 _overlay 上）：收尾暗角、石化閃邊、被抓提示、結算壓暗。
 ## 這幾樣得疊在 TileMap 牆與 Logo 之上，又要在露娜與貓之下 —— 本來畫在
 ## _draw 尾端就夠，牆改成子節點後必須跟著升成子節點才不被蓋住。
 func _draw_overlay() -> void:
+	_draw_atip(_overlay)
 	_draw_urgency(_overlay)
 	_draw_petrify_edge(_overlay)
 	if state == State.DYING:
