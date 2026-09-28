@@ -187,11 +187,21 @@ TIME UP 文字的淡入淡出（0.35 秒淡入 → 停留至第 1 秒 → 0.3 �
   （`clear_records_by_date` 與今天／昨天／前天三個 wrapper）已無 UI 入口，
   保留作為通用工具（sim 第 6 節仍驗證）。
 - **SETTING 管理員設定**（2026-08 新增，一級標題選中 SETTING 按 A 進入，
-  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級三個選項
-  **CLEAR LEADERBOARD／MUSIC／QUIT GAME**，↑ ↓（或手柄
+  二級選單與清除選單都畫在同一塊管理員區域內、不蓋黑罩）：二級四個選項
+  **CLEAR LEADERBOARD／MUSIC／QUIT GAME／TURN OFF WINDOWS**，↑ ↓（或手柄
   左搖杆上下）選擇（循環）、A 執行、B/ESC 回一級（選擇狀態保留）。
   **QUIT GAME**（2026-09 新增）按 A 直接結束遊戲（`get_tree().quit()`、
   無二次確認；Settings／排行榜皆即時存檔，退出不丟資料）。
+  **TURN OFF WINDOWS**（2026-09 新增）按 A 先彈 **A／B 確認彈窗**
+  （`ui/confirm_dialog.gd`，通用確認彈窗：半透明黑罩＋小框＋一行文案＋
+  "A CONFIRM B CANCEL" 提示；A／Enter／空白確認、B／ESC 取消；彈窗開著
+  時 launcher 不處理任何按鍵，攔截方式與密碼彈窗同一套 ——
+  launcher 的 `_confirm_modal` 檢查）。確認後**1 秒關機**：Windows 發
+  `shutdown /s /t 1`（OS 層排程，不依賴本程式存活）並立刻結束遊戲本體
+  （即需求「关闭游戏并关闭该电脑」）；非 Windows（開發機）只結束遊戲
+  不動系統。彈窗文案**一律英文**（需求原文「确认关闭游戏并关闭该电脑吗？」
+  —— PixelFont 沒有簡體中文字形，只能同義英文 "QUIT GAME AND SHUT DOWN
+  THIS PC?"，`launcher.gd` 的 `_open_shutdown_confirm` 有留原文註解）。
   **MUSIC**（2026-09
   新增）按 A 切換 ON/OFF（開關型選項的 ON/OFF 畫在名字右側，狀態跨執行保存
   —— `shared/settings.gd`，class_name Settings，`user://settings.cfg`），

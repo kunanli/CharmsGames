@@ -18,7 +18,9 @@ extends Node2D
 #   → NAME_INPUT → PLAYING
 #   → GAME_OVER（局終結算界面）→ LEADERBOARD（排行榜）
 #   一級標題選中 SETTING 按 A → SETTING（二級：CLEAR LEADERBOARD /
-#     MUSIC / QUIT GAME —— MUSIC 只關 BGM 不關音效，A 執行、B 回一級）
+#     MUSIC / QUIT GAME / TURN OFF WINDOWS —— MUSIC 只關 BGM 不關音效，
+#     A 執行、B 回一級；TURN OFF WINDOWS 先彈 A／B 確認彈窗，確認後
+#     1 秒關機（Windows shutdown /s /t 1）＋結束遊戲本體）
 #   → SETTING_GAME（三級：CLEAR MAZE / FISHING / CATCH DATA，選要清哪一款、
 #     A 進四級、B 回 SETTING）
 #   → SETTING_CLEAR（四級：CLEAR TODAY / LAST 24 HOURS / ALL DATA，只清
@@ -118,13 +120,16 @@ const MENU_NAME_SIZE := 16
 const MENU_SUB_SIZE := 11      # SETTING 二級／三四級選單的字體（選項名字比一級長）
 const MENU_LINE_H := 18.0      # 4 行（三款遊戲＋SETTING）塞進 291 高的區域
 
-## SETTING 二級選單的三個選項（索引即 setting_index）。MUSIC 只控制 BGM：
+## SETTING 二級選單的四個選項（索引即 setting_index）。MUSIC 只控制 BGM：
 ## 狀態存 Settings（跨執行保存），AudioManager 播 BGM 前與切換當下讀取。
 ## QUIT GAME 按 A 直接結束遊戲（Settings／排行榜皆即時存檔，退出不丟資料）。
-const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "MUSIC", "QUIT GAME"]
+## TURN OFF WINDOWS 按 A 先開 A／B 確認彈窗（ui/confirm_dialog.gd），
+## 確認才關機。
+const SETTING_OPTIONS := ["CLEAR LEADERBOARD", "MUSIC", "QUIT GAME", "TURN OFF WINDOWS"]
 const SETTING_CLEAR_IDX := 0
 const SETTING_MUSIC_IDX := 1
 const SETTING_QUIT_IDX := 2
+const SETTING_SHUTDOWN_IDX := 3
 
 ## SETTING 三級清除選單：選要清哪一款（索引即 clear_game_index，順序對應
 ## GAMES）。_ready() 從 GAMES 的 menu_name 組出 —— 新增一款遊戲自動多一行。
@@ -166,6 +171,7 @@ var active_index := -1        # 目前這局是哪一款（排行榜重開要用
 var _panel: Node2D = null
 var _name_input: Node2D = null
 var _password_modal: Node2D = null   # 管理員密碼彈窗；非 null 時攔下所有標題層按鍵
+var _confirm_modal: Node2D = null    # A／B 確認彈窗（ui/confirm_dialog.gd，目前 TURN OFF WINDOWS 用）
 var _built: Array[bool] = []  # 每一款的腳本存不存在，開場算一次就好
 var _notice := ""
 var _notice_col := Palette.WARN   # 提示文字顏色（清除成功用 GOLD）
@@ -178,7 +184,7 @@ var _title_video: VideoStreamPlayer = null   # 二級標題背景影片（NORMAL
 var _start_prompt_elapsed := 0.0  # 底部 PRESS ANY BUTTON TO START 閃爍相位（秒），進二級時歸零
 var _title_stream_cache: Dictionary = {}  # game index → VideoStream；載入失敗記 null 不重試
 var selected_game := 0        # 一級標題當前選中的項目（0..GAMES.size()，size()＝SETTING）
-var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = MUSIC、2 = QUIT GAME
+var setting_index := 0        # SETTING 二級選單：0 = CLEAR LEADERBOARD、1 = MUSIC、2 = QUIT GAME、3 = TURN OFF WINDOWS
 var clear_game_index := 0     # SETTING 三級清除選單：0 = MAZE、1 = FISHING、2 = CATCH（對應 GAMES）
 var clear_index := 0          # 四級清除選單：0 = CLEAR TODAY、1 = LAST 24 HOURS、2 = ALL
 
@@ -251,6 +257,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key == null and pad == null and stick == null:
 		return
 	if key != null and key.echo:
+		return
+
+	# TURN OFF WINDOWS 的確認彈窗開著：彈窗自己吃 A／B（ui/confirm_dialog.gd），
+	# 底層一律不處理 —— 含手柄搖杆／十字鍵的選單移動（與密碼彈窗同一套攔截）。
+	if _confirm_modal != null:
 		return
 
 	# 手柄左搖杆（2026-09）：只餵管理員界面的 ↑↓ 選擇（_pad_stick_nav），
@@ -343,6 +354,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					SETTING_QUIT_IDX:
 						get_tree().quit()                # 結束遊戲（無二次確認）
 						return                           # quit 在幀末生效，不再往下走
+					SETTING_SHUTDOWN_IDX:
+						_open_shutdown_confirm()         # 先彈 A／B 確認，確認才關機
 				queue_redraw()
 			elif ArcadeInput.pressed(event, ArcadeInput.ACTION_B) \
 					or (key != null and key.keycode in [KEY_S, KEY_ESCAPE]):
@@ -481,6 +494,54 @@ func _launch(index: int) -> void:
 func _toggle_music() -> void:
 	Settings.set_music_on(not Settings.is_music_on())
 	AudioManager.apply_music_setting()
+
+
+# ── SETTING 二級選單的 TURN OFF WINDOWS（A／B 確認彈窗 → 1 秒後關機）────
+
+## 開確認彈窗（ui/confirm_dialog.gd）：A 確認 / B 取消。彈窗開著時本檔
+## 不處理任何按鍵（見 _unhandled_input 的 _confirm_modal 檢查）。
+## 文案照需求「确认关闭游戏并关闭该电脑吗？」—— PixelFont 沒有簡體
+## 中文字形，只能以同義英文呈現；換了含中文字形的字體後可整句替換。
+func _open_shutdown_confirm() -> void:
+	if _confirm_modal != null:
+		return
+	var modal := Node2D.new()
+	modal.name = "ShutdownConfirm"
+	modal.set_script(load("res://ui/confirm_dialog.gd"))
+	modal.set("message", "QUIT GAME AND SHUT DOWN THIS PC?")
+	modal.connect("confirmed", Callable(self, "_on_shutdown_confirmed"))
+	modal.connect("cancelled", Callable(self, "_on_shutdown_cancelled"))
+	_confirm_modal = modal
+	add_child(modal)
+
+
+## 確認關機：關彈窗 → 關機（_shutdown_pc）。
+func _on_shutdown_confirmed() -> void:
+	_close_confirm_modal()
+	_shutdown_pc()
+
+
+## 取消：關彈窗，留在 SETTING 二級選單。
+func _on_shutdown_cancelled() -> void:
+	_close_confirm_modal()
+
+
+func _close_confirm_modal() -> void:
+	if _confirm_modal == null:
+		return
+	remove_child(_confirm_modal)
+	_confirm_modal.queue_free()
+	_confirm_modal = null
+
+
+## 1 秒後關閉計算機：Windows 用 shutdown /s /t 1，由 OS 層排程 —— 指令
+## 一發出去就不依賴本程式存活，接著立刻結束遊戲本體（「關閉遊戲」那半句）。
+## Settings／排行榜皆即時存檔，退出不丟資料。非 Windows（開發機）只結束
+## 遊戲本體、不動系統。
+func _shutdown_pc() -> void:
+	if OS.has_feature("windows"):
+		OS.create_process("shutdown", ["/s", "/t", "1"])
+	get_tree().quit()
 
 
 ## 標題層的短提示（NOT BUILT／載入失敗／清除成功），停留 NOTICE_TIME 秒。
