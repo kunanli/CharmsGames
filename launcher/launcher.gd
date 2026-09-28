@@ -263,6 +263,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pad_stick_nav(stick.axis_value)
 		return
 
+	# 手柄十字鍵（2026-09）：Godot 4 的十字鍵是按鈕事件（JOY_BUTTON_DPAD_*）
+	# 不是軸事件，與左搖杆同一管道餵 _pad_stick_nav。按鈕天生邊沿觸發，
+	# 呼叫後把搖杆邊沿狀態歸 0，之後撥搖杆不會被殘留狀態擋掉一次。
+	# 只吃上下（清單是直的）；A／B 等其他按鈕照舊落到下面的按鈕流程。
+	if pad != null \
+			and _password_modal == null \
+			and (mode == Mode.MENU or mode == Mode.SETTING
+				or mode == Mode.SETTING_GAME or mode == Mode.SETTING_CLEAR):
+		if pad.button_index == JOY_BUTTON_DPAD_UP and pad.pressed:
+			_pad_stick_nav(-1.0)
+			_stick_nav_dir = 0
+			return
+		if pad.button_index == JOY_BUTTON_DPAD_DOWN and pad.pressed:
+			_pad_stick_nav(1.0)
+			_stick_nav_dir = 0
+			return
+
 	# 放開事件只用於二級標題的 A／B 長按判定：兩顆鍵沒按住滿 3 秒就鬆開
 	# ＝普通按鍵，照樣進入起名流程（進入密碼界面後 _ab_hold_active 已清，
 	# 鬆開不會誤觸發）。起名／遊戲等子節點會吃掉自己的事件，收不到這裡。
@@ -279,7 +296,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# launcher 不需要也不應該碰。
 	#
 	# 輸入分層（街機 A／B 走 InputMap action —— 鍵盤 A·S 與手柄 A·B 都會
-	# 命中；方向鍵維持鍵盤直讀 keycode，管理員界面的 ↑↓ 另收手柄左搖杆上下）：
+	# 命中；方向鍵維持鍵盤直讀 keycode，管理員界面的 ↑↓ 另收手柄左搖杆上下
+	# 與十字鍵上下）：
 	#   Level 1  密碼彈窗開著 → 只剩彈窗自己的按鍵，這裡整段不處理
 	#   Level 2  二級標題 → 按**任意鍵**進入起名流程（A／B 例外：先等長按
 	#            判定 —— 兩顆一起按住 3 秒進管理員密碼界面、提前鬆開＝普通
@@ -394,7 +412,8 @@ func _is_arcade_b(event: InputEvent) -> bool:
 
 
 ## 手柄左搖杆的垂直推量 → 管理員界面（一級清單／SETTING 二三四級）的上下
-## 選擇，與鍵盤 ↑↓ 同一組移動與音效。死區 ±0.5（與起名屏的搖桿判定同一
+## 選擇，與鍵盤 ↑↓ 同一組移動與音效（十字鍵也是餵進這裡，見 _unhandled_input）。
+## 死區 ±0.5（與起名屏的搖桿判定同一
 ## 檔）：過死區算「推住」，邊沿觸發只動一次、回到中立區重置後才允許下一
 ## 次 —— 推住不連發，與鍵盤方向鍵不吃 echo 一致。
 func _pad_stick_nav(value: float) -> void:

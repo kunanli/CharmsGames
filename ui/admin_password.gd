@@ -10,7 +10,8 @@ extends Node2D
 # 按鍵（輸入優先級 Level 1，全吃；街機 A／B 綁定見 shared/arcade_input.gd，
 # 手柄按鈕事件不進 _unhandled_key_input，本檔改走 _unhandled_input）：
 #   ↑ ↓ ← →    輸入一位（超過 8 位不收）；鍵盤方向鍵＋手柄左搖杆上下左右
-#               （搖桿過 ±0.5 死區輸入一位、推住不連發，與起名屏同一檔）
+#               ＋手柄十字鍵（搖桿過 ±0.5 死區輸入一位、推住不連發；十字鍵
+#               是按鈕事件按下算一位 —— 都與起名屏同一檔）
 #   B           刪除最後一位；沒輸入內容時等同 ESC（取消回二級）
 #               （B＝鍵盤 S／手柄 B，2026-09 鍵盤 B 邏輯改到 S）
 #   A           確認（未輸滿 8 位只給提示；A＝鍵盤 A／手柄 A）
@@ -83,6 +84,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			_input.pop_back()
 	elif stick != null:
 		_stick_direction(stick)
+	elif pad != null:
+		# 手柄十字鍵：Godot 4 的十字鍵是按鈕事件（JOY_BUTTON_DPAD_*）不是
+		# 軸事件，與左搖杆同一管道（存同一組 KEY_* 鍵碼）。按鈕天生邊沿
+		# 觸發，按下輸入一位、放開忽略，不會連發。
+		if pad.pressed and _input.size() < PASSWORD_LEN:
+			match pad.button_index:
+				JOY_BUTTON_DPAD_UP:
+					_input.append(DIR_KEYS["up"])
+				JOY_BUTTON_DPAD_DOWN:
+					_input.append(DIR_KEYS["down"])
+				JOY_BUTTON_DPAD_LEFT:
+					_input.append(DIR_KEYS["left"])
+				JOY_BUTTON_DPAD_RIGHT:
+					_input.append(DIR_KEYS["right"])
 	elif key != null:
 		match key.keycode:
 			KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT:

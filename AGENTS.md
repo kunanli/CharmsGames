@@ -98,9 +98,11 @@ Game feel（震動／粒子／擠壓／頓格）已完成並經過試玩一輪�
 上表與各段的 A／B 都指街機按鍵；程式端一律走 InputMap action
 （`arcade_a`／`arcade_b`）判斷，不要直接比 KEY_A／KEY_B
 keycode。**方向鍵沒有整綁手柄**：管理員界面（一級清單／SETTING 二三四級）
-的 ↑↓ 選擇與**管理員密碼的方向輸入**都額外吃**手柄左搖杆**（`launcher.gd`
-的 `_pad_stick_nav` 與 `ui/admin_password.gd` 的 `_stick_direction`，
-死區 ±0.5、邊沿觸發不連發、回中立區才能推下一次）；三款遊戲內的移動走
+的 ↑↓ 選擇與**管理員密碼的方向輸入**都額外吃**手柄左搖杆＋十字鍵**
+（`launcher.gd` 的 `_pad_stick_nav` 與 `ui/admin_password.gd` 的
+`_stick_direction`，死區 ±0.5、邊沿觸發不連發、回中立區才能推下一次；
+十字鍵在 Godot 4 是按鈕事件 `JOY_BUTTON_DPAD_*`，2026-09 補上 —— 舊版
+只收搖桿軸，玩家推十字鍵在管理員界面完全沒反應）；三款遊戲內的移動走
 內建 `ui_left` 等 action（手柄十字鍵／左搖杆引擎預設已綁）；
 起名屏本來就吃手柄（十字鍵／左搖杆／A B X Y）。
 手柄按鈕事件不進 `_unhandled_key_input`，同時吃鍵盤＋手柄的界面
